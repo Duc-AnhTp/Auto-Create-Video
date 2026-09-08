@@ -44,6 +44,28 @@ window.__timelines["news-video"] = tl;
       animateCallout(scene, tl, start);
     } else if (layout === "outro") {
       animateOutro(scene, tl, start, dur);
+    } else if (layout === "image-card") {
+      animateImageCard(scene, tl, start);
+    } else if (layout === "split-image") {
+      animateSplitImage(scene, tl, start);
+    } else if (layout === "text-reveal") {
+      animateTextReveal(scene, tl, start);
+    } else if (layout === "quote-card") {
+      animateQuoteCard(scene, tl, start);
+    } else if (layout === "timeline") {
+      animateTimeline(scene, tl, start);
+    } else if (layout === "chart-bars") {
+      animateChartBars(scene, tl, start);
+    }
+  });
+
+  // ── Chapter transition flash FX ─────────────────────────────────────────
+  document.querySelectorAll(".fx").forEach((fx) => {
+    const start = parseFloat(fx.dataset.start);
+    const dur   = parseFloat(fx.dataset.duration) || 0.25;
+    if (!isNaN(start)) {
+      tl.fromTo(fx, { opacity: 0 }, { opacity: 0.85, duration: dur * 0.35 }, start);
+      tl.to(fx, { opacity: 0, duration: dur * 0.65 }, start + dur * 0.35);
     }
   });
 
@@ -194,5 +216,112 @@ window.__timelines["news-video"] = tl;
       const holdLen   = Math.max(0.5, holdEnd - holdStart);
       tl.to(ttCard, { scale: 1.08, duration: holdLen }, holdStart);
     }
+  }
+
+  // ── IMAGE-CARD ────────────────────────────────────────────────────────────
+  function animateImageCard(scene, tl, start) {
+    const caption = scene.querySelector(".imgcard-caption");
+    if (caption) {
+      tl.fromTo(caption, { y: 50, opacity: 0 }, { y: 0, opacity: 1, duration: 0.55 }, start + 0.25);
+    }
+
+    const subcaption = scene.querySelector(".imgcard-subcaption");
+    if (subcaption) {
+      tl.fromTo(subcaption, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45 }, start + 0.6);
+    }
+
+    // Parallax: subtle content drift opposite to Ken Burns background
+    const layout = scene.querySelector(".layout-image-card");
+    if (layout) {
+      layout.classList.add("parallax-content");
+      tl.fromTo(layout, { y: 10 }, { y: -10, duration: parseFloat(scene.dataset.duration) || 8 }, start);
+    }
+  }
+
+  // ── SPLIT-IMAGE ───────────────────────────────────────────────────────────
+  function animateSplitImage(scene, tl, start) {
+    const card = scene.querySelector(".split-card");
+    if (card) {
+      tl.fromTo(card, { y: 80, scale: 0.95, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.55 }, start + 0.2);
+    }
+
+    // Parallax: card drifts slightly opposite to image
+    const layout = scene.querySelector(".layout-split-image");
+    if (layout) {
+      layout.classList.add("parallax-content");
+      tl.fromTo(layout, { y: 8 }, { y: -8, duration: parseFloat(scene.dataset.duration) || 8 }, start);
+    }
+  }
+
+  // ── TEXT-REVEAL ───────────────────────────────────────────────────────────
+  function animateTextReveal(scene, tl, start) {
+    const lines = scene.querySelectorAll(".reveal-line");
+    lines.forEach((line, i) => {
+      const isEmphasis = line.classList.contains("reveal-emphasis");
+      if (isEmphasis) {
+        // Emphasis lines: scale pop entrance
+        tl.fromTo(line, { scale: 0.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.5 }, start + 0.2 + i * 0.35);
+      } else {
+        // Normal lines: slide up entrance
+        tl.fromTo(line, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45 }, start + 0.2 + i * 0.35);
+      }
+    });
+  }
+
+  // ── QUOTE-CARD ────────────────────────────────────────────────────────────
+  function animateQuoteCard(scene, tl, start) {
+    const card = scene.querySelector(".quote-card-box");
+    if (card) {
+      tl.fromTo(card, { y: 60, scale: 0.94, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.6 }, start + 0.15);
+    }
+    const mark = scene.querySelector(".quote-mark");
+    if (mark) {
+      tl.fromTo(mark, { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 0.8, duration: 0.4 }, start + 0.35);
+    }
+    const text = scene.querySelector(".quote-text");
+    if (text) {
+      tl.fromTo(text, { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5 }, start + 0.5);
+    }
+    const authorRow = scene.querySelector(".quote-author-row");
+    if (authorRow) {
+      tl.fromTo(authorRow, { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45 }, start + 0.8);
+    }
+  }
+
+  // ── TIMELINE ──────────────────────────────────────────────────────────────
+  function animateTimeline(scene, tl, start) {
+    const title = scene.querySelector(".timeline-title");
+    if (title) {
+      tl.fromTo(title, { y: -30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45 }, start + 0.15);
+    }
+    const line = scene.querySelector(".timeline-line");
+    if (line) {
+      tl.fromTo(line, { scaleY: 0, opacity: 1 }, { scaleY: 1, opacity: 1, duration: 0.7, transformOrigin: "top center" }, start + 0.35);
+    }
+    const items = scene.querySelectorAll(".timeline-item");
+    items.forEach((item, i) => {
+      tl.fromTo(item, { x: 40, opacity: 0 }, { x: 0, opacity: 1, duration: 0.45 }, start + 0.5 + i * 0.25);
+    });
+  }
+
+  // ── CHART-BARS ────────────────────────────────────────────────────────────
+  function animateChartBars(scene, tl, start) {
+    const title = scene.querySelector(".chart-title");
+    if (title) {
+      tl.fromTo(title, { y: -30, opacity: 0 }, { y: 0, opacity: 1, duration: 0.45 }, start + 0.15);
+    }
+    const box = scene.querySelector(".chart-box");
+    if (box) {
+      tl.fromTo(box, { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 0.5 }, start + 0.25);
+    }
+    const rows = scene.querySelectorAll(".chart-row");
+    rows.forEach((row, i) => {
+      tl.fromTo(row, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.4 }, start + 0.45 + i * 0.2);
+      const fill = row.querySelector(".chart-bar-fill");
+      if (fill) {
+        const targetWidth = fill.getAttribute("data-width") || "50";
+        tl.fromTo(fill, { width: "0%" }, { width: `${targetWidth}%`, duration: 0.8, ease: "power2.out" }, start + 0.6 + i * 0.2);
+      }
+    });
   }
 })();

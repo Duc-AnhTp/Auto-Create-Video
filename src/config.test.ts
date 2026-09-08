@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { loadConfig } from "./config.js";
+import { loadConfig, validateTtsProvider } from "./config.js";
 
 const ENV_KEYS = [
   "TTS_PROVIDER",
@@ -90,5 +90,41 @@ describe("loadConfig", () => {
     process.env.VIETNAMESE_API_KEY = "k";
     process.env.VIETNAMESE_VOICEID = "v";
     expect(() => loadConfig()).toThrow(/TTS_PROVIDER/);
+  });
+
+  describe("Flexible provider validation", () => {
+    it("skips provider validation when validateProvider: false", () => {
+      // No env vars set at all
+      const cfg = loadConfig({ validateProvider: false });
+      expect(cfg.ttsProvider).toBe("lucylab");
+      expect(cfg.lucylabApiKey).toBeUndefined();
+      expect(cfg.lucylabVoiceId).toBeUndefined();
+    });
+
+    it("validates specific provider when validateProvider: 'elevenlabs' even if default is lucylab", () => {
+      process.env.TTS_PROVIDER = "lucylab";
+      process.env.ELEVENLABS_API_KEY = "sk_eleven";
+      process.env.ELEVENLABS_VOICE_ID = "voice_el";
+      // LucyLab keys missing, but validating elevenlabs succeeds
+      const cfg = loadConfig({ validateProvider: "elevenlabs" });
+      expect(cfg.elevenlabsApiKey).toBe("sk_eleven");
+      expect(cfg.elevenlabsVoiceId).toBe("voice_el");
+    });
+
+    it("validateTtsProvider respects requireVoiceId: false", () => {
+      const cfg = loadConfig({ validateProvider: false });
+      cfg.elevenlabsApiKey = "sk_test";
+      cfg.elevenlabsVoiceId = undefined;
+
+      // Should not throw when requireVoiceId is false
+      expect(() => {
+        validateTtsProvider(cfg, "elevenlabs", { requireVoiceId: false });
+      }).not.toThrow();
+
+      // Should throw when requireVoiceId is true (default)
+      expect(() => {
+        validateTtsProvider(cfg, "elevenlabs", { requireVoiceId: true });
+      }).toThrow(/ELEVENLABS_VOICE_ID/);
+    });
   });
 });

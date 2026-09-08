@@ -201,3 +201,57 @@ export async function mixSfxOntoVoice(
 
   await run("ffmpeg", ffArgs);
 }
+
+export interface BgmMixOptions {
+  /** Base volume of BGM when voice is silent (0.0 to 1.0). Default 0.20 */
+  bgmVolume?: number;
+  /** Ducking compression ratio (e.g. 8 to 12). Default 10 */
+  duckRatio?: number;
+  /** Ducking threshold (0.01 to 0.1). Default 0.04 */
+  duckThreshold?: number;
+  /** Fade out duration at the end in seconds. Default 1.5 */
+  fadeOutSec?: number;
+}
+
+/**
+ * Mixes background music (BGM) under voice + SFX with smart dynamic audio ducking.
+ *
+ * Uses FFmpeg sidechaincompress:
+ * - When voice speaks (amplitude > threshold), BGM volume is automatically ducked.
+ * - When voice pauses (scene gap, outro hold), BGM volume smoothly returns to base volume.
+ * - Loops BGM seamlessly if total video duration exceeds music length.
+ * - Fades out BGM smoothly at the end.
+ */
+export async function mixBgmWithDucking(
+  voicePath: string,
+  bgmPath: string,
+  outPath: string,
+  opts?: BgmMixOptions,
+): Promise<void> {
+  const totalDur = await getDurationSec(voicePath);
+  const bgmVolume = opts?.bgmVolume ?? 0.20;
+  const duckRatio = opts?.duckRatio ?? 10;
+  const duckThreshold = opts?.duckThreshold ?? 0.04;
+  const fadeOutSec = opts?.fadeOutSec ?? 1.5;
+  const fadeStart = Math.max(0, totalDur - fadeOutSec);
+
+  const filterGraph = [
+    `[1:a]aloop=loop=-1:size=2e+09,atrim=0:${totalDur.toFixed(2)},aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,volume=${bgmVolume},afade=t=out:st=${fadeStart.toFixed(2)}:d=${fadeOutSec.toFixed(2)}[bgm_base]`,
+    `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono[voice]`,
+    `[bgm_base][voice]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=80:release=350[ducked_bgm]`,
+    `[voice][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]`,
+  ].join(";");
+
+  await run("ffmpeg", [
+    "-y",
+    "-i", voicePath,
+    "-i", bgmPath,
+    "-filter_complex", filterGraph,
+    "-map", "[out]",
+    "-c:a", "libmp3lame",
+    "-b:a", "192k",
+    "-ar", "44100",
+    outPath,
+  ]);
+}
+

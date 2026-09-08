@@ -56,10 +56,22 @@ export function composeHtml(args: ComposeArgs): string {
   });
   const totalDuration = cursor;
 
-  // Render scenes
-  const sceneHtml = timing.map(({ scene, start, duration }) => {
-    return renderScene(scene, start, duration, bgImageRelPath, tiktok, tiktokAvatar);
-  }).join("\n");
+  // Render scenes (with chapter transition flashes between chapter changes)
+  const sceneHtmlParts: string[] = [];
+  for (let i = 0; i < timing.length; i++) {
+    const { scene, start, duration } = timing[i];
+
+    // Inject chapter transition flash when chapter changes
+    if (i > 0 && scene.chapter && timing[i - 1].scene.chapter !== scene.chapter) {
+      const flashStart = Math.max(0, start - 0.15); // brief flash just before new chapter
+      sceneHtmlParts.push(
+        `<div class="fx flash-white-3f" data-start="${flashStart.toFixed(2)}" data-duration="0.25"></div>`
+      );
+    }
+
+    sceneHtmlParts.push(renderScene(scene, start, duration, bgImageRelPath, tiktok, tiktokAvatar));
+  }
+  const sceneHtml = sceneHtmlParts.join("\n");
 
   // Persistent shell — uses tiktok handle in footer
   const shellHtml = renderShell(script.metadata, tiktok);
@@ -143,6 +155,30 @@ function renderScene(
     case "outro":
       inner = renderOutroInner(td, tiktok, tiktokAvatarRelPath);
       layoutName = "outro";
+      break;
+    case "image-card":
+      inner = renderImageCardInner(td);
+      layoutName = "image-card";
+      break;
+    case "split-image":
+      inner = renderSplitImageInner(td);
+      layoutName = "split-image";
+      break;
+    case "text-reveal":
+      inner = renderTextRevealInner(td);
+      layoutName = "text-reveal";
+      break;
+    case "quote-card":
+      inner = renderQuoteCardInner(td);
+      layoutName = "quote-card";
+      break;
+    case "timeline":
+      inner = renderTimelineInner(td);
+      layoutName = "timeline";
+      break;
+    case "chart-bars":
+      inner = renderChartBarsInner(td);
+      layoutName = "chart-bars";
       break;
     default: {
       const _never: never = td;
@@ -283,6 +319,142 @@ function renderTiktokCard(tiktok: TiktokConfig, avatarRelPath: string): string {
 </div>`.trim();
 }
 
+// ── IMAGE-CARD SCENE ──────────────────────────────────────────────────────
+/** Full-frame background image with caption overlay at bottom */
+function renderImageCardInner(td: Extract<TemplateDataType, { template: "image-card" }>): string {
+  const kbClass = td.kenBurns ?? "zoom-in";
+  const imageSrc = td.imageSrc;
+  const bgHtml = imageSrc
+    ? `<div class="bg kb-${kbClass}" style="background-image: url('${escapeHtml(imageSrc)}')"></div>`
+    : `<div class="bg gradient-news-dark"></div>`;
+  const overlayOpacity = td.overlay ?? 0.45;
+  const overlayHtml = `<div class="overlay" style="opacity: ${overlayOpacity}"></div>`;
+
+  const subcaption = td.subcaption
+    ? `<div class="imgcard-subcaption">${escapeHtml(td.subcaption)}</div>`
+    : "";
+
+  return `${bgHtml}
+  ${overlayHtml}
+  <div class="layout-image-card">
+    <div class="imgcard-caption">${escapeHtml(td.caption)}</div>
+    ${subcaption}
+  </div>`;
+}
+
+// ── SPLIT-IMAGE SCENE ─────────────────────────────────────────────────────
+/** Top half: image with Ken Burns, bottom half: glass card with title + body */
+function renderSplitImageInner(td: Extract<TemplateDataType, { template: "split-image" }>): string {
+  const kbClass = td.kenBurns ?? "zoom-in";
+  const imageSrc = td.imageSrc;
+  const imgHtml = imageSrc
+    ? `<div class="split-image-top kb-${kbClass}" style="background-image: url('${escapeHtml(imageSrc)}')"></div>`
+    : `<div class="split-image-top gradient-news-dark"></div>`;
+
+  return `${imgHtml}
+  <div class="layout-split-image">
+    <div class="split-card glass-card">
+      <div class="split-title">${escapeHtml(td.title)}</div>
+      <div class="split-body">${escapeHtml(td.body)}</div>
+    </div>
+  </div>`;
+}
+
+// ── TEXT-REVEAL SCENE ─────────────────────────────────────────────────────
+/** Large text lines revealed one by one — for transitions/emphasis */
+function renderTextRevealInner(td: Extract<TemplateDataType, { template: "text-reveal" }>): string {
+  const emphasis = td.emphasis ?? "first";
+  const lines = td.lines.map((line, i) => {
+    const isEmphasized =
+      emphasis === "all" ||
+      (emphasis === "first" && i === 0) ||
+      (emphasis === "last" && i === td.lines.length - 1);
+    const cls = `reveal-line${isEmphasized ? " reveal-emphasis" : ""}`;
+    return `<div class="${cls}" data-idx="${i}">${escapeHtml(line)}</div>`;
+  }).join("\n    ");
+
+  return `
+  <div class="layout-text-reveal">
+    ${lines}
+  </div>`;
+}
+
+// ── QUOTE-CARD SCENE ───────────────────────────────────────────────────────
+function renderQuoteCardInner(td: Extract<TemplateDataType, { template: "quote-card" }>): string {
+  const avatarHtml = td.avatarUrl
+    ? `<img class="quote-avatar" src="${escapeHtml(td.avatarUrl)}" alt="${escapeHtml(td.author)}" />`
+    : `<div class="quote-avatar-placeholder">${escapeHtml(td.author.charAt(0))}</div>`;
+  const titleHtml = td.title ? `<div class="quote-title">${escapeHtml(td.title)}</div>` : "";
+
+  return `
+<div class="layout-quote-card">
+  <div class="quote-card-box">
+    <div class="quote-mark">&ldquo;</div>
+    <div class="quote-text">${escapeHtml(td.quote)}</div>
+    <div class="quote-author-row">
+      ${avatarHtml}
+      <div class="quote-author-info">
+        <div class="quote-author">${escapeHtml(td.author)}</div>
+        ${titleHtml}
+      </div>
+    </div>
+  </div>
+</div>`.trim();
+}
+
+// ── TIMELINE SCENE ─────────────────────────────────────────────────────────
+function renderTimelineInner(td: Extract<TemplateDataType, { template: "timeline" }>): string {
+  const eventsHtml = td.events
+    .map(
+      (ev, i) => `
+    <div class="timeline-item timeline-item-${i}">
+      <div class="timeline-dot"></div>
+      <div class="timeline-content">
+        <div class="timeline-time">${escapeHtml(ev.time)}</div>
+        <div class="timeline-label">${escapeHtml(ev.label)}</div>
+      </div>
+    </div>`
+    )
+    .join("\n");
+
+  return `
+<div class="layout-timeline">
+  <div class="timeline-title">${escapeHtml(td.title)}</div>
+  <div class="timeline-track">
+    <div class="timeline-line"></div>
+    <div class="timeline-items">
+      ${eventsHtml}
+    </div>
+  </div>
+</div>`.trim();
+}
+
+// ── CHART-BARS SCENE ───────────────────────────────────────────────────────
+function renderChartBarsInner(td: Extract<TemplateDataType, { template: "chart-bars" }>): string {
+  const barsHtml = td.items
+    .map(
+      (item, i) => `
+    <div class="chart-row chart-row-${i}">
+      <div class="chart-header">
+        <span class="chart-label">${escapeHtml(item.label)}</span>
+        <span class="chart-display-val">${escapeHtml(item.displayValue)}</span>
+      </div>
+      <div class="chart-bar-bg">
+        <div class="chart-bar-fill color-${item.color ?? "cyan"}" data-width="${item.value}" style="--target-width: ${item.value}%;"></div>
+      </div>
+    </div>`
+    )
+    .join("\n");
+
+  return `
+<div class="layout-chart-bars">
+  <div class="chart-title">${escapeHtml(td.title)}</div>
+  <div class="chart-box">
+    ${barsHtml}
+  </div>
+</div>`.trim();
+}
+
 // ── HELPERS ────────────────────────────────────────────────────────────────
 function buildScene(
   scene: Script["scenes"][number],
@@ -294,7 +466,8 @@ function buildScene(
   return `
 <div class="scene clip" id="scene-${scene.id}"
      data-start="${start.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-active="0"
-     data-layout="${layoutName}">
+     data-layout="${layoutName}"
+     style="--scene-dur: ${duration.toFixed(2)}s">
   ${innerHtml}
 </div>`.trim();
 }

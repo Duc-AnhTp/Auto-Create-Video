@@ -1,0 +1,196 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "title": "Samsung Galaxy S26 Ultra — Đánh giá chi tiết camera, pin, hiệu năng",
+    "source": {
+      "url": "https://vnexpress.net/samsung-galaxy-s26-ultra-review",
+      "domain": "vnexpress.net",
+      "image": "https://i1-vnexpress.vnecdn.net/s26ultra-hero.jpg"
+    },
+    "channel": "Công nghệ 24h"
+  },
+  "voice": { "provider": "lucylab", "voiceId": "${VIETNAMESE_VOICEID}", "speed": 1.0 },
+  "images": [
+    { "id": "hero", "url": "https://i1-vnexpress.vnecdn.net/s26ultra-hero.jpg", "alt": "Galaxy S26 Ultra hero shot" },
+    { "id": "camera", "url": "https://i1-vnexpress.vnecdn.net/s26ultra-camera.jpg", "alt": "Camera module closeup" },
+    { "id": "display", "url": "https://i1-vnexpress.vnecdn.net/s26ultra-display.jpg", "alt": "Display quality" },
+    { "id": "benchmark", "url": "https://i1-vnexpress.vnecdn.net/s26ultra-benchmark.jpg", "alt": "Benchmark results" },
+    { "id": "battery", "url": "https://i1-vnexpress.vnecdn.net/s26ultra-battery.jpg", "alt": "Battery test results" }
+  ],
+  "context": {
+    "summary": "Đánh giá chi tiết Samsung Galaxy S26 Ultra với các mục: thiết kế, camera 200MP, màn hình, hiệu năng Snapdragon, pin và giá bán tại Việt Nam.",
+    "keyEntities": ["Samsung Galaxy S26 Ultra", "Snapdragon 8 Elite Gen 2", "200MP", "6000mAh", "45 triệu đồng", "Titanium"],
+    "tone": "review"
+  },
+  "scenes": [
+    {
+      "id": "hook",
+      "type": "hook",
+      "voiceText": "Samsung vừa ra mắt Galaxy S26 Ultra với camera hai trăm megapixel và chip Snapdragon 8 Elite Gen 2.",
+      "templateData": {
+        "template": "hook",
+        "headline": "Galaxy S26 Ultra",
+        "subhead": "Camera 200MP!",
+        "bgSrc": "$source.image",
+        "kenBurns": "zoom-in"
+      }
+    },
+    {
+      "id": "design-1",
+      "type": "body",
+      "chapter": "Thiết kế",
+      "voiceText": "Khung viền được làm từ Titanium Grade 5, mỏng hơn và nhẹ hơn đời trước.",
+      "templateData": {
+        "template": "image-card",
+        "caption": "Khung Titanium Grade 5",
+        "subcaption": "Mỏng hơn — Nhẹ hơn — Cứng cáp hơn",
+        "imageSrc": "$images.hero",
+        "kenBurns": "pan-right",
+        "overlay": 0.5
+      }
+    },
+    {
+      "id": "design-2",
+      "type": "body",
+      "chapter": "Thiết kế",
+      "voiceText": "Màn hình Dynamic AMOLED 2X kích thước sáu phẩy chín inch, độ sáng tối đa ba nghìn nit.",
+      "templateData": {
+        "template": "split-image",
+        "imageSrc": "$images.display",
+        "title": "Màn hình 6.9 inch",
+        "body": "Dynamic AMOLED 2X, 3000 nit peak brightness, LTPO 1-120Hz",
+        "kenBurns": "zoom-in"
+      }
+    },
+    {
+      "id": "camera-1",
+      "type": "body",
+      "chapter": "Camera",
+      "voiceText": "Camera chính hai trăm megapixel với cảm biến mới lớn hơn ba mươi phần trăm.",
+      "templateData": {
+        "template": "stat-hero",
+        "value": "200MP",
+        "label": "Cảm biến lớn hơn 30%",
+        "context": "Sensor mới ISOCELL HP5"
+      }
+    },
+    {
+      "id": "camera-2",
+      "type": "body",
+      "chapter": "Camera",
+      "voiceText": "Zoom quang học năm lần và zoom AI lên đến một trăm lần.",
+      "templateData": {
+        "template": "image-card",
+        "caption": "Zoom quang học 5x — AI zoom 100x",
+        "imageSrc": "$images.camera",
+        "kenBurns": "zoom-out",
+        "overlay": 0.4
+      }
+    },
+    {
+      "id": "camera-3",
+      "type": "body",
+      "chapter": "Camera",
+      "voiceText": "Video 8K tối đa sáu mươi khung hình trên giây, hỗ trợ quay log profile.",
+      "templateData": {
+        "template": "feature-list",
+        "title": "Quay video chuyên nghiệp",
+        "bullets": ["8K@60fps", "Log Profile", "ProRes 4:2:2", "Stabilization thế hệ mới"]
+      }
+    },
+    {
+      "id": "transition-1",
+      "type": "transition",
+      "chapter": "Hiệu năng",
+      "voiceText": "Về hiệu năng, S26 Ultra có bước nhảy lớn.",
+      "templateData": {
+        "template": "text-reveal",
+        "lines": ["Hiệu năng", "Bước nhảy lớn"],
+        "emphasis": "last"
+      }
+    },
+    {
+      "id": "perf-1",
+      "type": "body",
+      "chapter": "Hiệu năng",
+      "voiceText": "Chip Snapdragon 8 Elite Gen 2 cho hiệu năng CPU tăng bốn mươi phần trăm so với đời trước.",
+      "templateData": {
+        "template": "comparison",
+        "left": { "label": "S25 Ultra", "value": "5200", "color": "purple" },
+        "right": { "label": "S26 Ultra", "value": "7280", "color": "cyan", "winner": true }
+      }
+    },
+    {
+      "id": "perf-2",
+      "type": "body",
+      "chapter": "Hiệu năng",
+      "voiceText": "RAM 16GB kết hợp bộ nhớ UFS 5.0 cho tốc độ đọc ghi nhanh kỷ lục.",
+      "templateData": {
+        "template": "image-card",
+        "caption": "RAM 16GB — UFS 5.0",
+        "subcaption": "Đọc ghi nhanh kỷ lục",
+        "imageSrc": "$images.benchmark",
+        "kenBurns": "pan-left",
+        "overlay": 0.55
+      }
+    },
+    {
+      "id": "battery-1",
+      "type": "body",
+      "chapter": "Pin",
+      "voiceText": "Pin sáu nghìn miliampe giờ, tăng hai mươi phần trăm so với đời cũ.",
+      "templateData": {
+        "template": "stat-hero",
+        "value": "6000mAh",
+        "label": "Pin khủng, tăng 20%",
+        "context": "Sạc nhanh 65W + Sạc không dây 15W"
+      }
+    },
+    {
+      "id": "battery-2",
+      "type": "body",
+      "chapter": "Pin",
+      "voiceText": "Thời gian sử dụng màn hình liên tục đạt mười hai tiếng trong bài test thực tế.",
+      "templateData": {
+        "template": "split-image",
+        "imageSrc": "$images.battery",
+        "title": "12 tiếng sử dụng liên tục",
+        "body": "Bài test: YouTube 4 tiếng, gaming 2 tiếng, camera 1 tiếng, web browsing 3 tiếng, social 2 tiếng.",
+        "kenBurns": "zoom-out"
+      }
+    },
+    {
+      "id": "price-1",
+      "type": "body",
+      "chapter": "Giá bán",
+      "voiceText": "Giá bán chính thức tại Việt Nam từ bốn mươi lăm triệu đồng cho bản 512GB.",
+      "templateData": {
+        "template": "callout",
+        "statement": "Giá từ 45 triệu đồng — bản 512GB. Đặt trước tặng Galaxy Buds3 Pro.",
+        "tag": "Giá bán VN"
+      }
+    },
+    {
+      "id": "verdict",
+      "type": "body",
+      "chapter": "Kết luận",
+      "voiceText": "Nhìn chung, Galaxy S26 Ultra xứng đáng là smartphone Android tốt nhất năm nay.",
+      "templateData": {
+        "template": "text-reveal",
+        "lines": ["Android tốt nhất", "năm 2026", "Galaxy S26 Ultra"],
+        "emphasis": "first"
+      }
+    },
+    {
+      "id": "outro",
+      "type": "outro",
+      "voiceText": "Theo dõi Công nghệ 24h để xem đánh giá chi tiết các sản phẩm công nghệ mới nhất.",
+      "templateData": {
+        "template": "outro",
+        "ctaTop": "Theo dõi ngay",
+        "channelName": "Công nghệ 24h",
+        "source": "vnexpress.net"
+      }
+    }
+  ]
+}

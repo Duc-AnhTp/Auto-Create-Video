@@ -40,42 +40,61 @@ function intDefault(name: string, def: number): number {
   return n;
 }
 
-export function loadConfig(): Config {
-  const provider = (process.env.TTS_PROVIDER ?? "lucylab") as TtsProvider;
-  if (provider !== "lucylab" && provider !== "elevenlabs") {
-    throw new Error(`TTS_PROVIDER must be "lucylab" or "elevenlabs", got "${provider}"`);
-  }
+export interface LoadConfigOptions {
+  /**
+   * Whether to validate provider credentials immediately.
+   * - `true` (default): validates credentials for `ttsProvider`.
+   * - `false`: skips provider validation (useful for rerender or when script specifies provider).
+   * - `TtsProvider`: validates specifically for the given provider.
+   */
+  validateProvider?: boolean | TtsProvider;
+}
 
-  // Validate provider-specific required vars
+/**
+ * Validates that credentials for a specific TTS provider are present in the configuration.
+ */
+export function validateTtsProvider(
+  cfg: Config,
+  provider: TtsProvider = cfg.ttsProvider,
+  opts?: { requireVoiceId?: boolean }
+): void {
+  const requireVoiceId = opts?.requireVoiceId ?? true;
   if (provider === "lucylab") {
-    if (!process.env.VIETNAMESE_API_KEY || process.env.VIETNAMESE_API_KEY.trim() === "") {
+    if (!cfg.lucylabApiKey || cfg.lucylabApiKey.trim() === "") {
       throw new Error(
         `Missing VIETNAMESE_API_KEY (required when TTS_PROVIDER=lucylab). ` +
         `Copy .env.example to .env.local and fill in your LucyLab API key.`
       );
     }
-    if (!process.env.VIETNAMESE_VOICEID || process.env.VIETNAMESE_VOICEID.trim() === "") {
+    if (requireVoiceId && (!cfg.lucylabVoiceId || cfg.lucylabVoiceId.trim() === "")) {
       throw new Error(
         `Missing VIETNAMESE_VOICEID (required when TTS_PROVIDER=lucylab). ` +
         `Copy .env.example to .env.local and fill in your LucyLab voice ID.`
       );
     }
-  } else {
-    if (!process.env.ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY.trim() === "") {
+  } else if (provider === "elevenlabs") {
+    if (!cfg.elevenlabsApiKey || cfg.elevenlabsApiKey.trim() === "") {
       throw new Error(
         `Missing ELEVENLABS_API_KEY (required when TTS_PROVIDER=elevenlabs). ` +
         `Copy .env.example to .env.local and fill in your ElevenLabs API key.`
       );
     }
-    if (!process.env.ELEVENLABS_VOICE_ID || process.env.ELEVENLABS_VOICE_ID.trim() === "") {
+    if (requireVoiceId && (!cfg.elevenlabsVoiceId || cfg.elevenlabsVoiceId.trim() === "")) {
       throw new Error(
         `Missing ELEVENLABS_VOICE_ID (required when TTS_PROVIDER=elevenlabs). ` +
         `Copy .env.example to .env.local and fill in your ElevenLabs voice ID.`
       );
     }
   }
+}
 
-  return {
+export function loadConfig(opts?: LoadConfigOptions): Config {
+  const provider = (process.env.TTS_PROVIDER ?? "lucylab") as TtsProvider;
+  if (provider !== "lucylab" && provider !== "elevenlabs") {
+    throw new Error(`TTS_PROVIDER must be "lucylab" or "elevenlabs", got "${provider}"`);
+  }
+
+  const cfg: Config = {
     ttsProvider: provider,
     lucylabApiKey: process.env.VIETNAMESE_API_KEY,
     lucylabVoiceId: process.env.VIETNAMESE_VOICEID,
@@ -94,4 +113,13 @@ export function loadConfig(): Config {
     },
     ttsConcurrency: intDefault("TTS_CONCURRENCY", 1),
   };
+
+  const validateTarget = opts?.validateProvider ?? true;
+  if (validateTarget === true) {
+    validateTtsProvider(cfg, provider);
+  } else if (typeof validateTarget === "string") {
+    validateTtsProvider(cfg, validateTarget);
+  }
+
+  return cfg;
 }

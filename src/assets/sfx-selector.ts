@@ -57,6 +57,9 @@ export const TEMPLATE_TO_CATEGORY: Record<string, string[]> = {
   "feature-list": ["transition", "emphasis"],           // bullets pop in
   callout:        ["alert", "drumroll"],                // important — warning
   outro:          ["outro", "success"],                 // ending signature
+  "image-card":   ["transition", "cinematic"],          // visual image card
+  "split-image":  ["transition", "emphasis"],           // split visual + card
+  "text-reveal":  ["emphasis", "transition"],           // text punch / transition
 };
 
 /**

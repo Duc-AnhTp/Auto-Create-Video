@@ -98,4 +98,113 @@ describe("composeHtml", () => {
     expect(html).toContain('class="bg gradient-news-dark"');
     expect(html).not.toContain("background-image: url");
   });
+
+  it("renders quote-card, timeline, and chart-bars templates correctly", () => {
+    const script: Script = {
+      version: "1.0",
+      metadata: {
+        title: "Test New Templates",
+        source: { url: "https://example.com", domain: "example.com", image: null },
+        channel: "Tech Channel",
+      },
+      images: [],
+      scenes: [
+        {
+          id: "hook",
+          type: "hook",
+          voiceText: "Hook scene text",
+          templateData: {
+            template: "hook",
+            headline: "Khám phá công nghệ mới",
+            kenBurns: "zoom-in",
+          },
+        },
+        {
+          id: "quote-scene",
+          type: "body",
+          voiceText: "Chuyên gia nhận định",
+          templateData: {
+            template: "quote-card",
+            quote: "Trí tuệ nhân tạo sẽ định hình thập kỷ tới.",
+            author: "Sam Altman",
+            title: "CEO OpenAI",
+          },
+        },
+        {
+          id: "timeline-scene",
+          type: "body",
+          voiceText: "Lộ trình phát triển sản phẩm",
+          templateData: {
+            template: "timeline",
+            title: "Lộ trình triển khai",
+            events: [
+              { time: "Q1 2025", label: "Ra mắt bản thử nghiệm Alpha" },
+              { time: "Q3 2025", label: "Phát hành phiên bản chính thức" },
+            ],
+          },
+        },
+        {
+          id: "chart-scene",
+          type: "body",
+          voiceText: "So sánh hiệu năng vượt trội",
+          templateData: {
+            template: "chart-bars",
+            title: "So sánh hiệu năng chip",
+            items: [
+              { label: "M4 Max", value: 95, displayValue: "95 Điểm", color: "cyan" },
+              { label: "M3 Max", value: 75, displayValue: "75 Điểm", color: "purple" },
+            ],
+          },
+        },
+        {
+          id: "outro",
+          type: "outro",
+          voiceText: "Theo dõi để cập nhật thêm",
+          templateData: {
+            template: "outro",
+            ctaTop: "Đăng ký kênh ngay",
+            channelName: "Tech Channel",
+            source: "example.com",
+          },
+        },
+      ],
+    };
+
+    const sceneAudio = script.scenes.map((s) => ({ id: s.id, durationSec: 4 }));
+    const html = composeHtml({
+      script,
+      sceneAudio,
+      gapSec: 0.3,
+      bgImageRelPath: null,
+      audioRelPath: "voice.mp3",
+    });
+
+    // quote-card assertions
+    expect(html).toContain('data-layout="quote-card"');
+    expect(html).toContain('class="layout-quote-card"');
+    expect(html).toContain('class="quote-card-box"');
+    expect(html).toContain("Trí tuệ nhân tạo sẽ định hình thập kỷ tới.");
+    expect(html).toContain("Sam Altman");
+    expect(html).toContain("CEO OpenAI");
+
+    // timeline assertions
+    expect(html).toContain('data-layout="timeline"');
+    expect(html).toContain('class="layout-timeline"');
+    expect(html).toContain("Lộ trình triển khai");
+    expect(html).toContain("Q1 2025");
+    expect(html).toContain("Ra mắt bản thử nghiệm Alpha");
+    expect(html).toContain("Q3 2025");
+    expect(html).toContain("Phát hành phiên bản chính thức");
+
+    // chart-bars assertions
+    expect(html).toContain('data-layout="chart-bars"');
+    expect(html).toContain('class="layout-chart-bars"');
+    expect(html).toContain("So sánh hiệu năng chip");
+    expect(html).toContain("M4 Max");
+    expect(html).toContain("95 Điểm");
+    expect(html).toContain('data-width="95"');
+    expect(html).toContain("M3 Max");
+    expect(html).toContain("75 Điểm");
+    expect(html).toContain('data-width="75"');
+  });
 });

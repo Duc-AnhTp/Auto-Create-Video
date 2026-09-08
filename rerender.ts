@@ -32,13 +32,19 @@ async function main() {
     process.exit(2);
   }
 
-  const cfg = loadConfig();
+  const cfg = loadConfig({ validateProvider: false });
   console.log(`Re-rendering: ${outputDir}`);
 
   // Load script.json
   const raw = JSON.parse(await readFile(join(outputDir, "script.json"), "utf8"));
+  if (raw.voice && !raw.voice.provider) {
+    raw.voice.provider = cfg.ttsProvider;
+  }
   if (raw.voice?.voiceId === "${VIETNAMESE_VOICEID}" || raw.voice?.voiceId === "${VOICE_ID}") {
-    raw.voice.voiceId = cfg.ttsProvider === "lucylab" ? cfg.lucylabVoiceId! : cfg.elevenlabsVoiceId!;
+    const isEleven = raw.voice?.provider === "elevenlabs";
+    raw.voice.voiceId = isEleven
+      ? (cfg.elevenlabsVoiceId || process.env.ELEVENLABS_VOICE_ID || "default-voice")
+      : (cfg.lucylabVoiceId || process.env.VIETNAMESE_VOICEID || "default-voice");
   }
   const script = ScriptSchema.parse(raw);
 
@@ -117,6 +123,37 @@ async function main() {
   const ttAvatarOut = join(outputDir, ttAvatarFile);
   // Always re-copy in case bundled was updated
   await copyFile(bundledAvatar, ttAvatarOut);
+
+  // Build imageMap from script.images and existing files in outputDir/images
+  const imageMap = new Map<string, string>();
+  if (script.images && script.images.length > 0) {
+    for (const img of script.images) {
+      for (const ext of ["jpg", "jpeg", "png", "webp", "gif", "avif"]) {
+        const file = `${img.id}.${ext}`;
+        if (existsSync(join(outputDir, "images", file))) {
+          imageMap.set(img.id, `images/${file}`);
+          break;
+        }
+      }
+    }
+  }
+
+  // Resolve "$images.<id>" and "$source.image" in scene templateData
+  for (const scene of script.scenes) {
+    const td = scene.templateData as Record<string, unknown>;
+    if (typeof td.imageSrc === "string" && td.imageSrc.startsWith("$images.")) {
+      const imageId = td.imageSrc.slice("$images.".length);
+      const relPath = imageMap.get(imageId);
+      if (relPath) {
+        td.imageSrc = relPath;
+      } else {
+        delete td.imageSrc;
+      }
+    }
+    if (td.bgSrc === "$source.image") {
+      td.bgSrc = bgImageRelPath || undefined;
+    }
+  }
 
   // Compose HTML
   const html = composeHtml({

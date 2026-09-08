@@ -121,10 +121,10 @@ html, body {
 .bg { position: absolute; inset: 0; background-size: cover; background-position: center; z-index: 1; }
 
 /* Ken Burns */
-.bg.kb-zoom-in    { animation: kb-zoom-in    var(--scene-dur) linear forwards; }
-.bg.kb-zoom-out   { animation: kb-zoom-out   var(--scene-dur) linear forwards; }
-.bg.kb-pan-left   { animation: kb-pan-left   var(--scene-dur) linear forwards; }
-.bg.kb-pan-right  { animation: kb-pan-right  var(--scene-dur) linear forwards; }
+.bg.kb-zoom-in, .split-image-top.kb-zoom-in    { animation: kb-zoom-in    var(--scene-dur, 8s) linear forwards; }
+.bg.kb-zoom-out, .split-image-top.kb-zoom-out   { animation: kb-zoom-out   var(--scene-dur, 8s) linear forwards; }
+.bg.kb-pan-left, .split-image-top.kb-pan-left   { animation: kb-pan-left   var(--scene-dur, 8s) linear forwards; }
+.bg.kb-pan-right, .split-image-top.kb-pan-right  { animation: kb-pan-right  var(--scene-dur, 8s) linear forwards; }
 
 @keyframes kb-zoom-in   { from { transform: scale(1.0); } to { transform: scale(1.18); } }
 @keyframes kb-zoom-out  { from { transform: scale(1.18); } to { transform: scale(1.0); } }
@@ -430,8 +430,109 @@ html, body {
   opacity: 0;
 }
 
+/* ── LAYOUT: IMAGE-CARD ──────────────────────────────────────── */
+/* Full-frame background image with caption overlay at bottom */
+.layout-image-card {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  padding: 80px 80px 320px;
+  text-align: center;
+}
+
+.imgcard-caption {
+  font-family: 'Inter', sans-serif;
+  font-size: 72px; font-weight: 700;
+  color: #fff; line-height: 1.2;
+  text-shadow: 0 4px 40px rgba(0,0,0,0.8);
+  opacity: 0;
+}
+
+.imgcard-subcaption {
+  font-family: 'Inter', sans-serif;
+  font-size: 44px; font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  text-shadow: 0 2px 20px rgba(0,0,0,0.6);
+  margin-top: 20px;
+  opacity: 0;
+}
+
+/* ── LAYOUT: SPLIT-IMAGE ─────────────────────────────────────── */
+/* Top half: image, bottom half: glass card with text */
+.split-image-top {
+  position: absolute; top: 0; left: 0; width: 100%; height: 55%;
+  background-size: cover; background-position: center;
+  z-index: 1;
+}
+
+.layout-split-image {
+  position: absolute; bottom: 0; left: 0; width: 100%; height: 50%;
+  z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  padding: 40px 60px 300px;
+}
+
+.split-card {
+  width: 100%;
+  padding: 60px 70px;
+  border: 1px solid rgba(255,255,255,0.12);
+  opacity: 0;
+}
+
+.split-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 56px; font-weight: 700;
+  color: #22d3ee; line-height: 1.2;
+  margin-bottom: 28px;
+}
+
+.split-body {
+  font-family: 'Inter', sans-serif;
+  font-size: 44px; font-weight: 500;
+  color: rgba(255,255,255,0.9);
+  line-height: 1.4;
+}
+
+/* ── LAYOUT: TEXT-REVEAL ─────────────────────────────────────── */
+/* Large text lines revealed one by one */
+.layout-text-reveal {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 220px 80px 300px;
+  gap: 40px;
+  text-align: center;
+}
+
+.reveal-line {
+  font-family: 'Inter', sans-serif;
+  font-size: 72px; font-weight: 700;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.2;
+  opacity: 0;
+}
+
+.reveal-line.reveal-emphasis {
+  font-size: 84px; font-weight: 800;
+  color: #22d3ee;
+  text-shadow: 0 0 60px rgba(34,211,238,0.4);
+}
+
+/* ── ADDITIONAL GRADIENT BACKGROUNDS ─────────────────────────── */
+.bg.gradient-deep-blue  { background: linear-gradient(135deg, #0c1445 0%, #1a237e 100%); }
+.bg.gradient-warm-dark  { background: linear-gradient(135deg, #1a0a00 0%, #2d1810 100%); }
+.bg.gradient-tech-green { background: linear-gradient(135deg, #0a1a0f 0%, #1b3a2a 100%); }
+.bg.gradient-purple     { background: linear-gradient(135deg, #1a0a2e 0%, #2d1045 100%); }
+
+/* ── PARALLAX DEPTH — subtle content motion on image scenes ──── */
+/* Applied by animations.js to create visual depth separation between
+   background image (Ken Burns) and foreground content (opposite drift). */
+.parallax-content {
+  will-change: transform;
+}
+
 /* ── FX OVERLAYS ────────────────────────────────────────────── */
-.fx { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 10; }
+.fx { position: absolute; inset: 0; pointer-events: none; opacity: 0; z-index: 90; }
 .fx.flash-white-3f     { background: #fff; }
 .fx.particle-burst     { background: radial-gradient(circle at center, rgba(34,211,238,0.9) 0%, transparent 60%); }
 .fx.color-flash-accent { background: rgba(168,85,247,0.4); }
@@ -506,3 +607,263 @@ html, body {
 
 .tt-check-icon { display: inline-block; width: 22px; height: 22px; }
 .tt-check-icon svg { width: 22px; height: 22px; display: block; }
+
+/* ── LAYOUT: QUOTE CARD ──────────────────────────────────────── */
+.layout-quote-card {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: center;
+  padding: 220px 80px 300px;
+}
+
+.quote-card-box {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.75);
+  border: 2px solid rgba(56, 189, 248, 0.4);
+  border-radius: 28px;
+  padding: 70px 60px;
+  box-shadow: 0 0 60px rgba(56, 189, 248, 0.15);
+  position: relative;
+  opacity: 0;
+}
+
+.quote-mark {
+  font-family: 'Anton', 'Bebas Neue', sans-serif;
+  font-size: 140px;
+  color: #38bdf8;
+  line-height: 0.6;
+  margin-bottom: 20px;
+  opacity: 0.8;
+}
+
+.quote-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 48px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.45;
+  margin-bottom: 40px;
+  font-style: italic;
+}
+
+.quote-author-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  padding-top: 30px;
+}
+
+.quote-avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #38bdf8;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+}
+
+.quote-avatar-placeholder {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0284c7, #38bdf8);
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 42px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+}
+
+.quote-author-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.quote-author {
+  font-family: 'Inter', sans-serif;
+  font-size: 38px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.quote-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 28px;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
+/* ── LAYOUT: TIMELINE ────────────────────────────────────────── */
+.layout-timeline {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column;
+  justify-content: center;
+  padding: 220px 80px 300px;
+  gap: 40px;
+}
+
+.timeline-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 56px;
+  font-weight: 800;
+  color: #38bdf8;
+  text-align: center;
+  opacity: 0;
+}
+
+.timeline-track {
+  position: relative;
+  width: 100%;
+  padding-left: 50px;
+}
+
+.timeline-line {
+  position: absolute;
+  left: 20px;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  background: linear-gradient(180deg, #38bdf8, #a855f7);
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.6);
+  opacity: 0;
+}
+
+.timeline-items {
+  display: flex;
+  flex-direction: column;
+  gap: 45px;
+}
+
+.timeline-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 30px;
+  opacity: 0;
+}
+
+.timeline-dot {
+  position: absolute;
+  left: -38px;
+  top: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #22d3ee;
+  border: 3px solid #0f172a;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.9);
+}
+
+.timeline-content {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 24px 32px;
+  width: 100%;
+}
+
+.timeline-time {
+  font-family: 'Inter', sans-serif;
+  font-size: 32px;
+  font-weight: 800;
+  color: #38bdf8;
+  margin-bottom: 6px;
+}
+
+.timeline-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 40px;
+  font-weight: 500;
+  color: #f1f5f9;
+  line-height: 1.35;
+}
+
+/* ── LAYOUT: CHART BARS ──────────────────────────────────────── */
+.layout-chart-bars {
+  position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column;
+  justify-content: center;
+  padding: 220px 80px 300px;
+  gap: 48px;
+}
+
+.chart-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 56px;
+  font-weight: 800;
+  color: #ffffff;
+  text-align: center;
+  opacity: 0;
+}
+
+.chart-box {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 50px 45px;
+  opacity: 0;
+}
+
+.chart-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  opacity: 0;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.chart-label {
+  font-family: 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.chart-display-val {
+  font-family: 'Anton', 'Bebas Neue', sans-serif;
+  font-size: 48px;
+  font-weight: 700;
+  color: #38bdf8;
+  letter-spacing: 0.03em;
+}
+
+.chart-bar-bg {
+  width: 100%;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.chart-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 12px;
+}
+
+.chart-bar-fill.color-cyan {
+  background: linear-gradient(90deg, #0284c7, #38bdf8);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+}
+
+.chart-bar-fill.color-purple {
+  background: linear-gradient(90deg, #7c3aed, #c084fc);
+  box-shadow: 0 0 20px rgba(192, 132, 252, 0.5);
+}
+
+.chart-bar-fill.color-emerald {
+  background: linear-gradient(90deg, #059669, #34d399);
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.5);
+}

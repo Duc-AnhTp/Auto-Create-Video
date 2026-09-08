@@ -11,3 +11,8 @@ debug-lucylab.ts
 
 # Big SFX library (downloaded by `npm run sfx:download` — too large to commit)
 SFX/
+
+# Local databases and test review output
+*.db
+*.sqlite
+test-output-review/

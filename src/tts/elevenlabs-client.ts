@@ -7,6 +7,7 @@ export interface ElevenLabsOpts {
   voiceId: string;
   modelId: string;       // e.g. "eleven_multilingual_v2", "eleven_turbo_v2_5"
   endpoint: string;      // e.g. "https://api.elevenlabs.io/v1"
+  speed?: number;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -47,6 +48,7 @@ export class ElevenLabsClient implements TtsClient {
               similarity_boost: 0.75,
               style: 0.0,
               use_speaker_boost: true,
+              ...(this.cfg.speed !== undefined ? { speed: this.cfg.speed } : {}),
             },
           },
           {

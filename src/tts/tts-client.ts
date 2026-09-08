@@ -17,7 +17,7 @@ import type { Config } from "../config.js";
 import { LucylabClient } from "./lucylab-client.js";
 import { ElevenLabsClient } from "./elevenlabs-client.js";
 
-export function createTtsClient(cfg: Config): TtsClient {
+export function createTtsClient(cfg: Config, options?: { speed?: number }): TtsClient {
   switch (cfg.ttsProvider) {
     case "lucylab":
       return new LucylabClient({
@@ -26,6 +26,7 @@ export function createTtsClient(cfg: Config): TtsClient {
         endpoint: cfg.lucylabEndpoint,
         pollIntervalMs: cfg.lucylabPollIntervalMs,
         pollTimeoutMs: cfg.lucylabPollTimeoutMs,
+        speed: options?.speed,
       });
     case "elevenlabs":
       return new ElevenLabsClient({
@@ -33,6 +34,7 @@ export function createTtsClient(cfg: Config): TtsClient {
         voiceId: cfg.elevenlabsVoiceId!,
         modelId: cfg.elevenlabsModelId,
         endpoint: cfg.elevenlabsEndpoint,
+        speed: options?.speed,
       });
     default: {
       const _never: never = cfg.ttsProvider;

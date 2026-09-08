@@ -12,7 +12,7 @@ import { processImage, guessExtFromUrl } from "./assets/image-processor.js";
 import { getDurationSec, concatWithSilence, mixSfxOntoVoice, mixBgmWithDucking, type SfxMixSpec } from "./assets/audio-tools.js";
 import { indexSfxLibrary, pickSfxForScene, defaultPlayback } from "./assets/sfx-selector.js";
 import { existsSync } from "node:fs";
-import { composeHtml } from "./render/html-composer.js";
+import { composeHtml, resolveSceneImageRefs } from "./render/html-composer.js";
 import { renderWithHyperframes } from "./render/hyperframes-runner.js";
 import { log } from "./utils/logger.js";
 
@@ -65,7 +65,12 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
   // If provider option was provided via CLI, override in raw
   if (options.provider) {
     if (!raw.voice) {
-      raw.voice = { provider: options.provider };
+      const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+      if (!defaultVoiceId) {
+        const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+        throw new Error(`--provider ${options.provider} used, but ${varName} is not configured in environment or .env`);
+      }
+      raw.voice = { provider: options.provider, voiceId: defaultVoiceId, speed: 1.0 };
     } else {
       raw.voice.provider = options.provider;
     }
@@ -80,8 +85,22 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
     raw.voice.provider = effectiveProvider;
   }
 
+  // If voice object exists but voiceId is missing, populate with provider default
+  if (raw.voice && !raw.voice.voiceId) {
+    const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+    if (!defaultVoiceId) {
+      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      throw new Error(`Voice ID is missing in script.json and ${varName} is not configured in environment or .env`);
+    }
+    raw.voice.voiceId = defaultVoiceId;
+  }
+
   // Substitute env placeholder before validation (works for both providers)
-  if (raw.voice?.voiceId === "${VIETNAMESE_VOICEID}" || raw.voice?.voiceId === "${VOICE_ID}") {
+  if (
+    raw.voice?.voiceId === "${VIETNAMESE_VOICEID}" ||
+    raw.voice?.voiceId === "${ELEVENLABS_VOICE_ID}" ||
+    raw.voice?.voiceId === "${VOICE_ID}"
+  ) {
     const resolvedVoiceId = effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId;
     if (!resolvedVoiceId) {
       const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
@@ -93,13 +112,13 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
 
   // Fallback default voice if script.voice was omitted
   if (!script.voice) {
-    const defaultVoiceId = (cfg.ttsProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+    const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
     if (!defaultVoiceId) {
-      const varName = cfg.ttsProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
       throw new Error(`script.voice was omitted and ${varName} is not set in environment or config`);
     }
     script.voice = {
-      provider: cfg.ttsProvider,
+      provider: effectiveProvider,
       voiceId: defaultVoiceId,
       speed: 1.0,
     };
@@ -114,13 +133,13 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
 
   // Ensure voice is populated after review
   if (!script.voice) {
-    const defaultVoiceId = (cfg.ttsProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+    const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
     if (!defaultVoiceId) {
-      const varName = cfg.ttsProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
       throw new Error(`script.voice was omitted and ${varName} is not set in environment or config`);
     }
     script.voice = {
-      provider: cfg.ttsProvider,
+      provider: effectiveProvider,
       voiceId: defaultVoiceId,
       speed: 1.0,
     };
@@ -271,23 +290,12 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
   }
 
   // Resolve "$images.<id>" references in scene templateData
-  for (const scene of script.scenes) {
-    const td = scene.templateData as Record<string, unknown>;
-    if (typeof td.imageSrc === "string" && td.imageSrc.startsWith("$images.")) {
-      const imageId = td.imageSrc.slice("$images.".length);
-      const relPath = imageMap.get(imageId);
-      if (relPath) {
-        td.imageSrc = relPath;
-      } else {
-        log.warn(`  scene ${scene.id}: image ref "${imageId}" not found, removing imageSrc`);
-        delete td.imageSrc;
-      }
-    }
-    // Resolve hook bgSrc: "$source.image" → actual bg image path
-    if (td.bgSrc === "$source.image") {
-      td.bgSrc = bgImageRelPath || undefined;
-    }
-  }
+  resolveSceneImageRefs(
+    script.scenes,
+    imageMap,
+    bgImageRelPath,
+    (sceneId, imageId) => log.warn(`  scene ${sceneId}: image ref "${imageId}" not found, removing imageSrc`)
+  );
 
   // STEP 5
   log.step(5, TOTAL_STEPS, "Concat voice scenes + mix SFX layer");

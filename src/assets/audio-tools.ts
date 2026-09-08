@@ -236,7 +236,7 @@ export async function mixBgmWithDucking(
   const fadeStart = Math.max(0, totalDur - fadeOutSec);
 
   const filterGraph = [
-    `[1:a]aloop=loop=-1:size=2e+09,atrim=0:${totalDur.toFixed(2)},aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,volume=${bgmVolume},afade=t=out:st=${fadeStart.toFixed(2)}:d=${fadeOutSec.toFixed(2)}[bgm_base]`,
+    `[1:a]atrim=0:${totalDur.toFixed(2)},aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,volume=${bgmVolume},afade=t=out:st=${fadeStart.toFixed(2)}:d=${fadeOutSec.toFixed(2)}[bgm_base]`,
     `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono[voice]`,
     `[bgm_base][voice]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=80:release=350[ducked_bgm]`,
     `[voice][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]`,
@@ -245,6 +245,7 @@ export async function mixBgmWithDucking(
   await run("ffmpeg", [
     "-y",
     "-i", voicePath,
+    "-stream_loop", "-1",
     "-i", bgmPath,
     "-filter_complex", filterGraph,
     "-map", "[out]",

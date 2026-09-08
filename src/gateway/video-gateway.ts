@@ -14,7 +14,9 @@ export type BackendProvider =
   | "api_wan"
   | "api_ltx"
   | "api_kling"
-  | "api_seedance";
+  | "api_runway"
+  | "api_seedance"
+  | "mock";
 
 export interface ShotExecutionSpec {
   shotId: string;
@@ -22,6 +24,7 @@ export interface ShotExecutionSpec {
   priority: "hero" | "standard";
   durationSec: number;
   prompt: string;
+  aspectRatio?: "9:16" | "16:9";
   loras?: Array<{ path: string; weight: number }>;
   referenceImage?: string;
   firstFrameCondition?: string; // used for autoregressive I2V extension
@@ -48,9 +51,11 @@ export interface VideoProviderAdapter {
 // ── Provider Pricing Table ($ per second of generated video) ─────────────────
 export const PROVIDER_RATES_PER_SEC: Record<BackendProvider, number> = {
   local_comfyui: 0.0,    // Self-hosted, $0 compute cost
+  mock: 0.0,             // Mock simulator, $0 cost
   api_wan: 0.08,         // Hosted Wan 2.2 API
   api_ltx: 0.12,         // Hosted LTX-2.5 (audio+video unified)
-  api_kling: 0.10,       // Kling 1.5
+  api_kling: 0.10,       // Kling 1.5/2.0
+  api_runway: 0.15,      // Runway Gen-3 Alpha Turbo
   api_seedance: 0.09,    // Seaweed / Seedance
 };
 
@@ -198,22 +203,22 @@ export class VideoModelGateway {
     let delay = this.pollIntervalMs;
 
     while (Date.now() - startTime < this.pollTimeoutMs) {
+      let status: VideoJobStatus;
       try {
-        const status = await adapter.pollStatus(jobId);
-        if (status.status === "completed") {
-          cb.recordSuccess();
-          this.currentSpendUsd += estimatedCost;
-          return status;
-        }
-        if (status.status === "failed") {
-          cb.recordFailure();
-          throw new Error(`Job ${jobId} failed on provider ${backend}: ${status.error || "unknown error"}`);
-        }
+        status = await adapter.pollStatus(jobId);
       } catch (err: any) {
-        if (err.name !== "Error") {
-          cb.recordFailure();
-        }
+        cb.recordFailure();
         throw err;
+      }
+
+      if (status.status === "completed") {
+        cb.recordSuccess();
+        this.currentSpendUsd += estimatedCost;
+        return status;
+      }
+      if (status.status === "failed") {
+        cb.recordFailure();
+        throw new Error(`Job ${jobId} failed on provider ${backend}: ${status.error || "unknown error"}`);
       }
 
       await new Promise((resolve) => setTimeout(resolve, delay));

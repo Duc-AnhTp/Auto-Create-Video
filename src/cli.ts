@@ -1,19 +1,32 @@
 #!/usr/bin/env node
 import { config } from "dotenv";
 config({ path: ".env.local" });
+config({ path: ".env" });
 
 import { runPipeline, type PipelineOptions } from "./pipeline.js";
 import { type TtsProvider } from "./config.js";
+import { runSeriesCli } from "./series/series-cli.js";
 import { log } from "./utils/logger.js";
 
 function printUsage(): void {
   console.log(`
-🎬 Auto News Video CLI
+🎬 Auto News Video & Episodic Film Series CLI
 
-Usage:
+Usage (Single Video Pipeline):
   npm run pipeline -- <path/to/script.json> [options]
 
-Options:
+Usage (Episodic AI Film Series Engine):
+  npx tsx src/cli.ts series:<command> [options]
+
+Series Commands:
+  series:init         Initialize new AI Film Series metadata and visual style
+  series:character    Register character with face anchor, voice & wardrobe
+  series:location     Register recurring world locations & atmospheric rules
+  series:prop         Register special canon props ("không được quên")
+  series:episode      Produce episode from raw screenplay text (8-step pipeline)
+  series:status       Show Story Bible report & multi-episode history
+
+Pipeline Options:
   -r, --review        Launch interactive Web Review Dashboard before rendering
   -d, --draft         Fast render at 15 FPS with draft quality (speeds up testing)
       --skip-render   Run audio generation and HTML composition without rendering MP4
@@ -25,14 +38,18 @@ Options:
 
 Examples:
   npm run pipeline -- output/my-video/script.json --review
-  npm run pipeline -- output/my-video/script.json --draft
-  npm run pipeline -- output/my-video/script.json --skip-render
-  npm run pipeline -- output/my-video/script.json --force-tts --provider elevenlabs
+  npx tsx src/cli.ts series:init --series "cyber-saigon" --title "Sài Gòn 2088"
+  npx tsx src/cli.ts series:episode --series "cyber-saigon" --script "scripts/ep1.txt" --dry-run
 `);
 }
 
 async function main() {
   const args = process.argv.slice(2);
+
+  if (args.length > 0 && args[0].startsWith("series:")) {
+    await runSeriesCli(args);
+    return;
+  }
 
   if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
     printUsage();

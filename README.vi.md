@@ -62,6 +62,27 @@ Việc tạo video tin tức ngắn rất **tốn thời gian và lặp đi lặ
 
 ---
 
+## 🎬 MỚI: Hệ Thống Làm Phim Dài Tập Bằng AI (Episodic AI Film Series)
+
+Chuyển đổi kịch bản văn bản thô thành phim dài tập (mặc định 9:16 Shorts/TikTok hoặc 16:9) với **bộ nhớ Canon vĩnh viễn lưu trong SQLite** — **hoàn toàn không bị quên ngữ cảnh từ các tập trước**:
+
+- **🔒 Bộ Nhớ Cốt Truyện Bền Vững (Story Bible SQLite)**: Nhớ các vết thương, sẹo, bí mật nhân vật, quyền sở hữu đạo cụ và trạng thái thế giới qua tất cả các tập.
+- **👤 Nhất Quán Khuôn Mặt & Face QA**: Image-to-Video conditioning khóa diện mạo kết hợp kiểm định ArcFace Cosine Similarity chống biến dạng mặt.
+- **👗 Giữ Nguyên Trang Phục & Bối Cảnh**: Quản lý trang phục nhân vật và quy tắc ánh sáng của các địa điểm xuất hiện lại.
+- **🎙️ Đa Giọng Thoại Nhân Vật**: Phân vai từng nhân vật theo giọng riêng (ElevenLabs / LucyLab) với chuẩn hóa phát âm tiếng Việt và BGM auto-ducking.
+- **⚡ AI Video Gateway**: Hỗ trợ **Kling AI**, **Runway Gen-3**, **Local ComfyUI / Wan 2.2**, và chế độ **Mock** thử nghiệm không tốn chi phí.
+
+```bash
+# Khởi tạo series
+npm run series -- series:init --series "cyber-saigon" --title "Sài Gòn 2088" --style "Cinematic 35mm, cyberpunk"
+
+# Sản xuất tập phim từ kịch bản text thô
+npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-ep1.txt" --dry-run
+```
+👉 Xem hướng dẫn chi tiết: [**docs/EPISODIC_SERIES_GUIDE.md**](docs/EPISODIC_SERIES_GUIDE.md)
+
+---
+
 ## 🚀 Bắt Đầu Nhanh
 
 ```bash

@@ -1,0 +1,14 @@
+TẬP 1: BẢN HỢP ĐỒNG BÓNG ĐÊM
+Logline: Thám tử Minh bí mật bàn giao Con Chip Lượng Tử cho hacker An tại quán Bar Hẻm 9, trước khi phát hiện sát thủ đang ập tới.
+
+CẢNH 1: QUÁN BAR HẺM 9 - ĐÊM
+Nhân vật: Minh, An
+Đạo cụ: Con Chip Lượng Tử
+
+CÚ MÁY 1 (establishing, 4s): Khung cảnh hẻm tối Sài Gòn 2088 ngập tràn ánh đèn neon đỏ và xanh mờ ảo dưới màn mưa lất phất.
+CÚ MÁY 2 (medium, 4s): Minh ngồi trong góc khuất của quán Bar Hẻm 9, ánh mắt cảnh giác nhìn ra cửa, tay cầm chiếc hộp kim loại.
+MINH: Cầm lấy con chip này. Bọn chúng đã lần theo tín hiệu đến tận đây rồi.
+CÚ MÁY 3 (close_up, 4s): An mở chiếc hộp nhỏ, ánh sáng xanh ngọc từ con chip vi xử lý lượng tử phản chiếu vào mắt.
+AN: Chip mã hóa 5 lớp... Tôi sẽ cần ít nhất 3 giờ để giải mã toàn bộ dữ liệu.
+CÚ MÁY 4 (action, 3s): Đột nhiên tiếng bước chân dồn dập vang lên từ cầu thang, bóng đen sát thủ xuất hiện sau tấm rèm.
+MINH: Cửa sau! Đi mau!

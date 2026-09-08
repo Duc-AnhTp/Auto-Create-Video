@@ -3,6 +3,7 @@
    Dark Navy + Cyan + Purple palette — HeyGen-quality professional look
    ============================================================ */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Anton&family=Bebas+Neue&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700&display=block');
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -540,7 +541,6 @@ html, body {
 /* ── TIKTOK FOLLOW CARD (outro overlay) ──────────────────────────────────
    Adapted from HyperFrames hyperframes:block tiktok-follow.
    Card slides up from bottom during outro scene. */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700&display=block');
 
 .tt-card {
   position: absolute;

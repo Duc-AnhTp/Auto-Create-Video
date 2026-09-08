@@ -258,5 +258,51 @@ describe("Continuity Auditor Engine (Phân Hệ I - Anti-Narrative Drift)", () =
       expect(result.audit_status).toBe("PASS");
       expect(result.thought_process).toContain("Custom LLM invoker ran successfully");
     });
+
+    it("matches Vietnamese character names with initial diacritics like 'Đ'", async () => {
+      const vnBible: StoryBiblePayload = {
+        characters: [
+          {
+            id: "char_duc_anh",
+            name: "Đức Anh",
+            role: "supporting",
+            visual_summary: "Đức Anh, 30 tuổi",
+            personality_traits: ["thật thà"],
+            status: "deceased",
+          },
+        ],
+        character_knowledge: [],
+        world_state: {},
+        episode_summaries: [],
+      };
+
+      const script = "CẢNH 1: Hôm nay Đức Anh bất ngờ xuất hiện giữa quảng trường.";
+      const result = await auditor.auditScript(2, vnBible, script);
+      expect(result.audit_status).toBe("FAIL");
+      expect(result.contradictions.some((c) => c.description.includes("Đức Anh"))).toBe(true);
+    });
+
+    it("handles character names with regex metacharacters like parentheses without crashing", async () => {
+      const specialBible: StoryBiblePayload = {
+        characters: [
+          {
+            id: "char_special",
+            name: "Dr. Strange (Earth-616)",
+            role: "supporting",
+            visual_summary: "Phù thủy tối thượng",
+            personality_traits: ["quyền năng"],
+            status: "deceased",
+          },
+        ],
+        character_knowledge: [],
+        world_state: {},
+        episode_summaries: [],
+      };
+
+      const script = "CẢNH 1: Dr. Strange (Earth-616) mở cổng không gian bước ra.";
+      const result = await auditor.auditScript(2, specialBible, script);
+      expect(result.audit_status).toBe("FAIL");
+      expect(result.contradictions.some((c) => c.description.includes("Dr. Strange (Earth-616)"))).toBe(true);
+    });
   });
 });

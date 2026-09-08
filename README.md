@@ -62,6 +62,27 @@ Creating short-form news videos is **time-consuming and repetitive**:
 
 ---
 
+## 🎬 NEW: Episodic AI Film Series Engine (Làm Phim Dài Tập Bằng AI)
+
+Turn raw text screenplays into multi-episode film series with **permanent SQLite Canon Memory** — ensuring 100% cross-episode consistency for art style, character faces, wardrobes, recurring locations, and key props:
+
+- **🔒 Permanent Canon Memory (Story Bible SQLite)**: Remembers character injuries, scars, secret knowledge, and world state across all episodes.
+- **👤 Face Consistency & Face QA**: Image-to-Video conditioning with ArcFace cosine similarity check against anchor portraits.
+- **👗 Wardrobe & Location Continuity**: Tracks character costumes and recurring environment atmospheres.
+- **🎙️ Multi-Character Voice Acting**: Dedicated voice routing per role (ElevenLabs / LucyLab) with Vietnamese phonetic normalization and BGM auto-ducking.
+- **⚡ AI Video Gateway**: Native adapters for **Kling AI**, **Runway Gen-3**, **Local ComfyUI / Wan 2.2**, and zero-cost **Mock** testing.
+
+```bash
+# Initialize series
+npm run series -- series:init --series "cyber-saigon" --title "Sài Gòn 2088" --style "Cinematic 35mm, cyberpunk"
+
+# Produce episode from raw screenplay text
+npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-ep1.txt" --dry-run
+```
+👉 See complete guide: [**docs/EPISODIC_SERIES_GUIDE.md**](docs/EPISODIC_SERIES_GUIDE.md)
+
+---
+
 ## 🚀 Quick Start
 
 ```bash

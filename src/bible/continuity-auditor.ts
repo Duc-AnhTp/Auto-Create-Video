@@ -191,6 +191,23 @@ export function parseAuditResponse(
 /**
  * Continuity Auditor Service
  */
+/**
+ * Escapes regex special characters in user/character strings.
+ */
+export function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Builds a Unicode-aware word-boundary regex for character names.
+ * Standard \b treats accented characters (e.g. 'Đ', 'À') as non-word chars,
+ * failing word boundary checks when preceded or followed by whitespace.
+ */
+export function buildCharacterNameRegex(name: string, suffixPattern = ""): RegExp {
+  const escaped = escapeRegex(name);
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])${suffixPattern}`, "iu");
+}
+
 export class ContinuityAuditor {
   private llmInvoker?: LlmInvoker;
   private promptTemplate?: string;
@@ -240,7 +257,7 @@ export class ContinuityAuditor {
     // Check 1: Deceased or missing characters acting without flashback
     for (const char of bible.characters) {
       if (char.status === "deceased" || char.status === "missing") {
-        const regex = new RegExp(`\\b${char.name}\\b`, "i");
+        const regex = buildCharacterNameRegex(char.name);
         if (regex.test(draftScript)) {
           const isFlashback =
             draftScript.toLowerCase().includes("[hồi tưởng]") ||
@@ -268,7 +285,7 @@ export class ContinuityAuditor {
     // Check 2: Injured character performing high intensity action without medical treatment
     for (const char of bible.characters) {
       if (char.status === "injured") {
-        const regex = new RegExp(`\\b${char.name}\\b.*(chạy|rượt đuổi|chiến đấu|leo trèo)`, "i");
+        const regex = buildCharacterNameRegex(char.name, ".*(chạy|rượt đuổi|chiến đấu|leo trèo)");
         if (regex.test(draftScript)) {
           contradictions.push({
             severity: "critical",
@@ -294,7 +311,7 @@ export class ContinuityAuditor {
 
       // Example canonical secret fact: "knows_killer_identity"
       if (!knownKeys.includes("knows_killer_identity")) {
-        const leakRegex = new RegExp(`\\b${char.name}\\b.*(kẻ sát nhân chính là|thủ phạm là|tên giết người là)`, "i");
+        const leakRegex = buildCharacterNameRegex(char.name, ".*(kẻ sát nhân chính là|thủ phạm là|tên giết người là)");
         if (leakRegex.test(draftScript)) {
           contradictions.push({
             severity: "critical",

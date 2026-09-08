@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { composeHtml } from "./html-composer.js";
+import { composeHtml, resolveSceneImageRefs } from "./html-composer.js";
 import type { Script } from "./script-schema.js";
 
 describe("composeHtml", () => {
@@ -206,5 +206,50 @@ describe("composeHtml", () => {
     expect(html).toContain("M3 Max");
     expect(html).toContain("75 Điểm");
     expect(html).toContain('data-width="75"');
+  });
+});
+
+describe("resolveSceneImageRefs", () => {
+  it("resolves $images.<id> and $source.image references correctly", () => {
+    const scenes = [
+      {
+        id: "hook",
+        templateData: {
+          template: "hook",
+          bgSrc: "$source.image",
+        },
+      },
+      {
+        id: "scene-img",
+        templateData: {
+          template: "image-card",
+          imageSrc: "$images.phone_pic",
+        },
+      },
+      {
+        id: "scene-missing",
+        templateData: {
+          template: "image-card",
+          imageSrc: "$images.missing_pic",
+        },
+      },
+    ];
+
+    const imageMap = new Map<string, string>([
+      ["phone_pic", "images/phone_pic.jpg"],
+    ]);
+
+    const missingWarnings: string[] = [];
+    resolveSceneImageRefs(
+      scenes,
+      imageMap,
+      "images/bg.jpg",
+      (sceneId, imageId) => missingWarnings.push(`${sceneId}:${imageId}`)
+    );
+
+    expect(scenes[0].templateData.bgSrc).toBe("images/bg.jpg");
+    expect(scenes[1].templateData.imageSrc).toBe("images/phone_pic.jpg");
+    expect(scenes[2].templateData.imageSrc).toBeUndefined();
+    expect(missingWarnings).toEqual(["scene-missing:missing_pic"]);
   });
 });

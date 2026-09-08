@@ -311,7 +311,10 @@ function renderDashboardHtml(script: Script, scriptPath: string): string {
       document.getElementById('meta-scene-count').innerText = scriptData.scenes.length + ' cảnh';
 
       // Estimate duration: ~3 words per second + scene gaps
-      const totalWords = scriptData.scenes.reduce((acc, s) => acc + s.voiceText.trim().split(/\\s+/).length, 0);
+      const totalWords = scriptData.scenes.reduce((acc, s) => {
+        const text = (s.voiceText || '').trim();
+        return acc + (text ? text.split(/\\s+/).length : 0);
+      }, 0);
       const estSec = Math.round(totalWords / 2.8) + (scriptData.scenes.length * 0.3);
       document.getElementById('meta-estimated-dur').innerText = '~' + estSec + ' giây (' + totalWords + ' từ)';
     }

@@ -30,6 +30,17 @@ describe("Face Similarity & ArcFace QA Evaluator (Phân Hệ IV)", () => {
     expect(cal.meanSame).toBeGreaterThan(cal.meanDiff);
   });
 
+  it("handles edge case targetFar <= 0 without producing NaN", () => {
+    const sameScores = [0.80];
+    const diffScores = [0.30];
+
+    const calZero = calibrateThresholds(sameScores, diffScores, 0);
+    expect(Number.isNaN(calZero.tPass)).toBe(false);
+    expect(Number.isNaN(calZero.tWarn)).toBe(false);
+    expect(calZero.tPass).toBeGreaterThanOrEqual(0.65);
+    expect(calZero.tWarn).toBeGreaterThanOrEqual(0.50);
+  });
+
   it("classifies high-confidence shots as PASS", () => {
     const evaluator = new FaceQaEvaluator({ tPass: 0.80, tWarn: 0.68 });
     const ref = [1, 0, 0];

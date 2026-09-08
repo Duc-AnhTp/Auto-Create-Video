@@ -106,25 +106,29 @@ export function buildCrossfadeStitchFilter(
   }
 
   // Calculate cumulative crossfade offsets
-  let filter = "";
+  const filterSteps: string[] = [];
   let lastStream = "[0:v]";
-  let currentOffset = clipDurations[0] - crossfadeSec;
+  let currentOffset = Math.max(0, clipDurations[0] - crossfadeSec);
 
   for (let i = 1; i < clipPaths.length; i++) {
     const nextStream = `[${i}:v]`;
     const outStream = i === clipPaths.length - 1 ? "[vout]" : `[v${i}]`;
-    filter += `${lastStream}${nextStream}xfade=transition=fade:duration=${crossfadeSec}:offset=${currentOffset.toFixed(2)}${outStream};`;
+    filterSteps.push(
+      `${lastStream}${nextStream}xfade=transition=fade:duration=${crossfadeSec}:offset=${currentOffset.toFixed(2)}${outStream}`
+    );
     lastStream = outStream;
     if (i < clipPaths.length - 1) {
-      currentOffset += clipDurations[i] - crossfadeSec;
+      currentOffset += Math.max(0, clipDurations[i] - crossfadeSec);
     }
   }
 
-  const totalOutputDuration =
-    clipDurations.reduce((acc, d) => acc + d, 0) - (clipPaths.length - 1) * crossfadeSec;
+  const totalOutputDuration = Math.max(
+    0,
+    clipDurations.reduce((acc, d) => acc + d, 0) - (clipPaths.length - 1) * crossfadeSec
+  );
 
   return {
-    filterComplex: filter,
+    filterComplex: filterSteps.join(";"),
     totalOutputDuration: Math.round(totalOutputDuration * 100) / 100,
   };
 }

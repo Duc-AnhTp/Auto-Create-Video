@@ -65,12 +65,20 @@ export function calibrateThresholds(
   const sortedSame = [...sameScores].sort((a, b) => a - b);
 
   // tPass: threshold where <= targetFar of different characters are accepted
-  const farIndex = Math.floor(sortedDiff.length * (1 - targetFar));
-  const tPass = Math.min(Math.max(sortedDiff[farIndex], 0.65), 0.90);
+  const farIndex = Math.min(
+    Math.max(0, Math.floor(sortedDiff.length * (1 - targetFar))),
+    sortedDiff.length - 1
+  );
+  const diffVal = sortedDiff[farIndex] ?? 0.65;
+  const tPass = Math.min(Math.max(diffVal, 0.65), 0.90);
 
   // tWarn: 10th percentile of same-character scores (catches borderline poses)
-  const warnIndex = Math.floor(sortedSame.length * 0.10);
-  const tWarn = Math.min(Math.max(sortedSame[warnIndex], 0.50), tPass - 0.05);
+  const warnIndex = Math.min(
+    Math.max(0, Math.floor(sortedSame.length * 0.10)),
+    sortedSame.length - 1
+  );
+  const sameVal = sortedSame[warnIndex] ?? 0.50;
+  const tWarn = Math.min(Math.max(sameVal, 0.50), tPass - 0.05);
 
   const meanSame = sameScores.reduce((a, b) => a + b, 0) / sameScores.length;
   const meanDiff = diffScores.reduce((a, b) => a + b, 0) / diffScores.length;

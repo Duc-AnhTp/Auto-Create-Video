@@ -49,12 +49,22 @@ describe("Shot Chaining & Autoregressive Frame Extension", () => {
     expect(args).toContain("frame_last.png");
   });
 
-  it("generates crossfade stitch filter with correct timing offsets", () => {
+  it("generates crossfade stitch filter with correct timing offsets and no trailing semicolon", () => {
     const clips = ["sub1.mp4", "sub2.mp4"];
     const durations = [5.0, 3.5];
     const { filterComplex, totalOutputDuration } = buildCrossfadeStitchFilter(clips, durations, 0.1);
 
     expect(filterComplex).toContain("xfade=transition=fade:duration=0.1:offset=4.90[vout]");
+    expect(filterComplex.endsWith(";")).toBe(false);
     expect(totalOutputDuration).toBeCloseTo(8.40);
+  });
+
+  it("handles short clips without negative offsets", () => {
+    const clips = ["short1.mp4", "short2.mp4"];
+    const durations = [0.05, 1.0]; // first clip shorter than crossfadeSec
+    const { filterComplex } = buildCrossfadeStitchFilter(clips, durations, 0.1);
+
+    expect(filterComplex).toContain("offset=0.00[vout]");
+    expect(filterComplex.endsWith(";")).toBe(false);
   });
 });

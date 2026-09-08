@@ -60,4 +60,20 @@ describe.skipIf(!hasFfmpeg)("mixBgmWithDucking", () => {
     expect(d).toBeGreaterThan(1.8);
     expect(d).toBeLessThan(2.3);
   });
+
+  it("loops BGM seamlessly when voice track is longer than BGM", async () => {
+    const out = join(tmp, "voice-longer-than-bgm.mp3");
+    // sample-audio-2 (~3s) as voice, sample-audio-1 (~2s) as BGM -> triggers stream loop
+    await mixBgmWithDucking(
+      "tests/fixtures/sample-audio-2.mp3",
+      "tests/fixtures/sample-audio-1.mp3",
+      out,
+      { bgmVolume: 0.20, duckRatio: 6 }
+    );
+    expect(existsSync(out)).toBe(true);
+    const d = await getDurationSec(out);
+    // Output duration should match sample-audio-2 length (~3s)
+    expect(d).toBeGreaterThan(2.8);
+    expect(d).toBeLessThan(3.4);
+  });
 });

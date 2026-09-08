@@ -4,14 +4,14 @@
 // Usage: npx tsx rerender.ts <outputDir>
 
 import { readFile, writeFile, copyFile } from "node:fs/promises";
-import { join, dirname, basename } from "node:path";
+import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ScriptSchema } from "./src/render/script-schema.js";
 import { loadConfig } from "./src/config.js";
-import { getDurationSec, concatWithSilence, mixSfxOntoVoice, type SfxMixSpec } from "./src/assets/audio-tools.js";
+import { getDurationSec, concatWithSilence, mixSfxOntoVoice, mixBgmWithDucking, type SfxMixSpec } from "./src/assets/audio-tools.js";
 import { indexSfxLibrary, pickSfxForScene, defaultPlayback } from "./src/assets/sfx-selector.js";
 import { existsSync } from "node:fs";
-import { composeHtml } from "./src/render/html-composer.js";
+import { composeHtml, resolveSceneImageRefs } from "./src/render/html-composer.js";
 import { renderWithHyperframes } from "./src/render/hyperframes-runner.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -100,6 +100,31 @@ async function main() {
   console.log(`mixing ${sfxList.length} SFX into voice.mp3`);
   await mixSfxOntoVoice(voiceRawMp3, sfxList, voiceMp3);
 
+  // Mix optional Background Music (BGM) with smart dynamic auto-ducking
+  const bgmCandidate = (script as any).bgm;
+  if (bgmCandidate && bgmCandidate !== "none") {
+    let resolvedBgmPath: string | null = null;
+    const directPath = resolve(outputDir, bgmCandidate);
+    const assetPath = join(__dirname, "assets", "bgm", bgmCandidate.endsWith(".mp3") ? bgmCandidate : `${bgmCandidate}.mp3`);
+    if (existsSync(directPath)) {
+      resolvedBgmPath = directPath;
+    } else if (existsSync(assetPath)) {
+      resolvedBgmPath = assetPath;
+    } else if (existsSync(bgmCandidate)) {
+      resolvedBgmPath = bgmCandidate;
+    }
+
+    if (resolvedBgmPath) {
+      console.log(`  BGM detected: ${basename(resolvedBgmPath)} -> applying smart auto-ducking`);
+      const voiceWithBgm = join(outputDir, "voice-ducked.mp3");
+      await mixBgmWithDucking(voiceMp3, resolvedBgmPath, voiceWithBgm);
+      await copyFile(voiceWithBgm, voiceMp3);
+      console.log(`  BGM mixed successfully into voice.mp3 with auto-ducking`);
+    } else {
+      console.warn(`  BGM requested "${bgmCandidate}" but file was not found. Proceeding without BGM.`);
+    }
+  }
+
   const totalDur = await getDurationSec(voiceMp3);
   console.log(`voice.mp3 total: ${totalDur.toFixed(2)}s`);
 
@@ -139,21 +164,7 @@ async function main() {
   }
 
   // Resolve "$images.<id>" and "$source.image" in scene templateData
-  for (const scene of script.scenes) {
-    const td = scene.templateData as Record<string, unknown>;
-    if (typeof td.imageSrc === "string" && td.imageSrc.startsWith("$images.")) {
-      const imageId = td.imageSrc.slice("$images.".length);
-      const relPath = imageMap.get(imageId);
-      if (relPath) {
-        td.imageSrc = relPath;
-      } else {
-        delete td.imageSrc;
-      }
-    }
-    if (td.bgSrc === "$source.image") {
-      td.bgSrc = bgImageRelPath || undefined;
-    }
-  }
+  resolveSceneImageRefs(script.scenes, imageMap, bgImageRelPath);
 
   // Compose HTML
   const html = composeHtml({

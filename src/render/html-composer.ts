@@ -36,6 +36,36 @@ export interface ComposeArgs {
   outroHoldSec?: number;
 }
 
+/**
+ * Resolves "$images.<id>" references and "$source.image" bgSrc in scene templateData.
+ * Mutates templateData in place to point to the actual relative paths on disk.
+ */
+export function resolveSceneImageRefs(
+  scenes: Array<{ id: string; templateData: unknown }>,
+  imageMap: Map<string, string>,
+  bgImageRelPath: string | null,
+  onMissingRef?: (sceneId: string, imageId: string) => void,
+): void {
+  for (const scene of scenes) {
+    const td = scene.templateData as Record<string, unknown>;
+    if (typeof td.imageSrc === "string" && td.imageSrc.startsWith("$images.")) {
+      const imageId = td.imageSrc.slice("$images.".length);
+      const relPath = imageMap.get(imageId);
+      if (relPath) {
+        td.imageSrc = relPath;
+      } else {
+        if (onMissingRef) {
+          onMissingRef(scene.id, imageId);
+        }
+        delete td.imageSrc;
+      }
+    }
+    if (td.bgSrc === "$source.image") {
+      td.bgSrc = bgImageRelPath || undefined;
+    }
+  }
+}
+
 export function composeHtml(args: ComposeArgs): string {
   const { script, sceneAudio, gapSec, bgImageRelPath, audioRelPath } = args;
   const tiktok = args.tiktok ?? DEFAULT_TIKTOK;

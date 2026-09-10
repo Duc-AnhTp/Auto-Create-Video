@@ -1,5 +1,7 @@
 import axios from "axios";
 import type { VideoProviderAdapter, ShotExecutionSpec, VideoJobStatus } from "../video-gateway.js";
+import { resolveImageToDataUriOrUrl } from "../asset-resolver.js";
+import { PROVIDER_CAPABILITY_REGISTRY, type ProviderCapabilities } from "../provider-capabilities.js";
 
 export interface RunwayAdapterConfig {
   apiKey?: string;
@@ -12,6 +14,7 @@ export interface RunwayAdapterConfig {
  */
 export class RunwayAdapter implements VideoProviderAdapter {
   public providerName = "api_runway" as const;
+  public capabilities: ProviderCapabilities = PROVIDER_CAPABILITY_REGISTRY.api_runway;
   private apiKey: string;
   private baseUrl: string;
 
@@ -25,18 +28,23 @@ export class RunwayAdapter implements VideoProviderAdapter {
       throw new Error("RUNWAY_API_KEY is not configured in environment or config");
     }
 
+    // Runway Gen-3 Alpha Turbo strictly supports 5s or 10s
+    const durationNum = spec.durationSec >= 8 ? 10 : 5;
+
     const payload: Record<string, unknown> = {
       promptText: spec.prompt,
       model: "gen3a_turbo",
-      duration: Math.min(10, Math.max(5, Math.round(spec.durationSec))),
-      ratio: spec.aspectRatio === "16:9" ? "16:9" : "768:1280", // 9:16 format in Runway
+      duration: durationNum,
+      ratio: spec.aspectRatio === "16:9" ? "1280:768" : "768:1280", // Runway Gen-3 format
     };
 
-    if (spec.referenceImage) {
-      payload.promptImage = spec.referenceImage;
+    if (spec.seed !== undefined && spec.seed > 0) {
+      payload.seed = Math.floor(spec.seed);
     }
-    if (spec.firstFrameCondition) {
-      payload.promptImage = spec.firstFrameCondition;
+
+    const resolvedImage = await resolveImageToDataUriOrUrl(spec.referenceImage || spec.firstFrameCondition);
+    if (resolvedImage) {
+      payload.promptImage = resolvedImage;
     }
 
     const response = await axios.post(`${this.baseUrl}/v1/image_to_video`, payload, {

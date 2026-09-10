@@ -376,6 +376,21 @@ function normalizeSymbols(text: string): string {
 }
 
 /**
+ * Normalizes numbers accompanied by common time/counter units (e.g. "3 phút" -> "ba phút", "10 giây" -> "mười giây").
+ */
+function normalizeTimeAndCounterUnits(text: string): string {
+  const units = "phút|giờ|giây|ngày|tháng|năm|tiếng|lần|bước|lớp|đoạn|cảnh";
+  const regex = new RegExp(`\\b(\\d+)\\s*(${units})\\b`, "gi");
+  return text.replace(regex, (_match, numStr, unitStr) => {
+    const n = parseInt(numStr, 10);
+    if (!isNaN(n)) {
+      return `${integerToVietnamese(n)} ${unitStr}`;
+    }
+    return _match;
+  });
+}
+
+/**
  * Applies Tech Lexicon dictionary replacements
  */
 function applyTechLexicon(text: string): string {
@@ -409,6 +424,9 @@ export function normalizeVietnameseForTts(text: string): string {
 
   // Step 5: Decimal & version numbers (GPT 5.5, iOS 18.2)
   result = normalizeDecimalsAndVersions(result);
+
+  // Step 5.5: Time and counter units ("3 phút" -> "ba phút", "30 giây" -> "ba mươi giây")
+  result = normalizeTimeAndCounterUnits(result);
 
   // Step 6: Clean symbols
   result = normalizeSymbols(result);

@@ -41,6 +41,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
 
     const shotMinh: Shot = {
       shotId: "sh01",
+      shotType: "medium",
       durationSec: 4.0,
       visualPrompt: "Minh nói chuyện",
       dialogue: {
@@ -57,6 +58,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
 
     const shotAn: Shot = {
       shotId: "sh02",
+      shotType: "medium",
       durationSec: 3.0,
       visualPrompt: "An trả lời",
       dialogue: {
@@ -74,6 +76,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
     // Narrator
     const shotNarrator: Shot = {
       shotId: "sh03",
+      shotType: "medium",
       durationSec: 4.0,
       visualPrompt: "Khung cảnh đêm",
       dialogue: {
@@ -109,6 +112,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
           shots: [
             {
               shotId: "sc01_sh01",
+              shotType: "medium",
               durationSec: 4.0,
               visualPrompt: "Minh đứng ở quầy bar",
               dialogue: {

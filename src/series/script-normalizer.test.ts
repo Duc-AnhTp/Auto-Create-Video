@@ -137,7 +137,7 @@ THOẠI: Minh: Đã quá muộn rồi.
     const intermediate = parseRawScreenplay(rawText);
     const enriched = enrichWithBibleContext(intermediate, bible);
 
-    expect(enriched.version).toBe("2.0");
+    expect(enriched.schemaVersion).toBe("3.0");
     expect(enriched.aspectRatio).toBe("9:16");
     expect(enriched.scenes.length).toBe(1);
 

@@ -62,22 +62,52 @@ Creating short-form news videos is **time-consuming and repetitive**:
 
 ---
 
-## 🎬 NEW: Episodic AI Film Series Engine (Làm Phim Dài Tập Bằng AI)
+## 🎬 Episodic AI Film Series Engine (Làm Phim Dài Tập Bằng AI)
 
-Turn raw text screenplays into multi-episode film series with **permanent SQLite Canon Memory** — ensuring 100% cross-episode consistency for art style, character faces, wardrobes, recurring locations, and key props:
+Turn raw text screenplays into structured multi-episode film series with **permanent SQLite Canon Memory** and **Hierarchical Film Assembly**.
 
-- **🔒 Permanent Canon Memory (Story Bible SQLite)**: Remembers character injuries, scars, secret knowledge, and world state across all episodes.
-- **👤 Face Consistency & Face QA**: Image-to-Video conditioning with ArcFace cosine similarity check against anchor portraits.
-- **👗 Wardrobe & Location Continuity**: Tracks character costumes and recurring environment atmospheres.
-- **🎙️ Multi-Character Voice Acting**: Dedicated voice routing per role (ElevenLabs / LucyLab) with Vietnamese phonetic normalization and BGM auto-ducking.
-- **⚡ AI Video Gateway**: Native adapters for **Kling AI**, **Runway Gen-3**, **Local ComfyUI / Wan 2.2**, and zero-cost **Mock** testing.
+### 📊 Capability Classification & Verification Matrix
+
+To ensure transparency and engineering rigor, all capabilities are strictly classified into three maturity tiers:
+
+#### ✅ 1. Operational & Validated (Production Ready)
+- **Hierarchical Scene-to-Episode Assembly**: Two-level rendering architecture (Scene stitching → Episode Master assembly). Solves command line length limits and RAM spikes by bounding concurrent video decodes.
+- **Scene Content Hash Caching**: Deterministic SHA-256 caching of scene inputs (approved take IDs, trim ranges, transitions). Skips re-rendering unchanged scenes on subsequent runs.
+- **Explicit Cut vs. Transition Engine**: Defaults to frame-accurate direct cuts (zero frame loss); applies crossfade (`xfade`) and `trimStartSec`/`trimEndSec` only when explicitly specified.
+- **Full Delivery Package**:
+  - Master Video (`master.mp4`) with synchronized audio.
+  - Subtitles in standard SubRip (`subtitles.srt`) and WebVTT (`subtitles.vtt`).
+  - 4 Isolated Audio Stems: Dialogue (`stem-dialogue.wav`), SFX (`stem-sfx.wav`), Ambience (`stem-ambience.wav`), Ducked BGM (`stem-bgm.wav`) + Mix (`master-audio.wav`).
+  - 1:1 Assembly Manifest (`assembly-manifest.json`).
+- **NLE Timeline Interchange (FCP7 XML & OTIO)**: Exports standard `timeline.xml` (xmeml v4 for DaVinci Resolve & Premiere Pro) and `timeline.otio` (OpenTimelineIO JSON). *Note: XML schema and OTIO structures have been programmatically validated; direct GUI import has not been verified on headless CI.*
+- **Automated Assembly QA Verifier**: Scans for missing files, corrupt containers (`ffprobe`), black frame anomalies (`blackdetect`), and audio/video duration drift (`driftSec <= 0.1s`).
+- **Resilient Job Orchestration & 4-State Budget Ledger**: SQLite persistence (`provider_jobs`), automatic polling resumption without duplicate submits on restart, `uncertain_timeout` handling, and multi-worker atomic budget reservations (`Budget Cap`).
+- **Permanent Story Bible Canon**: Versioned SQLite memory tracking character status, wardrobe, key prop possession transfers, and automated script continuity auditing (`ContinuityAuditor`).
+
+#### 🧪 2. Experimental (Beta / Under Active Iteration)
+- **Visual Face QA Multi-frame Embedding**: ArcFace Cosine Similarity checks across multiple video sample frames against visual anchors with automated bounded re-roll loops.
+- **Autoregressive Shot Extension (Chaining)**: Multi-pass frame continuation using real FFmpeg last-frame extraction (`extractLastFrame`) for shots exceeding provider duration limits.
+- **Provider Circuit Breaker FSM**: 3-state circuit breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) with exponential backoff and jitter.
+
+#### ⚠️ 3. Unsupported / Known Limitations (Roadmap)
+- **Phonetic Lip-Sync Movement**: Audio dialogue cues are frame-accurately anchored to shot timecodes (`startSec`), but acoustic lip-motion generation (e.g., Wav2Lip / SadTalker) is **not yet supported**. Characters' lips do not morph to match spoken phonemes.
+- **"100% Absolute Visual Consistency"**: Generative video diffusion models inherently exhibit stochastic variance. Consistency is managed through Story Bible conditioning, reference anchors, and QA rejection gates — not through deterministic guarantees.
+- **Headless GUI Import Testing**: NLE XML/OTIO interchange files are verified for schema and well-formedness, but have not been tested via GUI automation inside DaVinci Resolve Studio or Adobe Premiere Pro.
 
 ```bash
-# Initialize series
+# Initialize series & register assets
 npm run series -- series:init --series "cyber-saigon" --title "Sài Gòn 2088" --style "Cinematic 35mm, cyberpunk"
 
-# Produce episode from raw screenplay text
-npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-ep1.txt" --dry-run
+# Produce episode from raw screenplay text (Offline simulation or real provider)
+npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-pilot-2min.txt" --dry-run
+
+# Resume from interruption or reroll a single shot
+npm run series -- series:resume --series "cyber-saigon" --episode 1
+npm run series -- series:reroll --series "cyber-saigon" --episode 1 --shot "sc1_sh2"
+
+# Inspect 4-state budget ledger and active jobs
+npm run series -- series:budget --series "cyber-saigon"
+npm run series -- series:jobs --series "cyber-saigon"
 ```
 👉 See complete guide: [**docs/EPISODIC_SERIES_GUIDE.md**](docs/EPISODIC_SERIES_GUIDE.md)
 

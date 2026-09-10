@@ -38,6 +38,8 @@ export interface ContinuityAuditResult {
   contradictions: ContradictionReport[];
   audit_status: "PASS" | "WARN" | "FAIL";
   summary: string;
+  audit_scope: "deterministic_rule_based" | "llm_semantic";
+  disclaimer: string;
 }
 
 export interface StoryBiblePayload {
@@ -185,6 +187,9 @@ export function parseAuditResponse(
     contradictions,
     audit_status: calculatedStatus,
     summary: String(parsed.summary || (calculatedStatus === "PASS" ? "Kịch bản nhất quán." : "Phát hiện mâu thuẫn.")),
+    audit_scope: "llm_semantic",
+    disclaimer:
+      "Kiểm tra ngữ nghĩa qua mô hình ngôn ngữ lớn (LLM). Kết quả phụ thuộc vào prompt và khả năng suy luận ngữ cảnh của model.",
   };
 }
 
@@ -285,8 +290,17 @@ export class ContinuityAuditor {
     // Check 2: Injured character performing high intensity action without medical treatment
     for (const char of bible.characters) {
       if (char.status === "injured") {
-        const regex = buildCharacterNameRegex(char.name, ".*(chạy|rượt đuổi|chiến đấu|leo trèo)");
-        if (regex.test(draftScript)) {
+        const namePattern = buildCharacterNameRegex(char.name);
+        const actionPattern = /(?:chạy|rượt đuổi|chiến đấu|leo trèo|nhảy qua|đánh nhau)/iu;
+        const scriptLines = draftScript.split(/\r?\n/);
+        let foundLine = "";
+        for (const l of scriptLines) {
+          if (namePattern.test(l) && actionPattern.test(l)) {
+            foundLine = l.trim();
+            break;
+          }
+        }
+        if (foundLine) {
           contradictions.push({
             severity: "critical",
             type: "character_status",
@@ -295,7 +309,7 @@ export class ContinuityAuditor {
             script_location: {
               scene_number: 1,
               shot_id: null,
-              line_quote: `Hành động thể lực mạnh của ${char.name}.`,
+              line_quote: foundLine || `Hành động thể lực mạnh của ${char.name}.`,
             },
             recommended_fix: `Thêm phân cảnh điều trị hoặc giảm cường độ vận động của ${char.name}.`,
           });
@@ -343,6 +357,9 @@ export class ContinuityAuditor {
       contradictions,
       audit_status,
       summary,
+      audit_scope: "deterministic_rule_based",
+      disclaimer:
+        "Kiểm tra quy tắc từ khóa cục bộ tĩnh (rule-based pre-scan). Không coi kiểm tra từ khóa là bảo đảm 100% logic ngữ nghĩa cốt truyện.",
     };
   }
 }

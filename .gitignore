@@ -14,5 +14,7 @@ SFX/
 
 # Local databases and test review output
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 test-output-review/

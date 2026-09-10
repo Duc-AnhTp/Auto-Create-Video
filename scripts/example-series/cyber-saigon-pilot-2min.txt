@@ -1,0 +1,65 @@
+TẬP 1: BẢN HỢP ĐỒNG BÓNG ĐÊM (PILOT 2-3 PHÚT)
+Logline: Thám tử Minh bí mật bàn giao Con Chip Lượng Tử cho hacker An tại quán Bar Hẻm 9, trước khi phối hợp cùng nữ điệp viên Linh trốn thoát qua các tầng kiến trúc ngầm của Sài Gòn 2088.
+
+CẢNH 1: QUÁN BAR HẺM 9 - ĐÊM
+Nhân vật: Minh, An
+Đạo cụ: Chip Lượng Tử
+CÚ MÁY 1 (establishing, 5s): Toàn cảnh Hẻm 9 Sài Gòn 2088 rực rỡ bảng hiệu neon phản chiếu trên vũng nước mưa axit lấp lánh.
+CÚ MÁY 2 (wide, 4s): Quán bar ngầm u tối với khói thuốc mờ ảo và tiếng nhạc điện tử synthwave dồn dập.
+CÚ MÁY 3 (medium, 4s): Minh ngồi trong góc khuất, áo khoác da sờn rách, ánh mắt cảnh giác nhìn ra cửa ra vào.
+MINH: Cầm lấy con chip này. Bọn tập đoàn đã lần theo dấu vết đến tận khu vực này rồi.
+CÚ MÁY 4 (close_up, 4s): An mở chiếc hộp hợp kim titanium, ánh sáng xanh lục từ vi mạch lượng tử hắt lên khuôn mặt sắc sảo.
+AN: Thuật toán bảo mật lượng tử 5 lớp. Tôi cần ít nhất ba mươi phút tại trạm phát để bẻ khóa.
+CÚ MÁY 5 (medium, 5s): Minh đẩy chiếc vali nhỏ sang cho An, đồng thời kiểm tra lại khẩu súng năng lượng giấu bên hông.
+MINH: Cô không có ba mươi phút đâu. Thiết bị quét sinh trắc học của chúng đã kích hoạt ngoài hẻm.
+CÚ MÁY 6 (action, 4s): Cánh cửa quán bar bị đạp tung, hai robot vệ binh tập đoàn cầm vũ khí laser ập vào.
+CÚ MÁY 7 (close_up, 5s): Minh rút vũ khí bắn tia xung điện làm nổ tung bóng đèn trần, cả căn phòng chìm vào bóng tối.
+MINH: Đi theo lối thoát hiểm sau bếp! Nhanh lên!
+CÚ MÁY 8 (action, 5s): An ôm chặt chiếc hộp dữ liệu, lao qua cánh cửa sắt phía sau quầy pha chế trong làn khói mù mịt.
+
+CẢNH 2: KHU Ổ CHUỘT LƠ LỬNG QUẬN 4 - ĐÊM
+Nhân vật: Minh, An, Linh
+Đạo cụ: Chip Lượng Tử
+CÚ MÁY 1 (establishing, 5s): Những khối nhà container chồng tầng lơ lửng trên không trung Quận 4 nối nhau bằng cầu treo rung rinh.
+CÚ MÁY 2 (medium, 4s): Mưa đêm xối xả trút xuống mái tôn gỉ sét khi Minh và An chạy thục mạng qua cây cầu sắt hẹp.
+CÚ MÁY 3 (action, 5s): Một drone trinh sát bay vút tới rọi đèn pha cực mạnh vào hai người từ trên cao.
+AN: Chúng ta bị khóa mục tiêu rồi! Cây cầu phía trước đang bị cắt đứt!
+CÚ MÁY 4 (close_up, 4s): Linh xuất hiện từ bóng tối của chiếc container treo, tay cầm thiết bị gây nhiễu điện từ.
+LINH: Bên này! Nhảy qua gờ chắn container ngay!
+CÚ MÁY 5 (action, 4s): Minh tóm lấy tay An, cả hai tung người nhảy qua khoảng không giữa hai khối container cao tầng.
+CÚ MÁY 6 (medium, 5s): Linh bấm nút kích hoạt xung EMP làm tê liệt chiếc drone săn đuổi, nó bốc khói rơi xuống vực sâu.
+LINH: Các người mang theo thứ gì mà khiến lực lượng tinh nhuệ của tập đoàn phải lật tung cả thành phố vậy?
+CÚ MÁY 7 (close_up, 4s): An giữ chặt túi ngực, thở dốc nhìn Linh với ánh mắt thận trọng nhưng biết ơn.
+AN: Chìa khóa tự do cho toàn bộ cư dân thế giới ngầm.
+CÚ MÁY 8 (wide, 5s): Ba người nép mình sau hàng rào sắt khi đoàn xe tuần tra bay lướt qua bên dưới tầng mây mù.
+
+CẢNH 3: TRẠM DỮ LIỆU TỔNG SKYLINE - ĐÊM
+Nhân vật: Minh, An, Linh
+Đạo cụ: Chip Lượng Tử
+CÚ MÁY 1 (establishing, 5s): Tòa tháp dữ liệu Skyline sừng sững giữa bầu trời đêm với hàng triệu dòng code laser chạy dọc mặt kính.
+CÚ MÁY 2 (medium, 4s): Căn phòng máy chủ trung tâm phát ra tiếng vo ve trầm thấp, sàn kính phản chiếu bầu trời sấm sét.
+CÚ MÁY 3 (close_up, 4s): Linh cắm dây cáp thần kinh vào cổng kết nối máy chủ, ngón tay lướt thoăn thoắt trên bàn phím ảo.
+LINH: Tôi đã mở được tường lửa ngoài. An, đưa con chip vào ổ tiếp nhận dữ liệu chính.
+CÚ MÁY 4 (close_up, 5s): Bàn tay An run nhẹ khi đặt con chip lượng tử vào khe cắm phát quang, các vòng kim loại xoay khóa chặt.
+AN: Quá trình truyền tải bắt đầu. Ba mươi giây đếm ngược để phát tán bản cáo trạng ra toàn mạng.
+CÚ MÁY 5 (medium, 4s): Minh đứng canh bên hành lang kính, nạp thanh năng lượng cuối cùng vào súng phòng thủ.
+MINH: Cứ tập trung giải mã. Cánh cửa này tôi sẽ giữ bằng mọi giá.
+CÚ MÁY 6 (action, 5s): Đội đặc nhiệm đột kích phá vỡ cửa kính chịu lực, đạn pháo sáng rực bay qua phòng máy chủ.
+CÚ MÁY 7 (action, 4s): Minh nổ súng đánh chặn đẩy lùi đợt tiến công đầu tiên trong làn khói bạc mù mịt.
+MINH: Xong chưa An? Tôi không cầm cự thêm được lâu đâu!
+CÚ MÁY 8 (close_up, 5s): Màn hình ba chiều chuyển từ màu đỏ sang màu xanh ngọc với thông báo hoàn tất 100%.
+AN: Đã phát tán thành công! Mọi bí mật đen tối của tập đoàn đã xuất hiện trên mọi màn hình của thành phố!
+
+CẢNH 4: CẦU MỐNG CỔ - RẠNG ĐÔNG
+Nhân vật: Minh, An
+CÚ MÁY 1 (establishing, 5s): Bình minh đầu tiên ló dạng trên sông Sài Gòn, ánh nắng vàng nhạt xua tan dần màn sương khói độc hại.
+CÚ MÁY 2 (wide, 4s): Cây Cầu Mống Cổ đứng trầm mặc nối liền hai bờ sông, phía xa những tòa tháp hologram bắt đầu tắt bớt đèn.
+CÚ MÁY 3 (medium, 4s): Minh và An đứng tựa vào lan can cầu, khuôn mặt lấm lem bụi khói nhưng ánh mắt tràn đầy hy vọng.
+CÚ MÁY 4 (close_up, 4s): An nhìn xuống dòng nước lấp lánh phản chiếu những tia nắng rạng đông đầu ngày.
+AN: Chúng ta đã làm được. Thành phố này từ hôm nay sẽ không còn như trước nữa.
+CÚ MÁY 5 (medium, 5s): Minh mỉm cười nhẹ, cởi bỏ chiếc băng gạc trên cánh tay bị thương và hít một hơi thở sâu.
+MINH: Cuộc chiến thực sự chỉ mới bắt đầu thôi. Họ sẽ không để yên đâu.
+CÚ MÁY 6 (close_up, 4s): An quay sang nhìn Minh với nụ cười kiên định, gió sớm thổi tung mái tóc ngắn cá tính.
+AN: Nhưng ít nhất lần này, người dân đã có vũ khí trong tay.
+CÚ MÁY 7 (medium, 4s): Cả hai cùng bước đi về phía đại lộ đang bừng tỉnh trong ánh sáng bình minh ấm áp.
+CÚ MÁY 8 (wide, 6s): Khung cảnh góc máy bay lùi dần ra xa, toàn cảnh Sài Gòn 2088 tráng lệ vươn mình đón chào một kỷ nguyên mới.

@@ -1,3 +1,28 @@
+import axios from "axios";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile, copyFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { log } from "../utils/logger.js";
+import { downloadVideoSafely, probeVideoFile, type VideoProbeInfo } from "../media/media-validator.js";
+import {
+  type ProviderCapabilities,
+  type ImageInputProtocol,
+  PROVIDER_CAPABILITY_REGISTRY,
+  CapabilityMismatchError,
+  validateSpecAgainstCapabilities,
+} from "./provider-capabilities.js";
+
+export {
+  downloadVideoSafely,
+  probeVideoFile,
+  type VideoProbeInfo,
+  type ProviderCapabilities,
+  type ImageInputProtocol,
+  PROVIDER_CAPABILITY_REGISTRY,
+  CapabilityMismatchError,
+  validateSpecAgainstCapabilities,
+};
+
 /**
  * Model API Gateway (Phân Hệ VI)
  *
@@ -16,11 +41,13 @@ export type BackendProvider =
   | "api_kling"
   | "api_runway"
   | "api_seedance"
+  | "api_veo"
   | "mock";
 
 export interface ShotExecutionSpec {
   shotId: string;
   backend: BackendProvider;
+  fallbackProviders?: BackendProvider[];
   priority: "hero" | "standard";
   durationSec: number;
   prompt: string;
@@ -30,6 +57,7 @@ export interface ShotExecutionSpec {
   firstFrameCondition?: string; // used for autoregressive I2V extension
   seed?: number;
   metadata?: Record<string, unknown>;
+  destinationLocalPath?: string;
 }
 
 export interface VideoJobStatus {
@@ -43,6 +71,7 @@ export interface VideoJobStatus {
 
 export interface VideoProviderAdapter {
   providerName: BackendProvider;
+  capabilities: ProviderCapabilities;
   submitJob(spec: ShotExecutionSpec): Promise<{ jobId: string }>;
   pollStatus(jobId: string): Promise<VideoJobStatus>;
   cancelJob?(jobId: string): Promise<void>;
@@ -54,9 +83,10 @@ export const PROVIDER_RATES_PER_SEC: Record<BackendProvider, number> = {
   mock: 0.0,             // Mock simulator, $0 cost
   api_wan: 0.08,         // Hosted Wan 2.2 API
   api_ltx: 0.12,         // Hosted LTX-2.5 (audio+video unified)
-  api_kling: 0.10,       // Kling 1.5/2.0
+  api_kling: 0.12,       // Kling 1.5/2.0/3.0
   api_runway: 0.15,      // Runway Gen-3 Alpha Turbo
-  api_seedance: 0.09,    // Seaweed / Seedance
+  api_seedance: 0.09,    // Seaweed / Seedance 2.0
+  api_veo: 0.20,         // Google DeepMind Veo 3.1
 };
 
 export class CircuitBreakerOpenError extends Error {
@@ -119,6 +149,8 @@ export interface GatewayConfig {
   defaultHeroBackend?: BackendProvider;
   pollIntervalMs?: number;
   pollTimeoutMs?: number;
+  fallbackChain?: BackendProvider[];
+  enableFailover?: boolean;
 }
 
 export class VideoModelGateway {
@@ -128,11 +160,15 @@ export class VideoModelGateway {
   private maxBudgetUsd: number;
   private pollIntervalMs: number;
   private pollTimeoutMs: number;
+  private fallbackChain: BackendProvider[];
+  private enableFailover: boolean;
 
   constructor(config: GatewayConfig = {}) {
     this.maxBudgetUsd = config.maxBudgetUsd ?? 25.0; // Default $25 cap per episode run
     this.pollIntervalMs = config.pollIntervalMs ?? 1500;
     this.pollTimeoutMs = config.pollTimeoutMs ?? 120000; // 2 min max per shot
+    this.fallbackChain = config.fallbackChain || [];
+    this.enableFailover = config.enableFailover ?? true;
   }
 
   public registerAdapter(adapter: VideoProviderAdapter): void {
@@ -150,26 +186,81 @@ export class VideoModelGateway {
     this.currentSpendUsd = 0;
   }
 
-  /**
-   * Routes a shot spec using the hybrid strategy:
-   * - standard priority -> local_comfyui
-   * - hero priority -> specified cloud API backend
-   */
-  public selectBackend(spec: ShotExecutionSpec): BackendProvider {
-    if (spec.backend) return spec.backend;
-    return spec.priority === "hero" ? "api_wan" : "local_comfyui";
+  public getAvailableProviders(): BackendProvider[] {
+    return Array.from(this.adapters.keys());
+  }
+
+  public getAdapter(provider: BackendProvider): VideoProviderAdapter | undefined {
+    return this.adapters.get(provider);
   }
 
   /**
-   * Executes a shot end-to-end:
-   * 1. Check budget cap
-   * 2. Check circuit breaker
-   * 3. Submit job
-   * 4. Poll until completed or failed
-   * 5. Log cost and return result
+   * Routes a shot spec using the hybrid strategy:
+   * - standard priority -> local_comfyui (or mock if local not registered)
+   * - hero priority -> registered cloud API backend (api_runway or api_kling)
    */
-  public async executeShot(spec: ShotExecutionSpec): Promise<VideoJobStatus> {
-    const backend = this.selectBackend(spec);
+  public selectBackend(spec: ShotExecutionSpec): BackendProvider {
+    if (spec.backend) return spec.backend;
+    if (spec.priority === "hero") {
+      if (this.adapters.has("api_veo")) return "api_veo";
+      if (this.adapters.has("api_kling")) return "api_kling";
+      if (this.adapters.has("api_runway")) return "api_runway";
+      if (this.adapters.has("api_seedance")) return "api_seedance";
+    }
+    return this.adapters.has("local_comfyui") ? "local_comfyui" : "mock";
+  }
+
+  /**
+   * Executes a shot with automatic failover support across fallback providers.
+   */
+  public async executeShot(spec: ShotExecutionSpec, destinationPath?: string): Promise<VideoJobStatus> {
+    const primaryBackend = this.selectBackend(spec);
+    const candidateBackends: BackendProvider[] = [primaryBackend];
+
+    if (this.enableFailover) {
+      const extraFallbacks = spec.fallbackProviders || this.fallbackChain;
+      for (const fb of extraFallbacks) {
+        if (!candidateBackends.includes(fb) && this.adapters.has(fb)) {
+          candidateBackends.push(fb);
+        }
+      }
+    }
+
+    let lastError: Error | null = null;
+
+    for (let i = 0; i < candidateBackends.length; i++) {
+      const backend = candidateBackends[i];
+      const hasNext = i < candidateBackends.length - 1;
+
+      try {
+        return await this.executeOnSingleBackend(backend, spec, destinationPath);
+      } catch (err: any) {
+        lastError = err;
+        // Budget cap exceeded must fail immediately across all providers
+        if (err instanceof BudgetExceededError) {
+          throw err;
+        }
+
+        if (hasNext) {
+          const nextBackend = candidateBackends[i + 1];
+          log.warn(
+            `[GATEWAY FAILOVER] Provider '${backend}' thất bại cho shot [${spec.shotId}]: ${err.message}. Đang tự động chuyển đổi sang provider dự phòng '${nextBackend}'...`
+          );
+        }
+      }
+    }
+
+    throw lastError || new Error(`All candidate video providers failed for shot ${spec.shotId}`);
+  }
+
+  /**
+   * Executes a shot on a single specified backend provider.
+   */
+  private async executeOnSingleBackend(
+    backend: BackendProvider,
+    spec: ShotExecutionSpec,
+    destinationPath?: string
+  ): Promise<VideoJobStatus> {
     const adapter = this.adapters.get(backend);
     if (!adapter) {
       throw new Error(`No adapter registered for provider '${backend}'`);
@@ -188,10 +279,13 @@ export class VideoModelGateway {
       throw new CircuitBreakerOpenError(backend);
     }
 
-    // 3. Submit Job
+    // 3. Pre-flight Capability Validation (Rule 2, 3, 9)
+    validateSpecAgainstCapabilities(spec, adapter.capabilities);
+
+    // 4. Submit Job
     let jobId: string;
     try {
-      const res = await adapter.submitJob(spec);
+      const res = await adapter.submitJob({ ...spec, backend });
       jobId = res.jobId;
     } catch (err: any) {
       cb.recordFailure();
@@ -212,8 +306,25 @@ export class VideoModelGateway {
       }
 
       if (status.status === "completed") {
+        // Auto-download CDN video to localPath if destination is requested or needed
+        const targetPath = destinationPath || spec.destinationLocalPath;
+        if (targetPath && status.videoUrl && (!status.localPath || !existsSync(status.localPath))) {
+          try {
+            await downloadVideoFromUrl(status.videoUrl, targetPath, backend !== "mock");
+            status.localPath = targetPath;
+          } catch (dlErr: any) {
+            if (backend !== "mock") {
+              cb.recordFailure();
+              throw new Error(`Tải video từ CDN thất bại cho provider '${backend}': ${dlErr.message}`);
+            }
+            log.warn(`Không thể tải video từ URL ${status.videoUrl}: ${dlErr.message}`);
+          }
+        }
+
+        // Only record success and spend after asset is verified and safely acquired
         cb.recordSuccess();
         this.currentSpendUsd += estimatedCost;
+
         return status;
       }
       if (status.status === "failed") {
@@ -228,4 +339,16 @@ export class VideoModelGateway {
     cb.recordFailure();
     throw new Error(`Shot ${spec.shotId} timed out on provider ${backend} after ${this.pollTimeoutMs}ms`);
   }
+}
+
+/**
+ * Downloads a video asset from an HTTP/HTTPS CDN URL, Data URI, or local file into a local destination path.
+ * Delegates to downloadVideoSafely with atomic temp-file write and ffprobe validation.
+ */
+export async function downloadVideoFromUrl(
+  url: string,
+  destinationPath: string,
+  validateWithProbe = false
+): Promise<string> {
+  return downloadVideoSafely(url, destinationPath, { validateWithProbe });
 }

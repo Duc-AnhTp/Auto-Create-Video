@@ -101,7 +101,7 @@ AN: Yên tâm đi, tôi sẽ giải mã nó trong đêm nay.
       skipRender: true,
       outputDir: testOutputDir,
       narrativeDelta: {
-        prop_transfers: [{ propId: "prop_chip", newHolderId: "char_an" }],
+        propUpdates: [{ propId: "prop_chip", newHolderId: "char_an" }],
         majorEvents: ["Minh bàn giao thành công Con Chip Lượng Tử cho An."],
       },
     });

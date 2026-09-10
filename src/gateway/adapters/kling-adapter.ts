@@ -1,24 +1,30 @@
 import axios from "axios";
 import type { VideoProviderAdapter, ShotExecutionSpec, VideoJobStatus } from "../video-gateway.js";
+import { resolveImageToDataUriOrUrl } from "../asset-resolver.js";
+import { PROVIDER_CAPABILITY_REGISTRY, type ProviderCapabilities } from "../provider-capabilities.js";
 
 export interface KlingAdapterConfig {
   apiKey?: string;
   baseUrl?: string;
+  defaultModel?: "kling-v1" | "kling-v1-5" | "kling-v2" | "kling-v3";
 }
 
 /**
- * Kling AI Video Provider Adapter
- * Supports Image-to-Video (I2V) with character/location reference image conditioning
- * and Text-to-Video (T2V) fallback.
+ * Kling AI Video Provider Adapter (Supports Kling 1.5, 2.0, and 3.0)
+ * Supports Image-to-Video (I2V) with character/location reference image conditioning,
+ * deterministic seed reproducibility, and Text-to-Video (T2V) fallback.
  */
 export class KlingAdapter implements VideoProviderAdapter {
   public providerName = "api_kling" as const;
+  public capabilities: ProviderCapabilities = PROVIDER_CAPABILITY_REGISTRY.api_kling;
   private apiKey: string;
   private baseUrl: string;
+  private defaultModel: string;
 
   constructor(config: KlingAdapterConfig = {}) {
     this.apiKey = config.apiKey || process.env.KLING_API_KEY || "";
     this.baseUrl = config.baseUrl || process.env.KLING_BASE_URL || "https://api.klingai.com";
+    this.defaultModel = config.defaultModel || process.env.KLING_MODEL || "kling-v3";
   }
 
   public async submitJob(spec: ShotExecutionSpec): Promise<{ jobId: string }> {
@@ -26,20 +32,33 @@ export class KlingAdapter implements VideoProviderAdapter {
       throw new Error("KLING_API_KEY is not configured in environment or config");
     }
 
-    const isI2v = Boolean(spec.referenceImage || spec.firstFrameCondition);
+    const resolvedImage = await resolveImageToDataUriOrUrl(spec.referenceImage || spec.firstFrameCondition);
+    const isI2v = Boolean(resolvedImage);
     const endpoint = isI2v ? `${this.baseUrl}/v1/videos/image2video` : `${this.baseUrl}/v1/videos/text2video`;
 
+    // Kling officially supports discrete durations 5 or 10
+    const durationNum = spec.durationSec >= 8 ? 10 : 5;
+    const modelName = (spec.metadata?.model as string) || this.defaultModel;
+
     const payload: Record<string, unknown> = {
+      model_name: modelName,
       prompt: spec.prompt,
-      duration: String(Math.round(spec.durationSec)),
+      duration: String(durationNum),
       aspect_ratio: spec.aspectRatio || "9:16",
     };
 
-    if (spec.referenceImage) {
-      payload.image = spec.referenceImage;
+    // Kling 3.0 seed support
+    if (spec.seed !== undefined && spec.seed > 0) {
+      payload.seed = Math.floor(spec.seed);
     }
-    if (spec.firstFrameCondition) {
-      payload.image = spec.firstFrameCondition;
+
+    // Optional camera control parameters
+    if (spec.metadata?.camera_control) {
+      payload.camera_control = spec.metadata.camera_control;
+    }
+
+    if (resolvedImage) {
+      payload.image = resolvedImage;
     }
 
     const response = await axios.post(endpoint, payload, {

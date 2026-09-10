@@ -1,0 +1,34 @@
+TẬP 2: CUỘC PHỤC KÍCH TẠI BẾN BẠCH ĐẰNG
+Logline: Sau khi phát tán dữ liệu mật tại Tháp Skyline, Minh với cánh tay bị thương cùng An và Linh phải mở đường máu qua bến Bạch Đằng đang bị phong tỏa nghiêm ngặt để đưa Con Chip Lượng Tử đến căn cứ ngầm.
+
+CẢNH 1: ĐƯỜNG HẦM CỐNG NGẦM QUẬN 1 - RẠNG ĐÔNG
+Nhân vật: Minh, An, Linh
+Đạo cụ: Chip Lượng Tử
+CÚ MÁY 1 (establishing, 5s): Đường hầm thoát nước ngầm rêu phong dưới lòng Quận 1, ánh đèn pin vàng cắt ngang dòng nước đen ngòm.
+CÚ MÁY 2 (medium, 4s): Minh bước đi tập tễnh, một tay ôm chặt vết thương bị trúng đạn laser ở bắp tay từ trận chiến Tháp Skyline.
+MINH: Cánh tay này chỉ bị xây xát nhẹ. Đừng dừng lại, chúng đang rà soát từng mét cống ngầm.
+CÚ MÁY 3 (close_up, 4s): An mở túi ngực kiểm tra Con Chip Lượng Tử, vi mạch vẫn nhấp nháy ánh xanh lục ổn định.
+AN: Chip vẫn an toàn. Bản giải mã giai đoạn hai chỉ có thể chạy trên máy chủ lượng tử dưới bến tàu.
+CÚ MÁY 4 (medium, 4s): Linh đi tiên phong, giơ máy quét tín hiệu nhiệt cảnh báo hai người phía sau.
+LINH: Báo động đỏ toàn thành phố rồi. Lối lên bờ sông phía trước có ít nhất sáu lính tuần tra.
+
+CẢNH 2: BẾN TÀU BẠCH ĐẰNG BỊ PHONG TỎA - SÁNG
+Nhân vật: Minh, An, Linh
+Đạo cụ: Chip Lượng Tử
+CÚ MÁY 1 (wide, 5s): Bến Bạch Đằng chìm trong sương mù sông Sài Gòn, hàng rào chắn laser đỏ rực phong tỏa toàn bộ mặt nước.
+CÚ MÁY 2 (medium, 4s): Ba người ẩn nấp sau những thùng hàng container vận tải biển, quan sát trạm kiểm soát trung tâm.
+CÚ MÁY 3 (action, 5s): Hai tàu tuần tra đệm khí của tập đoàn lướt qua mặt sông, rọi đèn pha cực mạnh vào bờ cát.
+AN: Hệ thống quét nhận diện khuôn mặt đã khóa toàn bộ bến tàu. Chúng ta không thể vượt qua cửa chính.
+CÚ MÁY 4 (close_up, 4s): Linh rút hai quả lựu đạn khói điện từ, ánh mắt sắc lạnh sẵn sàng nghênh chiến.
+LINH: Tôi sẽ tạo nhiễu sóng đánh lạc hướng. Hai người nhắm thẳng vào chiếc ca nô ngầm số ba.
+
+CẢNH 3: CUỘC ĐẤU SÚNG TRÊN MẶT NƯỚC - SÁNG
+Nhân vật: Minh, An, Linh
+CÚ MÁY 1 (action, 5s): Khói điện từ màu tím bốc lên mù mịt, hệ thống đèn pha và radar trên bến tàu đồng loạt chập cháy tóe lửa.
+CÚ MÁY 2 (action, 4s): Minh dùng tay lành bắn yểm trợ, từng phát đạn xung điện đẩy lùi lính đặc nhiệm đang lao tới.
+MINH: Chạy mau An! Xuống tàu ngay!
+CÚ MÁY 3 (action, 5s): An ôm chặt chiếc túi chứa chip lượng tử, lao mình xuống cầu cảng nhảy vào buồng lái tàu ngầm.
+CÚ MÁY 4 (close_up, 4s): An khởi động bảng điều khiển ca nô ngầm, động cơ tuabin phát ra tiếng rít uy lực.
+AN: Động cơ đã sẵn sàng! Minh, Linh, nhảy lên tàu ngay!
+CÚ MÁY 5 (action, 5s): Linh tung người qua lan can thép, đáp xuống mui tàu trong khi Minh bám chặt vào thành sau.
+CÚ MÁY 6 (wide, 5s): Chiếc tàu ngầm mini lao vút xé toạc làn nước sông Sài Gòn, lặn dần xuống lòng sông biến mất trong làn sương sớm.

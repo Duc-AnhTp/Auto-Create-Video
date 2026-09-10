@@ -135,6 +135,8 @@ describe("Continuity Auditor Engine (Phân Hệ I - Anti-Narrative Drift)", () =
       expect(res.audit_status).toBe("PASS");
       expect(res.contradictions.length).toBe(0);
       expect(res.thought_process.length).toBe(2);
+      expect(res.audit_scope).toBe("llm_semantic");
+      expect(res.disclaimer).toBeDefined();
     });
 
     it("strips markdown json fences and enforces FAIL if critical error exists", () => {
@@ -181,6 +183,8 @@ describe("Continuity Auditor Engine (Phân Hệ I - Anti-Narrative Drift)", () =
       const result = await auditor.auditScript(2, mockBible, script);
       expect(result.audit_status).toBe("PASS");
       expect(result.contradictions.length).toBe(0);
+      expect(result.audit_scope).toBe("deterministic_rule_based");
+      expect(result.disclaimer).toContain("rule-based");
     });
 
     it("flags critical contradiction when a deceased character appears without flashback", async () => {

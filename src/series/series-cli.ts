@@ -1,8 +1,10 @@
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { BibleManager } from "../bible/bible-manager.js";
+import { BudgetLedger } from "../orchestration/budget-ledger.js";
 import { EpisodicPipeline } from "./episodic-pipeline.js";
+import { startSeriesReviewServer } from "../review/server.js";
 import type { BackendProvider } from "../gateway/video-gateway.js";
 import { log } from "../utils/logger.js";
 
@@ -38,12 +40,22 @@ Lệnh chính:
   series:location   Đăng ký hoặc cập nhật bối cảnh lặp lại (quán bar, phòng ngầm...)
   series:prop       Đăng ký hoặc chuyển giao đạo cụ đặc biệt "không được quên"
   series:episode    Sản xuất tập phim từ kịch bản text thô qua 8 bước tự động
-  series:status     Xem báo cáo Story Bible: nhân vật, đạo cụ, và lịch sử các tập
+  series:resume     Tiếp tục sản xuất tập phim dở dang từ checkpoint.json
+  series:reroll     Tạo lại riêng một shot lỗi (--shot <shotId>) mà không sinh lại toàn bộ
+  series:remux      Dựng lại video hoàn chỉnh từ các clip đã sinh mà không gọi lại AI
+  series:review     Mở Web Review Dashboard để duyệt kịch bản phân cảnh và chọn take
+  series:status     Xem báo cáo Story Bible: nhân vật, đạo cụ, lịch sử các tập & sổ cái ngân sách
+  series:jobs       Xem danh sách tác vụ provider (jobId, remoteId, trạng thái, chi phí)
+  series:reconcile  Đối soát và xử lý các job bị timeout chưa xác định (uncertain_timeout)
+  series:budget     Xem hoặc cập nhật hạn mức ngân sách chi tiêu cho series
 
 Tùy chọn:
   --series <id>       ID (slug) của series (mặc định lưu tại data/series/<id>/story_bible.db)
+  --episode <num>     Số thứ tự tập phim
+  --shot <id>         ID cú máy cần tái tạo (cho lệnh series:reroll)
   --bible <path>      Đường dẫn trực tiếp đến file SQLite Story Bible
-  --provider <name>   Video AI Provider ("mock" | "api_kling" | "api_runway" | "local_comfyui")
+  --provider <name>   Video AI Provider ("mock" | "api_kling" | "api_veo" | "api_seedance" | "api_runway" | "local_comfyui")
+  --resume            Tiếp tục từ checkpoint khi chạy series:episode
   --dry-run           Chạy thử nghiệm nhanh với Mock Video & Mock TTS (không tốn phí API)
   --help, -h          Hiển thị hướng dẫn này
 
@@ -216,10 +228,11 @@ export async function runSeriesCli(args: string[]): Promise<void> {
       }
 
       const dryRun = hasFlag(subArgs, "--dry-run");
-      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "mock");
+      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "local_comfyui");
       const skipRender = hasFlag(subArgs, "--skip-render");
       const mockTts = dryRun || hasFlag(subArgs, "--mock-tts");
       const skipAudit = hasFlag(subArgs, "--skip-audit");
+      const resume = hasFlag(subArgs, "--resume");
 
       const pipeline = new EpisodicPipeline(biblePath);
       const res = await pipeline.produceEpisode(scriptInput, {
@@ -229,6 +242,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         mockTts,
         skipRender,
         skipAudit,
+        resume,
       });
 
       console.log("\n=======================================================");
@@ -237,6 +251,145 @@ export async function runSeriesCli(args: string[]): Promise<void> {
       console.log(`   Audio: ${res.audioPath}`);
       console.log(`   Thư mục xuất bản: ${res.outputDir}`);
       console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:resume": {
+      const epArg = getArgValue(subArgs, "--episode");
+      let scriptInput = getArgValue(subArgs, "--script");
+
+      const sId = seriesId || "default-series";
+      if (!scriptInput && epArg) {
+        const epNumStr = String(parseInt(epArg, 10)).padStart(2, "0");
+        const defaultScriptPath = join("output", "series", sId, `ep-${epNumStr}`, "script-normalized.json");
+        if (existsSync(defaultScriptPath)) {
+          scriptInput = defaultScriptPath;
+        }
+      }
+
+      if (!scriptInput) {
+        console.error("❌ Lỗi: Cần cung cấp --script <path> hoặc --episode <num> (để tìm kịch bản đã lưu).");
+        process.exit(2);
+      }
+
+      const dryRun = hasFlag(subArgs, "--dry-run");
+      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "local_comfyui");
+      const skipRender = hasFlag(subArgs, "--skip-render");
+      const mockTts = dryRun || hasFlag(subArgs, "--mock-tts");
+      const skipAudit = hasFlag(subArgs, "--skip-audit");
+
+      console.log(`\n🔄 [RESUME] Đang tiếp tục sản xuất từ checkpoint...`);
+      const pipeline = new EpisodicPipeline(biblePath);
+      const res = await pipeline.produceEpisode(scriptInput, {
+        seriesId: sId,
+        biblePath,
+        provider,
+        mockTts,
+        skipRender,
+        skipAudit,
+        resume: true,
+      });
+
+      console.log("\n=======================================================");
+      console.log(`🎉 HOÀN THÀNH TIẾP TỤC TẬP ${res.episodeNumber}: "${res.title}"`);
+      console.log(`   Video: ${res.videoPath}`);
+      console.log(`   Audio: ${res.audioPath}`);
+      console.log(`   Thư mục: ${res.outputDir}`);
+      console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:reroll": {
+      const shotId = getArgValue(subArgs, "--shot");
+      const epArg = getArgValue(subArgs, "--episode");
+      if (!shotId) {
+        console.error("❌ Lỗi: Cần cung cấp --shot <shotId> (ví dụ: --shot sc1_sh2).");
+        process.exit(2);
+      }
+
+      const episodeNumber = epArg ? parseInt(epArg, 10) : 1;
+      const sId = seriesId || "default-series";
+      const dryRun = hasFlag(subArgs, "--dry-run");
+      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "local_comfyui");
+      const promptOverride = getArgValue(subArgs, "--prompt");
+      const noRemux = hasFlag(subArgs, "--no-remux");
+
+      console.log(`\n🎲 [REROLL] Tạo lại riêng shot [${shotId}] cho tập ${episodeNumber}...`);
+      const pipeline = new EpisodicPipeline(biblePath);
+      const res = await pipeline.rerollShot({
+        seriesId: sId,
+        episodeNumber,
+        shotId,
+        provider,
+        promptOverride,
+        remuxAfterReroll: !noRemux,
+      });
+
+      console.log("\n=======================================================");
+      console.log(`🎉 HOÀN TẤT TÁI TẠO SHOT [${res.shotId}]`);
+      console.log(`   Take mới: ${res.takeId}`);
+      console.log(`   Video: ${res.videoPath}`);
+      console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:remux": {
+      const epArg = getArgValue(subArgs, "--episode");
+      const episodeNumber = epArg ? parseInt(epArg, 10) : 1;
+      const sId = seriesId || "default-series";
+      const skipRender = hasFlag(subArgs, "--skip-render");
+
+      console.log(`\n🎞️ [REMUX] Dựng lại video tập ${episodeNumber} từ các clip đã có...`);
+      const pipeline = new EpisodicPipeline(biblePath);
+      const res = await pipeline.remuxEpisode({
+        seriesId: sId,
+        episodeNumber,
+        skipRender,
+      });
+
+      console.log("\n=======================================================");
+      console.log(`🎉 HOÀN TẤT DỰNG LẠI VIDEO TẬP ${episodeNumber}`);
+      console.log(`   Video: ${res.videoPath}`);
+      console.log(`   Audio: ${res.audioPath}`);
+      console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:review": {
+      const epArg = getArgValue(subArgs, "--episode");
+      const episodeNumber = epArg ? parseInt(epArg, 10) : 1;
+      const sId = seriesId || "default-series";
+      const epNumStr = String(episodeNumber).padStart(2, "0");
+      const scriptPath =
+        getArgValue(subArgs, "--script") ||
+        join("output", "series", sId, `ep-${epNumStr}`, "script-normalized.json");
+
+      let script: any = null;
+      if (existsSync(scriptPath)) {
+        try {
+          script = JSON.parse(await readFile(scriptPath, "utf8"));
+        } catch {}
+      }
+      if (!script) {
+        script = {
+          seriesId: sId,
+          episodeNumber,
+          title: `Tập ${episodeNumber}`,
+          scenes: [],
+        };
+      }
+
+      const port = parseInt(getArgValue(subArgs, "--port") || "3001", 10);
+      const server = startSeriesReviewServer({
+        script,
+        biblePath,
+        seriesId: sId,
+        episodeNumber,
+        port,
+        autoOpen: !hasFlag(subArgs, "--no-open"),
+      });
+
+      await server;
       break;
     }
 
@@ -282,7 +435,111 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         console.log(`  - Tập ${ep.episode_number}: "${ep.title}" (${ep.created_at})`);
         console.log(`    Logline: ${ep.logline}`);
       }
+
+      const effectiveSeriesId = meta?.id || seriesId || "default-series";
+      const takesSummary = bible.getSeriesCostAndTakesSummary(effectiveSeriesId);
+      console.log(`\n💰 Thống Kê Shot Takes & Chi Phí Sản Xuất (${effectiveSeriesId}):`);
+      console.log(`  - Tổng số take đã sinh: ${takesSummary.totalTakes} (Đã duyệt: ${takesSummary.approvedTakes})`);
+      console.log(`  - Tổng chi phí API ước tính: $${takesSummary.totalCostUsd.toFixed(4)} USD`);
+      if (takesSummary.episodes.length > 0) {
+        for (const ep of takesSummary.episodes) {
+          console.log(`    + Tập ${ep.episodeNumber}: ${ep.takeCount} takes (${ep.approvedCount} đã duyệt) - $${ep.costUsd.toFixed(4)} USD`);
+        }
+      }
+
+      // 4-State Budget Ledger Display (Requirement 8 & 9)
+      const ledger = bible.getSeriesBudgetLedger(effectiveSeriesId);
+      console.log(`\n📊 SỔ CÁI CHI PHÍ 4 TRẠNG THÁI & NGÂN SÁCH BẢO VỆ (${effectiveSeriesId}):`);
+      console.log(`  - Hạn mức ngân sách tối đa (Budget Cap): $${ledger.maxBudgetUsd.toFixed(4)} USD`);
+      console.log(`  - Tổng cam kết (Committed):             $${ledger.totalCommittedUsd.toFixed(4)} USD`);
+      console.log(`  - Số dư khả dụng (Available):           $${ledger.availableBudgetUsd.toFixed(4)} USD`);
+      console.log(`  - Chi tiết 4 trạng thái chi phí:`);
+      console.log(`    + Ước tính (Estimated):      $${ledger.estimatedCostUsd.toFixed(4)} USD`);
+      console.log(`    + Đã giữ chỗ (Reserved):     $${ledger.reservedCostUsd.toFixed(4)} USD`);
+      console.log(`    + Đã xác nhận (Confirmed):   $${ledger.confirmedCostUsd.toFixed(4)} USD`);
+      console.log(`    + Chưa xác định (Uncertain): $${ledger.uncertainCostUsd.toFixed(4)} USD`);
+
+      const pendingJobs = bible.listPendingJobsForSeries(effectiveSeriesId) || [];
+      const uncertainJobs = pendingJobs.filter((j) => j.status === "uncertain_timeout");
+      if (uncertainJobs.length > 0) {
+        console.log(`\n⚠️  CẢNH BÁO: Có ${uncertainJobs.length} job(s) ở trạng thái 'uncertain_timeout' đang treo ngân sách:`);
+        for (const uj of uncertainJobs) {
+          console.log(`    * Job [${uj.id}] (Provider: ${uj.provider}, RemoteID: ${uj.provider_job_id || "chưa rõ"}): Chi phí treo $${uj.uncertain_cost_usd.toFixed(4)} USD`);
+          console.log(`      Lỗi: ${uj.error_message || "Timeout submit"}`);
+        }
+        console.log(`    -> Hãy chạy lệnh \`series:reconcile --series ${effectiveSeriesId}\` để đối soát và giải phóng.`);
+      }
       console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:jobs": {
+      const epArg = getArgValue(subArgs, "--episode");
+      const statusFilter = getArgValue(subArgs, "--status");
+      const sId = seriesId || "default-series";
+      const epNum = epArg ? parseInt(epArg, 10) : undefined;
+
+      const jobs = bible.listPendingJobsForSeries(sId, epNum);
+      console.log(`\n📋 DANH SÁCH PROVIDER JOBS (${sId}${epNum ? ` - Tập ${epNum}` : ""}):`);
+      if (jobs.length === 0) {
+        console.log("  Không có job nào đang chờ xử lý.");
+      } else {
+        for (const j of jobs) {
+          if (statusFilter && j.status !== statusFilter) continue;
+          console.log(`  - [${j.id}] Trạng thái: ${j.status.toUpperCase()} | Shot: ${j.shot_id} | Provider: ${j.provider}`);
+          console.log(`    Remote Job ID: ${j.provider_job_id || "None"} | Attempts: ${j.attempt_count}/${j.max_attempts}`);
+          console.log(`    Spec Hash: ${j.spec_hash.slice(0, 16)}... | Chi phí: Est $${j.estimated_cost_usd} / Res $${j.reserved_cost_usd} / Conf $${j.confirmed_cost_usd}`);
+          if (j.error_message) console.log(`    Lỗi: ${j.error_message}`);
+        }
+      }
+      console.log("");
+      break;
+    }
+
+    case "series:reconcile": {
+      const jobId = getArgValue(subArgs, "--job");
+      const action = (getArgValue(subArgs, "--action") as "confirm" | "discard") || "discard";
+      const costArg = getArgValue(subArgs, "--cost");
+      const finalCost = costArg ? parseFloat(costArg) : undefined;
+      const sId = seriesId || "default-series";
+
+      const ledger = new BudgetLedger(bible);
+      if (jobId) {
+        console.log(`\n🔍 [RECONCILE] Đang đối soát job [${jobId}] với hành động '${action}'...`);
+        const updated = ledger.reconcileUncertainJob(jobId, action, finalCost);
+        console.log(`✅ Đã cập nhật job [${updated.id}]: Trạng thái mới: ${updated.status}. Chi phí xác nhận: $${updated.confirmed_cost_usd.toFixed(4)} USD.`);
+      } else {
+        const pending = bible.listPendingJobsForSeries(sId);
+        const uncertainJobs = pending.filter((j) => j.status === "uncertain_timeout");
+        console.log(`\n🔍 [RECONCILE] Tìm thấy ${uncertainJobs.length} job(s) 'uncertain_timeout' cần đối soát:`);
+        if (uncertainJobs.length === 0) {
+          console.log("  Không có job nào cần đối soát.");
+        } else {
+          for (const uj of uncertainJobs) {
+            console.log(`  - Đang xử lý job [${uj.id}] (Remote: ${uj.provider_job_id || "none"})...`);
+            ledger.reconcileUncertainJob(uj.id, action, finalCost);
+          }
+          console.log(`✅ Đã hoàn tất đối soát ${uncertainJobs.length} job(s). Ngân sách đã được đồng bộ hóa.`);
+        }
+      }
+      break;
+    }
+
+    case "series:budget": {
+      const sId = seriesId || "default-series";
+      const setMax = getArgValue(subArgs, "--set-max");
+      const cur = bible.getSeriesBudget(sId);
+      if (setMax) {
+        const maxVal = parseFloat(setMax);
+        bible.setSeriesBudget(sId, maxVal, cur.spent_budget_usd);
+        console.log(`\n✅ Đã cập nhật hạn mức ngân sách series [${sId}] thành: $${maxVal.toFixed(2)} USD`);
+      } else {
+        const l = bible.getSeriesBudgetLedger(sId);
+        console.log(`\n💰 NGÂN SÁCH SERIES [${sId}]:`);
+        console.log(`  - Hạn mức tối đa: $${l.maxBudgetUsd.toFixed(2)} USD`);
+        console.log(`  - Tổng cam kết:   $${l.totalCommittedUsd.toFixed(4)} USD`);
+        console.log(`  - Còn lại:        $${l.availableBudgetUsd.toFixed(4)} USD`);
+      }
       break;
     }
 

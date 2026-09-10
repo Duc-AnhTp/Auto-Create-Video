@@ -6,12 +6,17 @@ import {
   type VideoProviderAdapter,
   type ShotExecutionSpec,
   type VideoJobStatus,
+  PROVIDER_CAPABILITY_REGISTRY,
 } from "./video-gateway.js";
 
 describe("VideoModelGateway (Phân Hệ VI: Model API Gateway)", () => {
   it("executes shot successfully and tracks spend", async () => {
     const mockAdapter: VideoProviderAdapter = {
       providerName: "api_wan",
+      capabilities: {
+        ...PROVIDER_CAPABILITY_REGISTRY.mock,
+        providerName: "api_wan",
+      },
       submitJob: vi.fn().mockResolvedValue({ jobId: "job_123" }),
       pollStatus: vi
         .fn()
@@ -47,6 +52,10 @@ describe("VideoModelGateway (Phân Hệ VI: Model API Gateway)", () => {
   it("throws BudgetExceededError when requested shot exceeds maxBudgetUsd", async () => {
     const mockAdapter: VideoProviderAdapter = {
       providerName: "api_ltx",
+      capabilities: {
+        ...PROVIDER_CAPABILITY_REGISTRY.mock,
+        providerName: "api_ltx",
+      },
       submitJob: vi.fn().mockResolvedValue({ jobId: "job_ltx" }),
       pollStatus: vi.fn().mockResolvedValue({ jobId: "job_ltx", status: "completed" }),
     };
@@ -72,6 +81,7 @@ describe("VideoModelGateway (Phân Hệ VI: Model API Gateway)", () => {
   it("trips Circuit Breaker after 3 consecutive failures to avoid retry storms", async () => {
     const mockFailAdapter: VideoProviderAdapter = {
       providerName: "api_kling",
+      capabilities: PROVIDER_CAPABILITY_REGISTRY.api_kling,
       submitJob: vi.fn().mockRejectedValue(new Error("503 Service Unavailable")),
       pollStatus: vi.fn(),
     };
@@ -105,6 +115,10 @@ describe("VideoModelGateway (Phân Hệ VI: Model API Gateway)", () => {
   it("trips Circuit Breaker when pollStatus throws standard Error (network errors)", async () => {
     const mockPollFailAdapter: VideoProviderAdapter = {
       providerName: "api_wan",
+      capabilities: {
+        ...PROVIDER_CAPABILITY_REGISTRY.mock,
+        providerName: "api_wan",
+      },
       submitJob: vi.fn().mockResolvedValue({ jobId: "job_poll_fail" }),
       pollStatus: vi.fn().mockRejectedValue(new Error("Network timeout")),
     };
@@ -182,5 +196,35 @@ describe("VideoModelGateway (Phân Hệ VI: Model API Gateway)", () => {
     };
 
     await expect(adapter.submitJob(spec)).rejects.toThrow("RUNWAY_API_KEY is not configured");
+  });
+
+  it("handles VeoAdapter error when API key is missing", async () => {
+    const { VeoAdapter } = await import("./adapters/veo-adapter.js");
+    const adapter = new VeoAdapter({ apiKey: "" });
+
+    const spec: ShotExecutionSpec = {
+      shotId: "veo_test",
+      backend: "api_veo",
+      priority: "hero",
+      durationSec: 5.0,
+      prompt: "test",
+    };
+
+    await expect(adapter.submitJob(spec)).rejects.toThrow("VEO_API_KEY");
+  });
+
+  it("handles SeedanceAdapter error when API key is missing", async () => {
+    const { SeedanceAdapter } = await import("./adapters/seedance-adapter.js");
+    const adapter = new SeedanceAdapter({ apiKey: "" });
+
+    const spec: ShotExecutionSpec = {
+      shotId: "seedance_test",
+      backend: "api_seedance",
+      priority: "hero",
+      durationSec: 5.0,
+      prompt: "test",
+    };
+
+    await expect(adapter.submitJob(spec)).rejects.toThrow("SEEDANCE_API_KEY");
   });
 });

@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { ScriptSchema, type Script } from "../render/script-schema.js";
 import { normalizeVietnameseForTts } from "../tts/vietnamese-normalizer.js";
+import { BibleManager } from "../bible/bible-manager.js";
 import { log } from "../utils/logger.js";
 
 export interface ReviewServerOptions {
@@ -680,4 +681,450 @@ export function startReviewServer(options: ReviewServerOptions): ReviewServerPro
 
   (mainPromise as any).ready = readyPromise;
   return mainPromise as ReviewServerPromise;
+}
+
+function escapeHtml(str: unknown): string {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Renders HTML for Episodic AI Film Series Review Dashboard.
+ */
+export function renderSeriesDashboardHtml(
+  script: any,
+  takes: any[] = [],
+  seriesMetadata?: any
+): string {
+  const scenes = script.scenes || [];
+  const totalShots = scenes.reduce((acc: number, s: any) => acc + (s.shots?.length || 0), 0);
+  const totalDuration = scenes.reduce(
+    (acc: number, s: any) => acc + (s.shots || []).reduce((shAcc: number, sh: any) => shAcc + (sh.durationSec || 0), 0),
+    0
+  );
+
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Episodic AI Film Series - Director Review Dashboard</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #131b2e;
+      --card-border: #1f2d4d;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 24px;
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .stats-bar {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-badge {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    .stat-badge strong {
+      color: var(--accent);
+    }
+    .scene-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      margin-bottom: 20px;
+      padding: 18px;
+    }
+    .scene-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #38bdf8;
+      margin-bottom: 14px;
+    }
+    .shots-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 14px;
+    }
+    .shot-card {
+      background: #0d1424;
+      border: 1px solid #1a2744;
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .shot-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .shot-id {
+      font-weight: 700;
+      font-size: 14px;
+      color: #e2e8f0;
+    }
+    .shot-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #1e293b;
+      color: #94a3b8;
+    }
+    .shot-prompt {
+      font-size: 13px;
+      color: #cbd5e1;
+      margin-bottom: 10px;
+    }
+    .dialogue-box {
+      background: rgba(56, 189, 248, 0.08);
+      border-left: 3px solid #38bdf8;
+      padding: 6px 10px;
+      font-size: 12px;
+      margin-bottom: 12px;
+      border-radius: 0 4px 4px 0;
+    }
+    .takes-section {
+      margin-top: 10px;
+      border-top: 1px dashed #1e293b;
+      padding-top: 10px;
+    }
+    .takes-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .take-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      background: #131d33;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .badge-pass { background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .badge-warn { background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .badge-fail { background: rgba(239, 68, 68, 0.2); color: #ef4444; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+    .badge-approved { background: #10b981; color: #fff; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 10px; }
+    button.btn-sm {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.btn-sm:hover { background: #0369a1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>🎬 Episodic AI Film Series: ${escapeHtml(script.title || "Tập Phim Mới")}</h1>
+      <div class="subtitle">Tập ${escapeHtml(script.episodeNumber || 1)} &bull; Series ID: ${escapeHtml(script.seriesId || "N/A")} &bull; Tỷ lệ: ${escapeHtml(script.aspectRatio || "9:16")}</div>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-badge">Số Cảnh: <strong>${scenes.length}</strong></div>
+    <div class="stat-badge">Tổng Số Cú Máy: <strong>${totalShots}</strong></div>
+    <div class="stat-badge">Ước Tính Thời Lượng: <strong>${totalDuration}s</strong></div>
+  </div>
+
+  <div id="scenes-container">
+    ${scenes
+      .map(
+        (scene: any) => `
+      <div class="scene-box">
+        <div class="scene-title">CẢNH ${escapeHtml(scene.sceneNumber)}: ${escapeHtml(scene.locationName)} (${escapeHtml(scene.timeOfDay)})</div>
+        <div class="shots-grid">
+          ${(scene.shots || [])
+            .map((shot: any) => {
+              const shotTakes = takes.filter((t: any) => t.shot_id === shot.shotId);
+              return `
+              <div class="shot-card">
+                <div class="shot-header">
+                  <span class="shot-id">[${escapeHtml(shot.shotId)}]</span>
+                  <span class="shot-tag">${escapeHtml(shot.shotType || "medium")} &bull; ${escapeHtml(shot.durationSec)}s</span>
+                </div>
+                <div class="shot-prompt">${escapeHtml(shot.visualPrompt)}</div>
+                ${
+                  Array.isArray(shot.dialogues) && shot.dialogues.length > 0
+                    ? shot.dialogues
+                        .map(
+                          (d: any) =>
+                            `<div class="dialogue-box"><strong>${escapeHtml(d.speakerName)}${
+                              d.actingInstruction ? ` <em>(${escapeHtml(d.actingInstruction)})</em>` : ""
+                            }:</strong> "${escapeHtml(d.subtitleText || d.text)}"${
+                              d.isUnresolved ? ` <span style="color:#ef4444;font-size:10px;">[Chưa map vai]</span>` : ""
+                            }</div>`
+                        )
+                        .join("")
+                    : shot.dialogue
+                    ? `<div class="dialogue-box"><strong>${escapeHtml(shot.dialogue.speakerName)}:</strong> "${escapeHtml(shot.dialogue.text)}"</div>`
+                    : ""
+                }
+                <div class="takes-section">
+                  <div class="takes-title">CÁC TAKE ĐÃ SINH (${shotTakes.length}):</div>
+                  ${
+                    shotTakes.length === 0
+                      ? `<div style="font-size:11px;color:#64748b;">Chưa sinh take nào.</div>`
+                      : shotTakes
+                          .map(
+                            (t: any) => `
+                        <div class="take-item">
+                          <div>
+                            <strong>Take ${escapeHtml(t.take_number)}</strong> (${escapeHtml(t.provider)})
+                            <span class="badge-${escapeHtml((t.qa_status || "PASS").toLowerCase())}">${escapeHtml(t.qa_status || "PASS")}</span>
+                            ${t.qa_score !== undefined && t.qa_score !== null ? `<span style="color:#94a3b8;font-size:10px;">${escapeHtml(t.qa_score)}</span>` : ""}
+                          </div>
+                          <div>
+                            ${
+                              t.is_approved
+                                ? `<span class="badge-approved">ĐÃ DUYỆT</span>`
+                                : `<button class="btn-sm" onclick="approveTake('${encodeURIComponent(t.id)}')">Duyệt Take</button>`
+                            }
+                          </div>
+                        </div>
+                      `
+                          )
+                          .join("")
+                  }
+                </div>
+              </div>
+            `;
+            })
+            .join("")}
+        </div>
+      </div>
+    `
+      )
+      .join("")}
+  </div>
+
+  <script>
+    async function approveTake(takeId) {
+      try {
+        const res = await fetch('/api/series/approve-take', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ takeId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          window.location.reload();
+        } else {
+          alert('Không thể duyệt take: ' + (data.error || 'Lỗi không xác định'));
+        }
+      } catch (err) {
+        alert('Lỗi kết nối: ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>`;
+}
+
+export interface SeriesReviewServerOptions {
+  script: any;
+  biblePath?: string;
+  bible?: BibleManager;
+  seriesId?: string;
+  episodeNumber?: number;
+  port?: number;
+  autoOpen?: boolean;
+  onReady?: (url: string) => void;
+}
+
+export type SeriesReviewServerPromise = Promise<void> & {
+  ready: Promise<string>;
+  close: () => Promise<void>;
+};
+
+export function startSeriesReviewServer(options: SeriesReviewServerOptions): SeriesReviewServerPromise {
+  const {
+    script,
+    biblePath = "story_bible.db",
+    bible: explicitBible,
+    seriesId = script.seriesId || "default-series",
+    episodeNumber = script.episodeNumber || 1,
+    port = 3001,
+    autoOpen = false,
+    onReady,
+  } = options;
+
+  const bible = explicitBible || new BibleManager(biblePath);
+
+  let resolveReady!: (url: string) => void;
+  const readyPromise = new Promise<string>((r) => {
+    resolveReady = r;
+  });
+
+  let activeServer: Server | null = null;
+  const sockets = new Set<Socket>();
+
+  let resolveMain!: () => void;
+  const mainPromise = new Promise<void>((resolve, reject) => {
+    resolveMain = resolve;
+    const requestHandler = async (req: IncomingMessage, res: ServerResponse) => {
+      const url = req.url || "/";
+      const method = req.method || "GET";
+
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+      if (method === "OPTIONS") {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      if ((url === "/" || url === "/series") && method === "GET") {
+        const takes = bible.listShotTakes(seriesId, episodeNumber);
+        const meta = bible.getSeriesMetadata();
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderSeriesDashboardHtml(script, takes, meta));
+        return;
+      }
+
+      if (url.startsWith("/api/series/takes") && method === "GET") {
+        const takes = bible.listShotTakes(seriesId, episodeNumber);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ takes }));
+        return;
+      }
+
+      if (url === "/api/series/approve-take" && method === "POST") {
+        try {
+          const body = await parseJsonBody(req);
+          if (!body.takeId) throw new Error("takeId is required");
+          bible.approveShotTake(body.takeId);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true, approvedTakeId: body.takeId }));
+        } catch (err: any) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+      }
+
+      if (url === "/api/series/finalize" && method === "POST") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true }));
+        if (activeServer) {
+          activeServer.close(() => resolve());
+        }
+        return;
+      }
+
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
+    };
+
+    let currentPort = port;
+    const maxPortAttempts = 10;
+    let attempts = 0;
+
+    const tryListen = (p: number) => {
+      const s = createServer(requestHandler);
+      activeServer = s;
+
+      s.on("connection", (socket) => {
+        sockets.add(socket);
+        socket.on("close", () => sockets.delete(socket));
+      });
+
+      s.on("error", (err: any) => {
+        if (err.code === "EADDRINUSE" && attempts < maxPortAttempts) {
+          attempts++;
+          currentPort++;
+          setTimeout(() => tryListen(currentPort), 100);
+        } else {
+          reject(err);
+        }
+      });
+
+      s.listen(p, "127.0.0.1", () => {
+        const serverUrl = `http://127.0.0.1:${p}`;
+        log.info(`👉 Series Review Dashboard is running at: ${serverUrl}`);
+        resolveReady(serverUrl);
+        if (onReady) onReady(serverUrl);
+        if (autoOpen) {
+          const cmd =
+            process.platform === "win32"
+              ? `start "" "${serverUrl}"`
+              : process.platform === "darwin"
+                ? `open "${serverUrl}"`
+                : `xdg-open "${serverUrl}"`;
+          exec(cmd, () => {});
+        }
+      });
+    };
+
+    tryListen(currentPort);
+  });
+
+  (mainPromise as any).ready = readyPromise;
+  (mainPromise as any).close = async () => {
+    if (activeServer) {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((r) => activeServer!.close(() => r()));
+      activeServer = null;
+    }
+    if (!explicitBible && bible) {
+      try {
+        bible.close();
+      } catch {
+        // Safe ignore
+      }
+    }
+    if (resolveMain) resolveMain();
+  };
+
+  return mainPromise as SeriesReviewServerPromise;
 }

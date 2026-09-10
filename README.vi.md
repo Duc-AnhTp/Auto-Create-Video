@@ -62,22 +62,52 @@ Việc tạo video tin tức ngắn rất **tốn thời gian và lặp đi lặ
 
 ---
 
-## 🎬 MỚI: Hệ Thống Làm Phim Dài Tập Bằng AI (Episodic AI Film Series)
+## 🎬 Hệ Thống Dựng & Sản Xuất Phim Dài Tập Bằng AI (Episodic AI Film Series)
 
-Chuyển đổi kịch bản văn bản thô thành phim dài tập (mặc định 9:16 Shorts/TikTok hoặc 16:9) với **bộ nhớ Canon vĩnh viễn lưu trong SQLite** — **hoàn toàn không bị quên ngữ cảnh từ các tập trước**:
+Chuyển đổi kịch bản văn bản thô thành phim dài tập có cấu trúc hoàn chỉnh (mặc định 9:16 Shorts/TikTok hoặc 16:9) với **bộ nhớ Canon vĩnh viễn lưu trong SQLite** và **Hệ thống Dựng phim Phân cấp (Hierarchical Assembly)**.
 
-- **🔒 Bộ Nhớ Cốt Truyện Bền Vững (Story Bible SQLite)**: Nhớ các vết thương, sẹo, bí mật nhân vật, quyền sở hữu đạo cụ và trạng thái thế giới qua tất cả các tập.
-- **👤 Nhất Quán Khuôn Mặt & Face QA**: Image-to-Video conditioning khóa diện mạo kết hợp kiểm định ArcFace Cosine Similarity chống biến dạng mặt.
-- **👗 Giữ Nguyên Trang Phục & Bối Cảnh**: Quản lý trang phục nhân vật và quy tắc ánh sáng của các địa điểm xuất hiện lại.
-- **🎙️ Đa Giọng Thoại Nhân Vật**: Phân vai từng nhân vật theo giọng riêng (ElevenLabs / LucyLab) với chuẩn hóa phát âm tiếng Việt và BGM auto-ducking.
-- **⚡ AI Video Gateway**: Hỗ trợ **Kling AI**, **Runway Gen-3**, **Local ComfyUI / Wan 2.2**, và chế độ **Mock** thử nghiệm không tốn chi phí.
+### 📊 Bảng Phân Loại Tính Năng & Mức Độ Trưởng Thành Kỹ Thuật
+
+Để đảm bảo tính trung thực kỹ thuật và loại bỏ các tuyên bố không có bằng chứng, các tính năng được phân nhóm rành mạch:
+
+#### ✅ 1. Tính Năng Hoạt Động Ổn Định (Production Ready)
+- **Dựng Phim Phân Cấp (Scene-to-Episode Hierarchical Assembly)**: Kiến trúc render 2 cấp độ: Dựng từng Scene (`scene-XX.mp4`) trước, sau đó nối các cảnh thành Master Episode. Triệt tiêu hoàn toàn lỗi tràn giới hạn độ dài dòng lệnh và giải phóng RAM giải mã video.
+- **Bộ Nhớ Đệm Nội Dung Cảnh (Scene Content Hash Caching)**: Băm SHA-256 các thông số đầu vào của Scene (ID take đã duyệt, khoảng trim, transition). Tự động bỏ qua render lại khi cảnh không thay đổi trên các lần chạy sau.
+- **Cơ Chế Cut vs. Transition Rõ Ràng**: Mặc định nối trực tiếp (hard cut, zero frame loss); chỉ áp dụng hiệu ứng crossfade (`xfade`) hoặc fade-to-black và trim đầu/đuôi (`trimStartSec`/`trimEndSec`) khi được chỉ định rõ ràng trong kịch bản.
+- **Đầy Đủ Sản Phẩm Đầu Ra**:
+  - Master Video (`master.mp4`) đồng bộ hoàn chỉnh hình-tiếng.
+  - Phụ đề chuẩn SubRip (`subtitles.srt`) và WebVTT (`subtitles.vtt`).
+  - 4 Audio Stems Tách Rời: Thoại (`stem-dialogue.wav`), Hiệu ứng SFX (`stem-sfx.wav`), Không gian môi trường Ambience (`stem-ambience.wav`), Nhạc nền đã ducking (`stem-bgm.wav`) và Bản mix tổng hợp (`master-audio.wav`).
+  - Bản dựng chi tiết 1:1 (`assembly-manifest.json`).
+- **Trao Đổi Dòng Thời Gian Chuẩn NLE (FCP7 XML & OTIO)**: Xuất tệp `timeline.xml` (chuẩn xmeml v4 tương thích DaVinci Resolve và Premiere Pro) và `timeline.otio` (OpenTimelineIO JSON). *Lưu ý: Đã xác thực cú pháp schema XML và cấu trúc OTIO; chưa kiểm tra trực tiếp qua giao diện đồ họa trên máy headless.*
+- **Bộ Kiểm Định QA Bản Dựng Tự Động**: Quét phát hiện file thiếu, file hỏng (`ffprobe`), phân đoạn frame đen bất thường (`blackdetect`), và độ trôi lệch hình-tiếng (`driftSec <= 0.1s`).
+- **Job Orchestration Chịu Tải & Sổ Cái 4 Trạng Thái**: Lưu vết SQLite (`provider_jobs`), tự động tiếp tục polling mà không gửi lại job khi khởi động lại, đối soát `uncertain_timeout`, và khóa ngân sách an toàn đa worker (`Budget Cap`).
+- **Bộ Nhớ Canon Cốt Truyện Vĩnh Viễn**: Story Bible SQLite có phiên bản, theo dõi trạng thái nhân vật, trang phục, lịch sử chuyển giao đạo cụ, và tự động rà soát mâu thuẫn kịch bản (`ContinuityAuditor`).
+
+#### 🧪 2. Tính Năng Đang Thử Nghiệm (Experimental / Beta)
+- **Kiểm Định Khuôn Mặt Đa Khung Hình (Visual Face QA)**: So khớp vector ArcFace Cosine Similarity trên nhiều frame trích xuất từ video với ảnh chân dung anchor và tự động kích hoạt vòng lặp re-roll có giới hạn.
+- **Mở Rộng Thời Lượng Tự Hồi Quy (Shot Chaining)**: Nối shot vượt quá giới hạn mô hình (5s-10s) bằng trích xuất frame cuối thực tế (`extractLastFrame`) qua FFmpeg làm điều kiện cho pass tiếp theo.
+- **Ngắt Mạch Provider Tự Động (Circuit Breaker FSM)**: Máy trạng thái 3 nấc (`CLOSED`, `OPEN`, `HALF_OPEN`) với thuật toán exponential backoff và jitter.
+
+#### ⚠️ 3. Chưa Hỗ Trợ / Giới Hạn Đã Biết (Roadmap Limitations)
+- **Khẩu Hình Nhép Môi (Phonetic Lip-Sync)**: Thoại được neo chính xác theo mốc timecode của cú máy (`startSec`), nhưng hệ thống **CHƯA** tích hợp mô hình nhép môi AI (Wav2Lip / SadTalker). Chuyển động môi miệng của nhân vật chưa uốn lượn theo từng âm tiết phát ra.
+- **Không Bảo Đảm "100% Nhất Quán Tuyệt Đối"**: Các mô hình video khuếch tán (diffusion) luôn có phương sai ngẫu nhiên. Tính nhất quán được kiểm soát qua điều kiện Story Bible, ảnh chân dung tham chiếu và bộ lọc QA loại bỏ, không phải bảo đảm toán học 100%.
+- **Kiểm Thử GUI Phần Mềm NLE**: Tệp XML/OTIO được xác thực đúng chuẩn schema nhưng chưa được import thử nghiệm trên GUI DaVinci Resolve Studio / Adobe Premiere Pro trên môi trường CI.
 
 ```bash
 # Khởi tạo series
 npm run series -- series:init --series "cyber-saigon" --title "Sài Gòn 2088" --style "Cinematic 35mm, cyberpunk"
 
-# Sản xuất tập phim từ kịch bản text thô
-npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-ep1.txt" --dry-run
+# Sản xuất tập phim từ kịch bản text thô (chạy thử nghiệm offline hoặc với provider thật)
+npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-pilot-2min.txt" --dry-run
+
+# Tiếp tục sản xuất từ checkpoint hoặc tạo lại riêng shot lỗi
+npm run series -- series:resume --series "cyber-saigon" --episode 1
+npm run series -- series:reroll --series "cyber-saigon" --episode 1 --shot "sc1_sh2"
+
+# Kiểm tra sổ cái ngân sách 4 trạng thái và danh sách job
+npm run series -- series:budget --series "cyber-saigon"
+npm run series -- series:jobs --series "cyber-saigon"
 ```
 👉 Xem hướng dẫn chi tiết: [**docs/EPISODIC_SERIES_GUIDE.md**](docs/EPISODIC_SERIES_GUIDE.md)
 

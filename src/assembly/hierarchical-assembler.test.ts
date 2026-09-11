@@ -339,6 +339,8 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
 
       const bgmTrack: TimelineBgmCue = {
         audioPath: bgmAudio,
+        startFrame: 0,
+        startSec: 0.0,
         durationFrames: 240,
         durationSec: 8.0,
         baseVolume: 0.3,

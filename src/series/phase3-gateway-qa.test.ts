@@ -20,6 +20,7 @@ describe("Phase 3 Verification: Video Gateway CDN Downloader, Asset Resolver & F
   const testOutputDir = join("output", "test-phase3-series");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -29,6 +30,7 @@ describe("Phase 3 Verification: Video Gateway CDN Downloader, Asset Resolver & F
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });

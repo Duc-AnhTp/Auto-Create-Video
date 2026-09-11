@@ -1,15 +1,16 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   AudioAssembler,
   resolveVoiceForDialogue,
 } from "./audio-assembler.js";
 import { BibleManager } from "../bible/bible-manager.js";
-import type { EpisodicScript, Shot } from "./series-schema.js";
+import { ShotSchema, EpisodicScriptSchema, type EpisodicScript, type Shot } from "./series-schema.js";
 
 describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)", () => {
   let bible: BibleManager;
 
   beforeEach(() => {
+    BibleManager.closeAll();
     bible = new BibleManager(":memory:");
     bible.upsertCharacter({
       id: "char_minh",
@@ -32,6 +33,10 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
     });
   });
 
+  afterEach(() => {
+    BibleManager.closeAll();
+  });
+
   it("resolves multi-character voice profiles correctly from Story Bible", () => {
     const mockCfg: any = {
       ttsProvider: "lucylab",
@@ -39,7 +44,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
       elevenlabsVoiceId: "default_eleven",
     };
 
-    const shotMinh: Shot = {
+    const shotMinh: Shot = ShotSchema.parse({
       shotId: "sh01",
       shotType: "medium",
       durationSec: 4.0,
@@ -50,13 +55,13 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
         text: "Xin chào",
         type: "speech",
       },
-    };
+    });
 
     const resMinh = resolveVoiceForDialogue(shotMinh, bible, mockCfg);
     expect(resMinh.provider).toBe("elevenlabs");
     expect(resMinh.voiceId).toBe("voice_minh_123");
 
-    const shotAn: Shot = {
+    const shotAn: Shot = ShotSchema.parse({
       shotId: "sh02",
       shotType: "medium",
       durationSec: 3.0,
@@ -67,14 +72,14 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
         text: "Chào anh Minh",
         type: "speech",
       },
-    };
+    });
 
     const resAn = resolveVoiceForDialogue(shotAn, bible, mockCfg);
     expect(resAn.provider).toBe("lucylab");
     expect(resAn.voiceId).toBe("voice_an_456");
 
     // Narrator
-    const shotNarrator: Shot = {
+    const shotNarrator: Shot = ShotSchema.parse({
       shotId: "sh03",
       shotType: "medium",
       durationSec: 4.0,
@@ -85,7 +90,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
         text: "Đêm đó trời đổ mưa.",
         type: "voiceover",
       },
-    };
+    });
 
     const resNarrator = resolveVoiceForDialogue(shotNarrator, bible, mockCfg);
     expect(resNarrator.provider).toBe("lucylab");
@@ -94,7 +99,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
 
   it("assembles mock episode audio successfully without external API calls", async () => {
     const assembler = new AudioAssembler();
-    const script: EpisodicScript = {
+    const script: EpisodicScript = EpisodicScriptSchema.parse({
       version: "2.0",
       seriesId: "series_test",
       episodeNumber: 1,
@@ -125,7 +130,7 @@ describe("AudioAssembler (Multi-Character Voice Routing & Soundtrack Assembly)",
           ],
         },
       ],
-    };
+    });
 
     const result = await assembler.assembleEpisodeAudio({
       script,

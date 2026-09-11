@@ -23,6 +23,7 @@ describe("Giai đoạn 4: Hoàn Thiện QA và Duyệt Take", () => {
   const assetsDir = join(testOutputDir, "assets");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -46,6 +47,7 @@ describe("Giai đoạn 4: Hoàn Thiện QA và Duyệt Take", () => {
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     clearReferenceEmbeddingCache();
     if (existsSync(testOutputDir)) {
       try {

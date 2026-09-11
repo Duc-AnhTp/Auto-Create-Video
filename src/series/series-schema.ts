@@ -30,6 +30,7 @@ export const DialogueLineSchema = z
     actingInstruction: z.string().optional(),
     voiceProfileId: z.string().nullish(),
     isUnresolved: z.boolean().default(false),
+    durationSec: z.number().optional(),
   })
   .transform((d) => {
     const characterId = d.characterId || d.speakerId || d.speaker || "narrator";
@@ -46,6 +47,7 @@ export const DialogueLineSchema = z
       actingInstruction: d.actingInstruction,
       voiceProfileId: d.voiceProfileId ?? undefined,
       isUnresolved: d.isUnresolved ?? false,
+      durationSec: d.durationSec,
     };
   });
 

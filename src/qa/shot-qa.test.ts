@@ -11,20 +11,24 @@ import {
   FrameEvaluationSample,
   ExtractedFace,
 } from "./face-evaluator.js";
-import { StoryBibleManager } from "../bible/bible-manager.js";
+import { StoryBibleManager, BibleManager } from "../bible/bible-manager.js";
 
 describe("Shot Visual Reference Management & Quality Assurance Engine (Yêu cầu 1-11)", () => {
   let testDir: string;
   let dbPath: string;
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     testDir = await mkdtemp(join(tmpdir(), "shot-qa-test-"));
     dbPath = join(testDir, "test_story_bible.db");
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testDir)) {
-      await rm(testDir, { recursive: true, force: true });
+      try {
+        await rm(testDir, { recursive: true, force: true });
+      } catch {}
     }
   });
 

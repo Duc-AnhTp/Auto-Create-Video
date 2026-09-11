@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   parseRawScreenplay,
   enrichWithBibleContext,
@@ -11,6 +11,7 @@ describe("ScriptNormalizer & Bible Context Enrichment", () => {
   let bible: BibleManager;
 
   beforeEach(() => {
+    BibleManager.closeAll();
     bible = new BibleManager(":memory:");
 
     // Setup Master Series
@@ -83,6 +84,10 @@ describe("ScriptNormalizer & Bible Context Enrichment", () => {
       current_holder_id: "char_minh",
       status: "intact",
     });
+  });
+
+  afterEach(() => {
+    BibleManager.closeAll();
   });
 
   it("parses structured screenplay text format accurately", () => {

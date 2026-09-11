@@ -10,6 +10,7 @@ describe("Phase 2 Verification: Shot Takes, Checkpointing, Resume, Reroll & Remu
   const testDbPath = join(testOutputDir, "story_bible.db");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -18,6 +19,7 @@ describe("Phase 2 Verification: Shot Takes, Checkpointing, Resume, Reroll & Remu
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -112,7 +114,6 @@ MINH: Cầm lấy con chip này.
         outputDir: testOutputDir,
         provider: "mock",
         mockTts: true,
-        skipRender: true,
       });
 
       expect(result.episodeNumber).toBe(1);
@@ -136,7 +137,6 @@ MINH: Cầm lấy con chip này.
         outputDir: testOutputDir,
         provider: "mock",
         mockTts: true,
-        skipRender: true,
         resume: true,
       });
 
@@ -176,7 +176,6 @@ MINH: Cầm lấy con chip này.
         outputDir: testOutputDir,
         provider: "mock",
         mockTts: true,
-        skipRender: true,
       });
 
       // Re-roll shot 2 only!
@@ -187,6 +186,7 @@ MINH: Cầm lấy con chip này.
         outputDir: testOutputDir,
         promptOverride: "Minh nhìn thẳng vào ống kính với ánh mắt kiên định",
         provider: "mock",
+        forceApprove: true,
       });
 
       expect(rerollResult.shotId).toBe("sc1_sh2");
@@ -208,7 +208,6 @@ MINH: Cầm lấy con chip này.
         seriesId: "cyber-saigon",
         episodeNumber: 1,
         outputDir: testOutputDir,
-        skipRender: true,
       });
 
       expect(existsSync(remuxResult.videoPath)).toBe(true);

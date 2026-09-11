@@ -800,6 +800,7 @@ export function enrichWithBibleContext(
           type: isVoiceover ? "voiceover" : "speech",
           voiceProfileId: voiceProfile,
           isUnresolved,
+          durationSec: (d as any).durationSec,
         });
       }
 

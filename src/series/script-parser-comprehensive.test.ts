@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -19,6 +19,7 @@ describe("Comprehensive Script Parser & Schema Acceptance Test Suite", () => {
   let bible: BibleManager;
 
   beforeEach(() => {
+    BibleManager.closeAll();
     bible = new BibleManager(":memory:");
 
     bible.upsertSeriesMetadata({
@@ -74,6 +75,10 @@ describe("Comprehensive Script Parser & Schema Acceptance Test Suite", () => {
       current_holder_id: "char_minh",
       status: "intact",
     });
+  });
+
+  afterEach(() => {
+    BibleManager.closeAll();
   });
 
   // ── Criterion 1: Repo sample scripts parsed accurately with correct scenes, shots, dialogues ──

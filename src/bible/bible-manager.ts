@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import {
@@ -53,6 +53,7 @@ export interface BibleManagerOptions {
 export interface SeriesMetadataRecord {
   id: string;
   title: string;
+  logline?: string;
   genre?: string;
   visual_style?: string;
   visualStyle?: string;
@@ -69,8 +70,10 @@ export interface SeriesMetadataRecord {
 export interface CharacterRecord {
   id: string;
   name: string;
-  role: "protagonist" | "antagonist" | "supporting";
-  visual_summary: string;
+  role: "protagonist" | "antagonist" | "supporting" | "ally" | "mentor" | string;
+  series_id?: string;
+  archetype?: string;
+  visual_summary?: string;
   personality_traits?: string[];
   voice_profile_id?: string;
   voice_embedding_path?: string;
@@ -79,6 +82,7 @@ export interface CharacterRecord {
   character_sheet_path?: string;
   current_wardrobe_id?: string;
   distinguishing_marks?: string;
+  created_at?: string;
 }
 
 // Mutable episodic / scene character state
@@ -90,7 +94,7 @@ export interface CharacterStateRecord {
   status: CharacterRecord["status"];
   current_wardrobe_id?: string | null;
   distinguishing_marks?: string | null;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface CharacterWardrobeRecord {
@@ -99,14 +103,14 @@ export interface CharacterWardrobeRecord {
   outfit_name: string;
   visual_description: string;
   reference_image_path?: string;
-  is_default: boolean | number;
+  is_default?: boolean | number;
 }
 
 // Fixed location archetype
 export interface LocationRecord {
   id: string;
   name: string;
-  visual_summary: string;
+  visual_summary?: string;
   atmospheric_rules?: string;
   reference_image_path?: string;
   lighting_mood?: string;
@@ -121,17 +125,19 @@ export interface LocationStateRecord {
   atmospheric_rules?: string | null;
   lighting_mood?: string | null;
   status: "accessible" | "damaged" | "destroyed" | "restricted";
-  updated_at: string;
+  updated_at?: string;
 }
 
 // Fixed key prop archetype
 export interface KeyPropRecord {
   id: string;
   name: string;
-  visual_summary: string;
+  series_id?: string;
+  visual_summary?: string;
   current_holder_id?: string;
   reference_image_path?: string;
   status: "intact" | "damaged" | "lost" | "destroyed";
+  created_at?: string;
 }
 
 // Mutable episodic / scene prop state
@@ -142,7 +148,7 @@ export interface PropStateRecord {
   scene_id?: string | null;
   current_holder_id?: string | null;
   status: KeyPropRecord["status"];
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface CharacterKnowledgeRecord {
@@ -153,12 +159,13 @@ export interface CharacterKnowledgeRecord {
 }
 
 export interface EpisodeSummaryRecord {
+  series_id?: string;
   episode_number: number;
   title: string;
   logline: string;
   major_events: string[];
-  delta_changes: Record<string, unknown>;
-  created_at: string;
+  delta_changes?: Record<string, unknown>;
+  created_at?: string;
 }
 
 export interface ApiUsageRecord {
@@ -188,7 +195,7 @@ export interface ReferenceAssetRecord {
   version: number;
   is_active: boolean | number;
   description?: string;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface StoryboardKeyframeRecord {
@@ -202,7 +209,7 @@ export interface StoryboardKeyframeRecord {
   image_path: string;
   is_approved: boolean | number;
   used_references_json: string; // Serialized list of reference asset IDs used for this shot
-  created_at: string;
+  created_at?: string;
 }
 
 export type CostCategory = "estimated" | "reserved" | "confirmed" | "uncertain";
@@ -230,7 +237,7 @@ export interface ProviderJobRecord {
   status: OrchestrationJobStatus;
   attempt_count: number;
   max_attempts: number;
-  cost_category: CostCategory;
+  cost_category?: CostCategory;
   estimated_cost_usd: number;
   reserved_cost_usd: number;
   confirmed_cost_usd: number;
@@ -243,8 +250,8 @@ export interface ProviderJobRecord {
   worker_id?: string;
   lock_expires_at?: string;
   metadata_json?: string;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
   completed_at?: string;
 }
 
@@ -364,13 +371,13 @@ export interface CanonMigrationRecord {
 export interface NarrativeDelta {
   characterStatusUpdates?: Array<{
     id: string;
-    status: CharacterRecord["status"];
+    status: CharacterRecord["status"] | string;
     notes?: string;
     distinguishingMarks?: string;
   }>;
   character_status_updates?: Array<{
     id: string;
-    status: CharacterRecord["status"];
+    status: CharacterRecord["status"] | string;
     notes?: string;
     distinguishing_marks?: string;
   }>;
@@ -385,7 +392,7 @@ export interface NarrativeDelta {
   propUpdates?: Array<{
     propId: string;
     newHolderId: string;
-    status?: KeyPropRecord["status"];
+    status?: KeyPropRecord["status"] | string;
   }>;
   prop_transfers?: Array<{
     propId?: string;
@@ -394,13 +401,13 @@ export interface NarrativeDelta {
     new_holder_id?: string;
     from_holder_id?: string;
     to_holder_id?: string;
-    status?: KeyPropRecord["status"];
+    status?: KeyPropRecord["status"] | string;
     reason?: string;
   }>;
   prop_holder_updates?: Array<{
     prop_id: string;
     new_holder_id: string;
-    status?: KeyPropRecord["status"];
+    status?: KeyPropRecord["status"] | string;
   }>;
   newKnowledge?: Array<{ characterId: string; factKey: string; notes?: string }>;
   new_knowledge?: Array<{ character_id: string; fact_key: string; notes?: string }>;
@@ -415,10 +422,11 @@ export interface NarrativeDelta {
  * Implements Versioned Canon State Manager with transactional commits and strict SQLite persistence.
  */
 export class BibleManager {
+  private static openInstances: Set<BibleManager> = new Set();
   private db: any = null;
   private dbPath: string;
   private options: BibleManagerOptions;
-  private isFallback = false;
+  public isFallback = false;
   private memoryStore: {
     series: SeriesMetadataRecord | null;
     characters: Map<string, CharacterRecord>;
@@ -505,6 +513,7 @@ export class BibleManager {
 
       if (DatabaseSync) {
         this.db = new DatabaseSync(this.dbPath);
+        BibleManager.openInstances.add(this);
         try {
           this.db.exec("PRAGMA journal_mode = WAL;");
           this.db.exec("PRAGMA busy_timeout = 5000;");
@@ -540,6 +549,27 @@ export class BibleManager {
       }
       this.db = null;
     }
+    BibleManager.openInstances.delete(this);
+  }
+
+  public static closeForPath(dbPath: string): void {
+    const target = resolve(dbPath);
+    for (const inst of Array.from(BibleManager.openInstances)) {
+      if (inst.dbPath !== ":memory:" && resolve(inst.dbPath) === target) {
+        try {
+          inst.close();
+        } catch {}
+      }
+    }
+  }
+
+  public static closeAll(): void {
+    for (const inst of Array.from(BibleManager.openInstances)) {
+      try {
+        inst.close();
+      } catch {}
+    }
+    BibleManager.openInstances.clear();
   }
 
   public getAppliedMigrations(): CanonMigrationRecord[] {
@@ -1549,7 +1579,7 @@ export class BibleManager {
       for (const p of propUpdates) {
         const propId = p.propId || p.prop_id;
         const newHolderId = p.newHolderId || p.new_holder_id || p.to_holder_id || p.toHolderId;
-        const newStatus = p.status;
+        const newStatus = p.status as KeyPropRecord["status"] | undefined;
 
         const prevProp = this.getKeyProp(propId);
         const fromState = prevProp
@@ -1952,17 +1982,61 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
    *    and invalidates downstream episodes in a single SQLite transaction.
    */
   public commitEpisode(
-    summary: EpisodeSummaryRecord,
-    delta: NarrativeDelta,
-    options?: {
+    summaryOrOptions:
+      | EpisodeSummaryRecord
+      | {
+          episodeNumber?: number;
+          episode_number?: number;
+          title?: string;
+          logline?: string;
+          majorEvents?: string[];
+          major_events?: string[];
+          delta?: NarrativeDelta;
+          delta_changes?: Record<string, unknown>;
+          commitId?: string;
+          seriesId?: string;
+          force?: boolean;
+          created_at?: string;
+        },
+    deltaArg?: NarrativeDelta,
+    optionsArg?: {
       commitId?: string;
       seriesId?: string;
       confirmationSource?: StateEventRecord["confirmation_source"];
       storyTime?: string;
       force?: boolean;
     }
-  ): { applied: boolean; commitId: string; reason?: string } {
-    const seriesId = options?.seriesId || this.getSeriesMetadata()?.id || "default-series";
+  ): { applied: boolean; commitId: string; reason?: string; episode_number: number; title: string } {
+    const raw: any = summaryOrOptions;
+    const epNum = Number(raw.episode_number ?? raw.episodeNumber ?? 1);
+    const title = String(raw.title || `Tập ${epNum}`);
+    const logline = String(raw.logline || "");
+    const majorEvents = raw.major_events || raw.majorEvents || [];
+
+    const seriesId =
+      optionsArg?.seriesId ||
+      raw.seriesId ||
+      raw.series_id ||
+      this.getSeriesMetadata()?.id ||
+      "default-series";
+
+    const summary: EpisodeSummaryRecord = {
+      series_id: seriesId,
+      episode_number: epNum,
+      title,
+      logline,
+      major_events: majorEvents,
+      created_at: raw.created_at || new Date().toISOString(),
+    };
+
+    const delta: NarrativeDelta = deltaArg || raw.delta || raw.delta_changes || {};
+    const options = {
+      commitId: optionsArg?.commitId || raw.commitId,
+      seriesId,
+      confirmationSource: optionsArg?.confirmationSource,
+      storyTime: optionsArg?.storyTime,
+      force: optionsArg?.force ?? raw.force,
+    };
 
     // 1. Delta reference validation
     const validation = this.validateNarrativeDelta(delta);
@@ -1990,20 +2064,15 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         .digest("hex");
 
     if (this.isCommitApplied(commitId)) {
-      return { applied: false, commitId, reason: "already_applied" };
+      return { applied: false, commitId, reason: "already_applied", episode_number: summary.episode_number, title: summary.title };
     }
 
     // 3. Lifecycle gate: draft/rendered/rejected/failed cannot mutate official canon
     const lifecycle = this.getEpisodeLifecycle(seriesId, summary.episode_number);
     if (!options?.force) {
-      if (!lifecycle) {
+      if (!lifecycle || lifecycle.status !== "approved") {
         throw new UnauthorizedCanonCommitError(
-          `Cannot commit episode ${summary.episode_number} to canon because no lifecycle record exists (must be explicitly approved before commit).`
-        );
-      }
-      if (lifecycle.status !== "approved") {
-        throw new UnauthorizedCanonCommitError(
-          `Cannot commit episode ${summary.episode_number} to canon because its lifecycle status is '${lifecycle.status}' (must be 'approved').`
+          `Cannot commit episode ${summary.episode_number} to canon because episode lifecycle status is not 'approved' (current: '${lifecycle?.status || "none"}').`
         );
       }
     }
@@ -2045,7 +2114,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         );
 
         this.db.exec("COMMIT;");
-        return { applied: true, commitId };
+        return { applied: true, commitId, episode_number: summary.episode_number, title: summary.title };
       } catch (err) {
         this.db.exec("ROLLBACK;");
         throw err;
@@ -2082,7 +2151,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           summary.episode_number,
           `Canon updated in earlier episode ${summary.episode_number}`
         );
-        return { applied: true, commitId };
+        return { applied: true, commitId, episode_number: summary.episode_number, title: summary.title };
       } catch (err) {
         this.memoryStore.characters = backupChars;
         this.memoryStore.props = backupProps;
@@ -3457,7 +3526,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     }
     const matches = Array.from(this.memoryStore.provider_jobs.values())
       .filter((j) => j.spec_hash === specHash && j.status === "completed")
-      .sort((a, b) => (b.updated_at > a.updated_at ? 1 : -1));
+      .sort((a, b) => ((b.updated_at || "") > (a.updated_at || "") ? 1 : -1));
     return matches[0] ?? null;
   }
 

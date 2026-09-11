@@ -1,12 +1,17 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { BibleManager } from "./bible-manager.js";
 
 describe("BibleManager (Phân Hệ I: Story Bible Engine)", () => {
   let manager: BibleManager;
 
   beforeEach(() => {
+    BibleManager.closeAll();
     // In-memory or isolated DB
     manager = new BibleManager(":memory:");
+  });
+
+  afterEach(() => {
+    BibleManager.closeAll();
   });
 
   it("manages character profiles and status updates", () => {

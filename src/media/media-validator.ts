@@ -392,7 +392,7 @@ export async function downloadVideoSafely(
         validateStatus: (status) => status >= 200 && status < 300,
       });
 
-      const contentType = response.headers?.["content-type"] || "";
+      const contentType = String(response.headers?.["content-type"] || "");
       if (contentType.includes("text/html") || contentType.includes("application/json")) {
         throw new Error(`Expected video content but received Content-Type '${contentType}' from ${url}`);
       }

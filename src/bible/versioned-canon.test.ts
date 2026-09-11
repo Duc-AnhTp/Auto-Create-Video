@@ -24,6 +24,7 @@ function createTestBible(path = TEST_DB_PATH, options?: any): BibleManager {
 
 describe("Versioned Canon State Manager (Story Bible v2)", () => {
   beforeEach(() => {
+    BibleManager.closeAll();
     for (const b of activeBibles) {
       try {
         b.close();
@@ -39,6 +40,7 @@ describe("Versioned Canon State Manager (Story Bible v2)", () => {
   });
 
   afterEach(() => {
+    BibleManager.closeAll();
     for (const b of activeBibles) {
       try {
         b.close();

@@ -1,4 +1,4 @@
-import { mkdir, copyFile, writeFile } from "node:fs/promises";
+import { mkdir, copyFile, writeFile, unlink, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -500,7 +500,17 @@ export class AudioAssembler {
           }
           await createValidMockMp3File(stemDialoguePath, unifiedTimeline.targetTotalDurationSec);
           if (dialogueMixList.length > 0) {
-            await mixSfxOntoVoice(stemDialoguePath, dialogueMixList, stemDialoguePath);
+            const tempMixedPath = `${stemDialoguePath}.tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp3`;
+            await mixSfxOntoVoice(stemDialoguePath, dialogueMixList, tempMixedPath);
+            if (existsSync(stemDialoguePath)) {
+              await unlink(stemDialoguePath).catch(() => {});
+            }
+            try {
+              await rename(tempMixedPath, stemDialoguePath);
+            } catch {
+              await copyFile(tempMixedPath, stemDialoguePath);
+              await unlink(tempMixedPath).catch(() => {});
+            }
           }
         } else {
           await concatWithSilence(shotDialoguePaddedPaths, 0.0, stemDialoguePath);
@@ -532,7 +542,17 @@ export class AudioAssembler {
     await createValidMockMp3File(stemSfxPath, unifiedTimeline.targetTotalDurationSec);
     if (sfxList.length > 0 && !mockTts) {
       try {
-        await mixSfxOntoVoice(stemSfxPath, sfxList, stemSfxPath);
+        const tempSfxPath = `${stemSfxPath}.tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp3`;
+        await mixSfxOntoVoice(stemSfxPath, sfxList, tempSfxPath);
+        if (existsSync(stemSfxPath)) {
+          await unlink(stemSfxPath).catch(() => {});
+        }
+        try {
+          await rename(tempSfxPath, stemSfxPath);
+        } catch {
+          await copyFile(tempSfxPath, stemSfxPath);
+          await unlink(tempSfxPath).catch(() => {});
+        }
       } catch {
         // keep silence stem
       }

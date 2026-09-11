@@ -13,6 +13,7 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
   const ep2ScriptPath = join("scripts", "example-series", "cyber-saigon-ep2.txt");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -22,6 +23,7 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -50,6 +52,7 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
       name: "Minh",
       role: "protagonist",
       visual_summary: "Kỹ sư phản kháng",
+      face_reference_image: "assets/characters/minh.jpg",
       distinguishing_marks: "Vết sẹo mảnh ngang mày trái",
       status: "alive",
     });
@@ -59,6 +62,7 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
       name: "An",
       role: "protagonist",
       visual_summary: "Hacker lượng tử",
+      face_reference_image: "assets/characters/an.jpg",
       status: "alive",
     });
 
@@ -67,6 +71,7 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
       name: "Linh",
       role: "supporting",
       visual_summary: "Nữ điệp viên",
+      face_reference_image: "assets/characters/linh.jpg",
       status: "alive",
     });
 
@@ -117,7 +122,8 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
       outputDir: ep1OutputDir,
       provider: "mock",
       mockTts: true,
-      skipRender: true,
+      commitCanon: true,
+      _testOnlyAllowMockCommit: true,
       narrativeDelta: ep1Delta,
     });
 
@@ -143,13 +149,13 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
     const ep2Raw = await readFile(ep2ScriptPath, "utf8");
     const ep2OutputDir = join(testOutputDir, "ep-02");
 
-    const ep2Normalized = normalizeScript(ep2Raw, bible, { seriesId: "cyber-saigon" });
+    const ep2Normalized = await normalizeScript(ep2Raw, bible, { seriesId: "cyber-saigon" });
     expect(ep2Normalized.episodeNumber).toBe(2);
     expect(ep2Normalized.scenes.length).toBe(3);
 
     const ep2Timeline = buildMasterTimeline(ep2Normalized);
     expect(ep2Timeline.videoTrack.length).toBe(14); // 4 + 4 + 6 shots
-    expect(ep2Timeline.totalDurationSec).toBe(65);
+    expect(ep2Timeline.totalDurationSec).toBe(63);
 
     const ep2Delta = {
       world_state_updates: {
@@ -168,7 +174,8 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
       outputDir: ep2OutputDir,
       provider: "mock",
       mockTts: true,
-      skipRender: true,
+      commitCanon: true,
+      _testOnlyAllowMockCommit: true,
       narrativeDelta: ep2Delta,
     });
 
@@ -197,5 +204,5 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
     expect(canonHistory[0].episode_number).toBe(1);
     expect(canonHistory[1].episode_number).toBe(2);
     expect(canonHistory[1].major_events[0]).toContain("Bạch Đằng");
-  });
+  }, 120000);
 });

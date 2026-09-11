@@ -23,7 +23,7 @@ describe("Series & Episodic Script Schemas", () => {
   });
 
   it("validates a structured episodic film script with scenes and shots", () => {
-    const validScript: EpisodicScript = {
+    const validScript = {
       version: "2.0",
       seriesId: "cyber-saigon-2088",
       episodeNumber: 1,

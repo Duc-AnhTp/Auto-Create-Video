@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { StoryBibleManager } from "../bible/bible-manager.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { StoryBibleManager, BibleManager } from "../bible/bible-manager.js";
 import { BudgetLedger } from "./budget-ledger.js";
 import { RateCardManager } from "./rate-card-manager.js";
 
@@ -10,6 +10,7 @@ describe("4-State Budget Ledger & Configurable Rate Cards (Requirements 8, 9, 10
   const SERIES_ID = "test_cyber_series_ep1";
 
   beforeEach(() => {
+    BibleManager.closeAll();
     bible = new StoryBibleManager(":memory:");
     ledger = new BudgetLedger(bible);
     rateManager = new RateCardManager(bible);
@@ -22,6 +23,10 @@ describe("4-State Budget Ledger & Configurable Rate Cards (Requirements 8, 9, 10
       is_hard_capped: true,
       updated_at: new Date().toISOString(),
     });
+  });
+
+  afterEach(() => {
+    BibleManager.closeAll();
   });
 
   it("RateCardManager seeds official rate cards and resolves dynamically by provider/model", () => {

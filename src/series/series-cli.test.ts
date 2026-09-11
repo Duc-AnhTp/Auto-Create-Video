@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runSeriesCli } from "./series-cli.js";
 import { BibleManager } from "../bible/bible-manager.js";
 import { existsSync } from "node:fs";
@@ -9,6 +9,16 @@ describe("Series CLI Subcommands (series:*)", () => {
   const testDbPath = join("output", "test-series-cli", "story_bible.db");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
+    if (existsSync(join("output", "test-series-cli"))) {
+      try {
+        await rm(join("output", "test-series-cli"), { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(join("output", "test-series-cli"))) {
       try {
         await rm(join("output", "test-series-cli"), { recursive: true, force: true });

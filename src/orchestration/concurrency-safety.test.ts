@@ -6,6 +6,7 @@ import {
   type VideoProviderAdapter,
   type ShotExecutionSpec,
   type VideoJobStatus,
+  PROVIDER_CAPABILITY_REGISTRY,
 } from "../gateway/video-gateway.js";
 import { EpisodicPipeline } from "../series/episodic-pipeline.js";
 import { existsSync, unlinkSync, readFileSync } from "node:fs";
@@ -15,13 +16,7 @@ import { createHash } from "node:crypto";
 
 class SpyingProviderAdapter implements VideoProviderAdapter {
   public providerName = "api_kling" as const;
-  public capabilities = {
-    t2v: true,
-    i2v: true,
-    extend: true,
-    maxDurationSec: 10,
-    allowedAspectRatios: ["9:16", "16:9"],
-  };
+  public capabilities = PROVIDER_CAPABILITY_REGISTRY.api_kling;
 
   public submitCallCount = 0;
   public pollCallCount = 0;
@@ -42,6 +37,7 @@ describe("Giai đoạn 2: Kiểm Chứng An Toàn Dữ Liệu & Rủi Ro Phát S
   const testDbPath = join(testDir, "shared_bible.db");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testDir)) {
       try {
         await rm(testDir, { recursive: true, force: true });
@@ -51,6 +47,7 @@ describe("Giai đoạn 2: Kiểm Chứng An Toàn Dữ Liệu & Rủi Ro Phát S
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testDir)) {
       try {
         await rm(testDir, { recursive: true, force: true });

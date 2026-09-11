@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BibleManager } from "../bible/bible-manager.js";
-import type { EpisodicScript } from "./series-schema.js";
+import { EpisodicScriptSchema, type EpisodicScript } from "./series-schema.js";
 import {
   secToFrame,
   frameToSec,
@@ -19,6 +19,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
   let bible: BibleManager;
 
   beforeEach(() => {
+    BibleManager.closeAll();
     bible = new BibleManager(":memory:");
 
     bible.upsertSeriesMetadata({
@@ -50,9 +51,13 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
     });
   });
 
+  afterEach(() => {
+    BibleManager.closeAll();
+  });
+
   // ── Criterion 1: Non-dialogue shots, multi-turn dialogue, silence gaps & SFX ──
   it("schedules non-dialogue shots, multi-turn dialogues, silence gaps, and SFX at exact frame boundaries", () => {
-    const script: EpisodicScript = {
+    const script = EpisodicScriptSchema.parse({
       schemaVersion: "3.0",
       version: "3.0",
       seriesId: "cyber-saigon",
@@ -115,7 +120,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           ],
         },
       ],
-    };
+    });
 
     const measuredTts = {
       sc01_sh02_d01: 1.8, // Minh nói 1.8s (54 frames)
@@ -186,7 +191,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
 
   // ── Criterion 2: Dialogue Overflow Policies (extend_shot vs error) ──────────
   it("extends shot duration when dialogue exceeds shot time under 'extend_shot' policy", () => {
-    const script: EpisodicScript = {
+    const script = EpisodicScriptSchema.parse({
       schemaVersion: "3.0",
       version: "3.0",
       seriesId: "cyber-saigon",
@@ -219,7 +224,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           ],
         },
       ],
-    };
+    });
 
     const measuredTts = {
       sc01_sh01_d01: 5.0, // 5.0s > 3.0s!
@@ -262,7 +267,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
 
   // ── Criterion 3: Transition Overlap Computation ───────────────────────────
   it("accounts for transition overlap in total timeline duration", () => {
-    const script: EpisodicScript = {
+    const script = EpisodicScriptSchema.parse({
       schemaVersion: "3.0",
       version: "3.0",
       seriesId: "cyber-saigon",
@@ -279,12 +284,14 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           shots: [
             {
               shotId: "sc01_sh01",
+              shotType: "medium",
               durationSec: 4.0,
               visualPrompt: "Shot 1",
               dialogues: [],
             },
             {
               shotId: "sc01_sh02",
+              shotType: "medium",
               durationSec: 4.0,
               visualPrompt: "Shot 2",
               dialogues: [],
@@ -292,7 +299,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           ],
         },
       ],
-    };
+    });
 
     // Case A: Hard Cut (0s overlap)
     const cutTimeline = TimelineScheduler.schedule(script, {}, {
@@ -319,7 +326,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
 
   // ── Criterion 4: Subtitles use clean display text, NOT phonetic TTS text ───
   it("generates SRT and VTT subtitles strictly using subtitleText (display text), never phonetic ttsText", () => {
-    const script: EpisodicScript = {
+    const script = EpisodicScriptSchema.parse({
       schemaVersion: "3.0",
       version: "3.0",
       seriesId: "cyber-saigon",
@@ -336,6 +343,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           shots: [
             {
               shotId: "sc01_sh01",
+              shotType: "medium",
               durationSec: 4.0,
               visualPrompt: "Shot 1",
               dialogues: [
@@ -343,6 +351,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
                   dialogueId: "sc01_sh01_d01",
                   characterId: "char_minh",
                   speakerName: "Minh",
+                  text: "Giá con chip này: đúng $500.",
                   rawText: 'MINH (thì thào): "Giá con chip này: đúng $500."',
                   subtitleText: "Giá con chip này: đúng $500.", // Display text for viewer
                   ttsText: "Giá con chip này: đúng năm trăm đô la.", // TTS speech text
@@ -354,7 +363,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           ],
         },
       ],
-    };
+    });
 
     const timeline = TimelineScheduler.schedule(script, { sc01_sh01_d01: 2.5 }, { fps: 30 });
     expect(timeline.subtitleTrack.length).toBe(1);
@@ -377,7 +386,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
   // ── Criterion 5: Multi-Track Audio Stems Assembly & File Export ───────────
   it("assembles and exports 4 distinct audio stems (dialogue, sfx, ambience, bgm) and subtitle files", async () => {
     const assembler = new AudioAssembler();
-    const script: EpisodicScript = {
+    const script = EpisodicScriptSchema.parse({
       schemaVersion: "3.0",
       version: "3.0",
       seriesId: "cyber-saigon",
@@ -396,6 +405,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           shots: [
             {
               shotId: "sc01_sh01",
+              shotType: "medium",
               durationSec: 4.0,
               visualPrompt: "Quán bar",
               dialogues: [
@@ -416,7 +426,7 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
           ],
         },
       ],
-    };
+    });
 
     const outDir = "output/test-stems-assembly";
     const result = await assembler.assembleEpisodeAudio({

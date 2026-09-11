@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { EpisodicPipeline } from "./episodic-pipeline.js";
+import { BibleManager } from "../bible/bible-manager.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { rm } from "node:fs/promises";
@@ -8,6 +9,16 @@ describe("EpisodicPipeline (Toàn Trình 8 Bước Sản Xuất Phim Dài Tập)
   const testOutputDir = join("output", "test-series-pipeline");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
+    if (existsSync(testOutputDir)) {
+      try {
+        await rm(testOutputDir, { recursive: true, force: true });
+      } catch {}
+    }
+  });
+
+  afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });

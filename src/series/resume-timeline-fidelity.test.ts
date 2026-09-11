@@ -27,6 +27,7 @@ AN: Yên tâm đi, tôi sẽ giải mã nó trong đêm nay.
   `.trim();
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -71,6 +72,7 @@ AN: Yên tâm đi, tôi sẽ giải mã nó trong đêm nay.
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });

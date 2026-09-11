@@ -66,6 +66,7 @@ export interface VideoJobStatus {
   videoUrl?: string;
   localPath?: string;
   durationSec?: number;
+  progress?: number;
   error?: string;
 }
 

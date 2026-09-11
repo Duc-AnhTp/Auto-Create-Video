@@ -77,6 +77,7 @@ describe("Resilience, Recovery, Concurrency & Timeout Reconciliation Acceptance 
   const testOutputDir = join("output", "test-orchestration-recovery");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testDbPath)) {
       try {
         unlinkSync(testDbPath);
@@ -91,6 +92,7 @@ describe("Resilience, Recovery, Concurrency & Timeout Reconciliation Acceptance 
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testDbPath)) {
       try {
         unlinkSync(testDbPath);
@@ -351,6 +353,7 @@ describe("Resilience, Recovery, Concurrency & Timeout Reconciliation Acceptance 
       const specA: ShotExecutionSpec = {
         shotId: "shot_A",
         backend: "mock",
+        priority: "standard",
         durationSec: 5.0, // costs $0.10
         prompt: "Shot A scene",
       };
@@ -358,6 +361,7 @@ describe("Resilience, Recovery, Concurrency & Timeout Reconciliation Acceptance 
       const specB: ShotExecutionSpec = {
         shotId: "shot_B",
         backend: "mock",
+        priority: "standard",
         durationSec: 5.0, // costs $0.10
         prompt: "Shot B scene",
       };
@@ -389,7 +393,7 @@ describe("Resilience, Recovery, Concurrency & Timeout Reconciliation Acceptance 
         shot_id: "shot_lease",
         provider: "mock",
         spec_hash: "hash123",
-        status: "pending",
+        status: "reserved",
         attempt_count: 1,
         max_attempts: 3,
         estimated_cost_usd: 0.05,

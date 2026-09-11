@@ -217,18 +217,24 @@ export class BudgetLedger {
    */
   public reconcileUncertainJob(
     jobId: string,
-    resolution: "confirmed_success" | "confirmed_no_charge" | "confirmed_billed_failure",
+    resolution:
+      | "confirmed_success"
+      | "confirmed_no_charge"
+      | "confirmed_billed_failure"
+      | "discard"
+      | "confirm"
+      | "fail",
     details?: { actualCostUsd?: number; localPath?: string; url?: string; error?: string }
   ): ProviderJobRecord {
     const job = this.bible.getProviderJob(jobId);
     if (!job) throw new Error(`Provider job '${jobId}' not found`);
 
-    if (resolution === "confirmed_success") {
+    if (resolution === "confirmed_success" || resolution === "confirm") {
       return this.markConfirmed(jobId, details?.actualCostUsd || job.uncertain_cost_usd, {
         localPath: details?.localPath,
         url: details?.url,
       });
-    } else if (resolution === "confirmed_billed_failure") {
+    } else if (resolution === "confirmed_billed_failure" || resolution === "fail") {
       return this.markFailed(jobId, {
         isBillableFailure: true,
         actualCostUsd: details?.actualCostUsd || job.uncertain_cost_usd,

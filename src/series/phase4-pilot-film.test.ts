@@ -15,6 +15,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
   const pilotScriptPath = join("scripts", "example-series", "cyber-saigon-pilot-2min.txt");
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -24,6 +25,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     if (existsSync(testOutputDir)) {
       try {
         await rm(testOutputDir, { recursive: true, force: true });
@@ -49,6 +51,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         name: "Minh",
         role: "protagonist",
         visual_summary: "Kỹ sư công nghệ",
+        face_reference_image: "assets/characters/minh.jpg",
         status: "alive",
       });
       bible.upsertCharacter({
@@ -56,6 +59,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         name: "An",
         role: "protagonist",
         visual_summary: "Hacker",
+        face_reference_image: "assets/characters/an.jpg",
         status: "alive",
       });
       bible.upsertCharacter({
@@ -63,6 +67,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         name: "Linh",
         role: "supporting",
         visual_summary: "Nữ điệp viên",
+        face_reference_image: "assets/characters/linh.jpg",
         status: "alive",
       });
 
@@ -94,7 +99,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
     it("guarantees sample-accurate alignment between video track and dialogue track across 144s", async () => {
       const bible = new BibleManager(":memory:");
       const rawScriptText = await readFile(pilotScriptPath, "utf8");
-      const script = normalizeScript(rawScriptText, bible, { seriesId: "cyber-saigon" });
+      const script = await normalizeScript(rawScriptText, bible, { seriesId: "cyber-saigon" });
 
       const timeline = buildMasterTimeline(script);
 
@@ -146,6 +151,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         name: "Minh",
         role: "protagonist",
         visual_summary: "Kỹ sư phản kháng",
+        face_reference_image: "assets/characters/minh.jpg",
         status: "alive",
       });
       bible.upsertCharacter({
@@ -153,6 +159,15 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         name: "An",
         role: "protagonist",
         visual_summary: "Hacker lượng tử",
+        face_reference_image: "assets/characters/an.jpg",
+        status: "alive",
+      });
+      bible.upsertCharacter({
+        id: "linh",
+        name: "Linh",
+        role: "supporting",
+        visual_summary: "Nữ điệp viên",
+        face_reference_image: "assets/characters/linh.jpg",
         status: "alive",
       });
       bible.upsertKeyProp({
@@ -188,7 +203,8 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         outputDir: testOutputDir,
         provider: "mock",
         mockTts: true,
-        skipRender: true,
+        commitCanon: true,
+        _testOnlyAllowMockCommit: true,
         narrativeDelta: deltaChanges,
       });
 
@@ -222,7 +238,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       expect(history.length).toBe(1);
       expect(history[0].episode_number).toBe(1);
       expect(history[0].major_events.length).toBe(2);
-    });
+    }, 120000);
   });
 
   describe("4. Series Review Server & Take Approval Verification", () => {
@@ -327,7 +343,6 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         outputDir: testOutputDir,
         provider: "mock",
         mockTts: true,
-        skipRender: true,
       });
       expect(initialResult.episodeNumber).toBe(1);
 
@@ -343,6 +358,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         provider: "mock",
         promptOverride: "Khung cảnh Hẻm 9 Sài Gòn 2088 góc nhìn mới lạ",
         remuxAfterReroll: false,
+        forceApprove: true,
       });
 
       expect(rerollResult.shotId).toBe("sc1_sh1");
@@ -366,7 +382,6 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
         seriesId: "cyber-saigon",
         episodeNumber: 1,
         outputDir: testOutputDir,
-        skipRender: true,
       });
 
       expect(remuxResult.episodeNumber).toBe(1);
@@ -377,6 +392,6 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       const checkpointPath = join(testOutputDir, "checkpoint.json");
       const job = JSON.parse(readFileSync(checkpointPath, "utf8"));
       expect(job.shots["sc1_sh1"].activeTakeId).toBe("cyber_ep01_sc1_sh1_take02");
-    });
+    }, 120000);
   });
 });

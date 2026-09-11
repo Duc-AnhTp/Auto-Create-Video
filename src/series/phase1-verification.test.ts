@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { parseRawScreenplay, enrichWithBibleContext } from "./script-normalizer.js";
 import { buildMasterTimeline, AudioAssembler } from "./audio-assembler.js";
 import { BibleManager } from "../bible/bible-manager.js";
@@ -8,6 +8,7 @@ describe("Phase 1 Verification: Script Normalizer CÚ MÁY, MasterTimeline & Con
   let bible: BibleManager;
 
   beforeEach(() => {
+    BibleManager.closeAll();
     bible = new BibleManager(":memory:");
     bible.upsertSeriesMetadata({
       id: "cyber-saigon",
@@ -41,6 +42,10 @@ describe("Phase 1 Verification: Script Normalizer CÚ MÁY, MasterTimeline & Con
       status: "alive",
       face_reference_image: "assets/characters/an_face.jpg",
     });
+  });
+
+  afterEach(() => {
+    BibleManager.closeAll();
   });
 
   describe("1. Vietnamese CÚ MÁY & Shot Metadata Normalization", () => {

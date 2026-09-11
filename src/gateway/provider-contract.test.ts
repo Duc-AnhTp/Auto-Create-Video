@@ -395,7 +395,7 @@ describe("Provider Contracts & Video Stitching Engine (Phân Hệ VI & IV)", () 
         backend: "api_runway" as const,
         priority: "standard" as const,
         durationSec: 5.0,
-        aspectRatio: "1:1" as const, // Runway Gen-3 only supports 16:9 and 9:16
+        aspectRatio: "1:1" as any, // Runway Gen-3 only supports 16:9 and 9:16
         prompt: "test",
       };
 
@@ -410,7 +410,7 @@ describe("Provider Contracts & Video Stitching Engine (Phân Hệ VI & IV)", () 
         backend: "api_veo" as const,
         priority: "hero" as const,
         durationSec: 5.0,
-        aspectRatio: "1:1" as const, // Veo 3.1 only supports 16:9 and 9:16
+        aspectRatio: "1:1" as any, // Veo 3.1 only supports 16:9 and 9:16
         prompt: "test",
       };
 

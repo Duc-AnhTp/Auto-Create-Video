@@ -36,6 +36,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
   }
 
   beforeEach(async () => {
+    BibleManager.closeAll();
     for (const b of activeBibles) {
       try {
         b.close();
@@ -51,6 +52,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
   });
 
   afterEach(async () => {
+    BibleManager.closeAll();
     for (const b of activeBibles) {
       try {
         b.close();
@@ -132,6 +134,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
       const shot1Res = await orchestrator.executeShot("cyber_saigon_series", 1, {
         shotId: "sc1_sh1",
         backend: "mock",
+        priority: "standard",
         durationSec: 4.0,
         prompt: "Minh standing in neon alleyway",
         destinationLocalPath: clip1,
@@ -141,6 +144,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
       const shot2Res = await orchestrator.executeShot("cyber_saigon_series", 1, {
         shotId: "sc1_sh2",
         backend: "mock",
+        priority: "standard",
         durationSec: 4.0,
         prompt: "An checking holographic reader",
         destinationLocalPath: clip2,

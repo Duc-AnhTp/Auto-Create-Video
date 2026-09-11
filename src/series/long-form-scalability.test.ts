@@ -45,12 +45,12 @@ describe("Long-Form Scalability Verification: Longer Film Duration & Shot Chaini
         });
       }
 
-      const rawScript: EpisodicScript = {
+      const rawScript = {
         seriesId: "cyber-saigon-longform",
         episodeNumber: 10,
         title: "Tập Đặc Biệt 5 Phút: Chiến Dịch Giải Phóng",
         logline: "Chiến dịch quy mô lớn 5 phút xuyên suốt 6 phân khu Sài Gòn 2088.",
-        aspectRatio: "9:16",
+        aspectRatio: "9:16" as const,
         fps: 30,
         scenes,
       };

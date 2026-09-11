@@ -948,10 +948,26 @@ export class FaceQaEvaluator {
     shotId: string,
     characterId: string,
     frameEmbeddings: number[][],
-    referenceEmbedding: number[]
+    referenceEmbedding: number[],
+    evidence?: {
+      takeId?: string;
+      mediaHash?: string;
+      referenceVersion?: string;
+      isMockVector?: boolean;
+    }
   ): ShotQaReport {
+    const attachEvidence = (report: ShotQaReport): ShotQaReport => {
+      if (evidence) {
+        if (evidence.takeId) report.takeId = evidence.takeId;
+        if (evidence.mediaHash) report.mediaHash = evidence.mediaHash;
+        if (evidence.referenceVersion) report.referenceVersion = evidence.referenceVersion;
+        if (evidence.isMockVector !== undefined) report.isMockVector = evidence.isMockVector;
+      }
+      return report;
+    };
+
     if (frameEmbeddings.length === 0) {
-      return {
+      return attachEvidence({
         shotId,
         characterId,
         maxSimilarity: 0,
@@ -959,7 +975,7 @@ export class FaceQaEvaluator {
         reRollAttempt: 0,
         shouldReRoll: false,
         notes: "No face detected in any sampled frame. Flagged for manual review.",
-      };
+      });
     }
 
     const samples: FrameEvaluationSample[] = frameEmbeddings.map((emb, idx) => ({
@@ -992,7 +1008,7 @@ export class FaceQaEvaluator {
     if (frameEmbeddings.length === 1) {
       if (maxSim >= this.tPass) {
         this.reRollTracker.delete(shotId);
-        return {
+        return attachEvidence({
           shotId,
           characterId,
           maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1000,10 +1016,10 @@ export class FaceQaEvaluator {
           reRollAttempt: currentAttempt,
           shouldReRoll: false,
           notes: `High confidence match (score ${maxSim.toFixed(3)} >= ${this.tPass})`,
-        };
+        });
       }
       if (maxSim >= this.tWarn) {
-        return {
+        return attachEvidence({
           shotId,
           characterId,
           maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1011,12 +1027,12 @@ export class FaceQaEvaluator {
           reRollAttempt: currentAttempt,
           shouldReRoll: false,
           notes: `Borderline similarity (${maxSim.toFixed(3)} in [${this.tWarn}, ${this.tPass}]). Flagged for director review.`,
-        };
+        });
       }
       const nextAttempt = currentAttempt + 1;
       this.reRollTracker.set(shotId, nextAttempt);
       const shouldReRoll = nextAttempt <= this.maxReRolls;
-      return {
+      return attachEvidence({
         shotId,
         characterId,
         maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1026,7 +1042,7 @@ export class FaceQaEvaluator {
         notes: shouldReRoll
           ? `Face drifted (${maxSim.toFixed(3)} < ${this.tWarn}). Triggering auto re-roll (attempt ${nextAttempt}/${this.maxReRolls}).`
           : `Face drifted (${maxSim.toFixed(3)} < ${this.tWarn}). Max re-roll limit reached (${this.maxReRolls}). HALTING for human intervention.`,
-      };
+      });
     }
 
     // For multi-frame arrays: anti-cherry-picking check
@@ -1034,7 +1050,7 @@ export class FaceQaEvaluator {
       const nextAttempt = currentAttempt + 1;
       this.reRollTracker.set(shotId, nextAttempt);
       const shouldReRoll = nextAttempt <= this.maxReRolls;
-      return {
+      return attachEvidence({
         shotId,
         characterId,
         maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1042,12 +1058,12 @@ export class FaceQaEvaluator {
         reRollAttempt: nextAttempt,
         shouldReRoll,
         notes: `Temporal instability: Peak similarity is ${maxSim.toFixed(3)} but min similarity dropped to ${minSim.toFixed(3)}. Single peak frame cannot pass shot.`,
-      };
+      });
     }
 
     if (meanSim >= this.tPass && minSim >= this.tWarn) {
       this.reRollTracker.delete(shotId);
-      return {
+      return attachEvidence({
         shotId,
         characterId,
         maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1055,11 +1071,11 @@ export class FaceQaEvaluator {
         reRollAttempt: currentAttempt,
         shouldReRoll: false,
         notes: `High confidence multi-frame match (mean ${meanSim.toFixed(3)} >= ${this.tPass}, min ${minSim.toFixed(3)})`,
-      };
+      });
     }
 
     if (meanSim >= this.tWarn) {
-      return {
+      return attachEvidence({
         shotId,
         characterId,
         maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1067,13 +1083,13 @@ export class FaceQaEvaluator {
         reRollAttempt: currentAttempt,
         shouldReRoll: false,
         notes: `Borderline multi-frame similarity (mean ${meanSim.toFixed(3)} in [${this.tWarn}, ${this.tPass}]). Flagged for director review.`,
-      };
+      });
     }
 
     const nextAttempt = currentAttempt + 1;
     this.reRollTracker.set(shotId, nextAttempt);
     const shouldReRoll = nextAttempt <= this.maxReRolls;
-    return {
+    return attachEvidence({
       shotId,
       characterId,
       maxSimilarity: Math.round(maxSim * 1000) / 1000,
@@ -1083,6 +1099,6 @@ export class FaceQaEvaluator {
       notes: shouldReRoll
         ? `Face drifted (mean ${meanSim.toFixed(3)} < ${this.tWarn}). Triggering auto re-roll (attempt ${nextAttempt}/${this.maxReRolls}).`
         : `Face drifted (mean ${meanSim.toFixed(3)} < ${this.tWarn}). Max re-roll limit reached (${this.maxReRolls}). HALTING for human intervention.`,
-    };
+    });
   }
 }

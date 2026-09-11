@@ -71,7 +71,7 @@ export interface VideoJobStatus {
 
 export interface VideoProviderAdapter {
   providerName: BackendProvider;
-  capabilities: ProviderCapabilities;
+  capabilities?: ProviderCapabilities;
   submitJob(spec: ShotExecutionSpec): Promise<{ jobId: string }>;
   pollStatus(jobId: string): Promise<VideoJobStatus>;
   cancelJob?(jobId: string): Promise<void>;
@@ -280,7 +280,9 @@ export class VideoModelGateway {
     }
 
     // 3. Pre-flight Capability Validation (Rule 2, 3, 9)
-    validateSpecAgainstCapabilities(spec, adapter.capabilities);
+    if (adapter.capabilities) {
+      validateSpecAgainstCapabilities(spec, adapter.capabilities);
+    }
 
     // 4. Submit Job
     let jobId: string;

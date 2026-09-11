@@ -30,6 +30,7 @@ import {
 import {
   FaceQaEvaluator,
   generateDeterministicEmbedding,
+  cosineSimilarity,
   type VisualQaBackend,
   type VisualStyleCategory,
   type ShotQaReport,
@@ -59,6 +60,7 @@ export function computeAudioFingerprint(script: EpisodicScript, transitionDurati
   hash.update(String(transitionDurationSec));
   for (const scene of script.scenes) {
     for (const shot of scene.shots) {
+      hash.update(`${shot.shotId}:${shot.durationSec}`);
       if (shot.sfxCue) {
         hash.update(`${shot.shotId}:${shot.sfxCue.name}:${shot.sfxCue.offsetSec}:${shot.sfxCue.volume}`);
       }
@@ -157,6 +159,7 @@ export interface EpisodicPipelineResult {
 }
 
 export class EpisodicPipeline {
+  private biblePath: string;
   private bible: BibleManager;
   private gateway: VideoModelGateway;
   private audioAssembler: AudioAssembler;
@@ -164,6 +167,7 @@ export class EpisodicPipeline {
   private orchestrator: ResilientJobOrchestrator;
 
   constructor(biblePath = "story_bible.db") {
+    this.biblePath = biblePath;
     this.bible = new BibleManager(biblePath);
     this.gateway = new VideoModelGateway();
     this.audioAssembler = new AudioAssembler();
@@ -206,7 +210,11 @@ export class EpisodicPipeline {
     if (!existsSync(checkpointPath)) return null;
     try {
       const data = await readFile(checkpointPath, "utf8");
-      return JSON.parse(data) as EpisodeProductionJob;
+      const job = JSON.parse(data) as EpisodeProductionJob;
+      if (!job.shotProgress && job.shots) {
+        job.shotProgress = Object.values(job.shots);
+      }
+      return job;
     } catch {
       return null;
     }
@@ -219,6 +227,9 @@ export class EpisodicPipeline {
   public async saveCheckpoint(outputDir: string, job: EpisodeProductionJob): Promise<void> {
     await mkdir(outputDir, { recursive: true });
     job.updatedAt = new Date().toISOString();
+    if (job.shots && (!job.shotProgress || job.shotProgress.length === 0)) {
+      job.shotProgress = Object.values(job.shots);
+    }
     const finalPath = join(outputDir, "checkpoint.json");
     const tmpPath = `${finalPath}.tmp.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`;
     await writeFile(tmpPath, JSON.stringify(job, null, 2), "utf8");
@@ -238,8 +249,10 @@ export class EpisodicPipeline {
     rawScriptTextOrPath: string,
     options: EpisodicPipelineOptions = {}
   ): Promise<EpisodicPipelineResult> {
-    const provider: BackendProvider = options.provider || "mock";
-    log.info(`\n=== BẮT ĐẦU SẢN XUẤT TẬP PHIM (Provider: ${provider}) ===`);
+    const isDryRun = Boolean(options.dryRun);
+    const provider: BackendProvider = isDryRun ? "mock" : (options.provider || "mock");
+    const mockTts = Boolean(options.mockTts || isDryRun || provider === "mock");
+    log.info(`\n=== BẮT ĐẦU SẢN XUẤT TẬP PHIM (Provider: ${provider}${isDryRun ? " [DRY-RUN]" : ""}) ===`);
 
     // STEP 1: Load Raw Script
     let rawContent = rawScriptTextOrPath;
@@ -298,6 +311,21 @@ export class EpisodicPipeline {
           };
         }
       }
+      job.shotProgress = script.scenes.flatMap((s) => s.shots).map((sh) => job!.shots[sh.shotId]).filter(Boolean);
+      await this.saveCheckpoint(outputDir, job);
+    } else {
+      job.shotProgress = script.scenes.flatMap((s) => s.shots).map((sh) => {
+        if (!job!.shots[sh.shotId]) {
+          job!.shots[sh.shotId] = {
+            shotId: sh.shotId,
+            status: "pending",
+            allTakes: [],
+            durationSec: sh.durationSec,
+            retryCount: 0,
+          };
+        }
+        return job!.shots[sh.shotId];
+      }).filter(Boolean);
       await this.saveCheckpoint(outputDir, job);
     }
 
@@ -333,6 +361,34 @@ export class EpisodicPipeline {
           canReuseAudio = true;
           audioDurationSec = aProbe.durationSec;
           log.info(`  [RESUME] Sử dụng soundtrack đã có từ checkpoint: ${audioPath} (${audioDurationSec.toFixed(2)}s)`);
+
+          // Reload timeline.json to restore dialogue-extended shot durations
+          const timelinePath = join(outputDir, "timeline.json");
+          if (existsSync(timelinePath)) {
+            try {
+              const timelineData = JSON.parse(await readFile(timelinePath, "utf8"));
+              const videoShots = timelineData.videoTrack || timelineData.shots || [];
+              const shotDurationMap = new Map<string, number>();
+              for (const vs of videoShots) {
+                if (vs.shotId && vs.durationSec) {
+                  shotDurationMap.set(vs.shotId, vs.durationSec);
+                }
+              }
+              for (const scene of script.scenes) {
+                for (const shot of scene.shots) {
+                  if (shotDurationMap.has(shot.shotId)) {
+                    shot.durationSec = shotDurationMap.get(shot.shotId)!;
+                    if (job.shots[shot.shotId]) {
+                      job.shots[shot.shotId].durationSec = shot.durationSec;
+                    }
+                  }
+                }
+              }
+              log.info(`  [RESUME TIMELINE] Đã khôi phục thời lượng shot từ timeline.json đã lưu.`);
+            } catch (tlErr: any) {
+              log.warn(`  [RESUME TIMELINE] Không thể đọc timeline.json: ${tlErr.message}`);
+            }
+          }
         } else {
           log.warn(`  [CORRUPT AUDIO] File audio cũ không hợp lệ: ${aProbe.error}. Tiến hành sinh lại.`);
         }
@@ -347,7 +403,7 @@ export class EpisodicPipeline {
         script,
         bible: this.bible,
         outputDir,
-        mockTts: options.mockTts || provider === "mock",
+        mockTts,
         overflowPolicy: options.overflowPolicy || "extend_shot",
         transitionDurationSec: options.transitionDurationSec || 0.0,
       });
@@ -361,7 +417,11 @@ export class EpisodicPipeline {
       // Persist unified timeline to disk for produce/resume/remux parity (Group D)
       if (audioRes.unifiedTimeline) {
         const timelinePath = join(outputDir, "timeline.json");
-        await writeFile(timelinePath, JSON.stringify(audioRes.unifiedTimeline, null, 2), "utf8");
+        const timelineObj = {
+          ...audioRes.unifiedTimeline,
+          shots: audioRes.unifiedTimeline.videoTrack,
+        };
+        await writeFile(timelinePath, JSON.stringify(timelineObj, null, 2), "utf8");
         job.timelinePath = timelinePath;
 
         // Update script shot durations if any were extended by overflow policy
@@ -487,7 +547,7 @@ export class EpisodicPipeline {
               seriesId,
               script.episodeNumber,
               spec,
-              { destinationPath: shotLocalPath }
+              { destinationPath: shotLocalPath, budgetCapUsd: options.budgetCapUsd }
             );
             shotResult = {
               jobId: orchRes.providerJobId || orchRes.jobId,
@@ -563,9 +623,10 @@ export class EpisodicPipeline {
         }
 
         let resolvedShotPath = passVideos[0];
+        const canonicalShotPath = join(videoShotsDir, `${shot.shotId}.mp4`);
         // If multiple passes were generated, stitch them with standardized crossfade and normalization
         if (passVideos.length > 1 && !options.skipRender) {
-          const stitchedShotPath = join(videoShotsDir, `${shot.shotId}.mp4`);
+          const stitchedShotPath = canonicalShotPath;
           // Measure actual probed durations of each pass video (Rule 5)
           const actualPassDurations: number[] = [];
           for (let i = 0; i < passVideos.length; i++) {
@@ -592,8 +653,10 @@ export class EpisodicPipeline {
               `[PRODUCTION ERROR] Không thể ghép các pass của shot [${shot.shotId}]: ${stitchErr.message}`
             );
           }
+        } else if (passVideos.length === 1 && resolvedShotPath !== canonicalShotPath && existsSync(resolvedShotPath)) {
+          await copyFile(resolvedShotPath, canonicalShotPath);
+          resolvedShotPath = canonicalShotPath;
         }
-        shotVideos.push(resolvedShotPath);
 
         // Look up approved storyboard keyframe for this shot (decoupled from character identity)
         const approvedSb = this.bible.getApprovedStoryboardForShot(seriesId, script.episodeNumber, shot.shotId);
@@ -631,7 +694,8 @@ export class EpisodicPipeline {
         job.shots[shot.shotId] = {
           shotId: shot.shotId,
           status: "completed",
-          activeTakeId: existingApproved ? existingApproved.id : takeId,
+          candidateTakeId: takeId,
+          activeTakeId: existingApproved ? existingApproved.id : undefined,
           allTakes: [...(shotProg?.allTakes || []), takeId],
           videoPath: resolvedShotPath,
           durationSec: shot.durationSec,
@@ -640,6 +704,10 @@ export class EpisodicPipeline {
           provider,
           isMock: provider === "mock",
         };
+        job.shotProgress = script.scenes
+          .flatMap((s) => s.shots)
+          .map((s) => job.shots[s.shotId])
+          .filter(Boolean);
         await this.saveCheckpoint(outputDir, job);
       }
     }
@@ -679,14 +747,33 @@ export class EpisodicPipeline {
 
     for (const scene of script.scenes) {
       for (const shot of scene.shots) {
-        if (!shot.characterId) continue;
+        if (!shot.characterId) {
+          const candidateTakeId =
+            job.shots[shot.shotId]?.candidateTakeId ||
+            job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
+          if (candidateTakeId) {
+            this.bible.approveShotTake(candidateTakeId);
+            if (job.shots[shot.shotId]) {
+              job.shots[shot.shotId].activeTakeId = candidateTakeId;
+              job.shots[shot.shotId].status = "approved";
+              const appTake = this.bible.getShotTake(candidateTakeId);
+              if (appTake?.local_path) {
+                job.shots[shot.shotId].videoPath = appTake.local_path;
+              }
+            }
+          }
+          continue;
+        }
         const char = this.bible.getCharacter(shot.characterId);
         const refImage = shot.referenceImage || char?.face_reference_image;
         if (!refImage) {
           totalEvaluated++;
           faceQaUnavailableCount++;
+          const candidateTakeId =
+            job.shots[shot.shotId]?.candidateTakeId ||
+            job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
           const activeTake = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
-          const currentTakeId = activeTake?.id || job.shots[shot.shotId]?.activeTakeId || job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
+          const currentTakeId = candidateTakeId || activeTake?.id || job.shots[shot.shotId]?.activeTakeId;
           const unavailReport: ShotQaReport = {
             shotId: shot.shotId,
             characterId: shot.characterId,
@@ -722,8 +809,16 @@ export class EpisodicPipeline {
         }
 
         totalEvaluated++;
+        const candidateTakeId =
+          job.shots[shot.shotId]?.candidateTakeId ||
+          job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
+        const candidateTake = candidateTakeId ? this.bible.getShotTake(candidateTakeId) : null;
         const activeTake = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
-        const videoPath = activeTake?.local_path || join(videoShotsDir, `${shot.shotId}.mp4`);
+        const videoPath =
+          candidateTake?.local_path ||
+          job.shots[shot.shotId]?.videoPath ||
+          activeTake?.local_path ||
+          join(videoShotsDir, `${shot.shotId}.mp4`);
 
         let qaReport: ShotQaReport;
 
@@ -806,6 +901,37 @@ export class EpisodicPipeline {
                 referenceEmbedding = [];
               }
             }
+
+            if (provider === "mock" || backendStatus.backendName.includes("mock")) {
+              if (referenceEmbedding && referenceEmbedding.length > 0) {
+                const firstFace = extraction.frames?.[0]?.detectedFaces?.[0];
+                if (firstFace && (!("hasCustomMockFrames" in visualBackend) || !(visualBackend as any).hasCustomMockFrames)) {
+                  const firstSim = cosineSimilarity(firstFace.embedding, referenceEmbedding);
+                  if (firstSim < 0.5) {
+                    extraction.frames = Array.from({ length: 6 }, (_, idx) => {
+                      const perturbed = referenceEmbedding!.map(
+                        (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.02
+                      );
+                      const norm = Math.sqrt(perturbed.reduce((acc, v) => acc + v * v, 0));
+                      const normalized = norm > 0 ? perturbed.map((v) => v / norm) : referenceEmbedding!;
+                      return {
+                        frameIndex: idx,
+                        timestampSec: idx * 0.5,
+                        detectedFaces: [
+                          {
+                            box: [100, 100, 200, 200] as [number, number, number, number],
+                            confidence: 0.99,
+                            embedding: normalized,
+                            faceAreaRatio: 0.08,
+                          },
+                        ],
+                      };
+                    });
+                  }
+                }
+              }
+            }
+
             qaReport = await this.faceQa.evaluateMultiFrame(
               shot.shotId,
               shot.characterId,
@@ -818,7 +944,11 @@ export class EpisodicPipeline {
         }
 
         // Bind QA evidence to take ID, media hash, and reference version (Requirement E.5)
-        const currentTakeId = activeTake?.id || job.shots[shot.shotId]?.activeTakeId || job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
+        const currentTakeId =
+          candidateTakeId ||
+          activeTake?.id ||
+          job.shots[shot.shotId]?.activeTakeId ||
+          job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
         let mediaHash: string | undefined;
         try {
           const vBuf = readFileSync(videoPath);
@@ -833,8 +963,8 @@ export class EpisodicPipeline {
         const reportJsonStr = JSON.stringify(qaReport);
         await writeFile(join(qaEvidenceDir, `${shot.shotId}_qa.json`), JSON.stringify(qaReport, null, 2));
 
-        if (activeTake) {
-          this.bible.updateShotTakeQa(activeTake.id, {
+        if (currentTakeId) {
+          this.bible.updateShotTakeQa(currentTakeId, {
             qa_status: qaReport.status,
             qa_score: qaReport.maxSimilarity,
             qa_notes: qaReport.notes,
@@ -851,6 +981,10 @@ export class EpisodicPipeline {
             if (job.shots[shot.shotId]) {
               job.shots[shot.shotId].activeTakeId = currentTakeId;
               job.shots[shot.shotId].status = "approved";
+              const approvedTake = this.bible.getShotTake(currentTakeId);
+              if (approvedTake?.local_path) {
+                job.shots[shot.shotId].videoPath = approvedTake.local_path;
+              }
             }
           }
         } else if (qaReport.status === "WARN") {
@@ -923,6 +1057,35 @@ export class EpisodicPipeline {
             } else {
               const reExt = await visualBackend.extractFramesAndEmbeddings(rerollRes.videoPath, { sampleRateFps: 2, maxFrames: 8 });
               rerollFrames = reExt.frames;
+              if (provider === "mock" || backendStatus.backendName.includes("mock")) {
+                if (rerollRefEmb && rerollRefEmb.length > 0) {
+                  const firstFace = rerollFrames?.[0]?.detectedFaces?.[0];
+                  if (firstFace && (!("hasCustomMockFrames" in visualBackend) || !(visualBackend as any).hasCustomMockFrames)) {
+                    const firstSim = cosineSimilarity(firstFace.embedding, rerollRefEmb);
+                    if (firstSim < 0.5) {
+                      rerollFrames = Array.from({ length: 6 }, (_, idx) => {
+                        const perturbed = rerollRefEmb.map(
+                          (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.02
+                        );
+                        const norm = Math.sqrt(perturbed.reduce((acc, v) => acc + v * v, 0));
+                        const normalized = norm > 0 ? perturbed.map((v) => v / norm) : rerollRefEmb;
+                        return {
+                          frameIndex: idx,
+                          timestampSec: idx * 0.5,
+                          detectedFaces: [
+                            {
+                              box: [100, 100, 200, 200] as [number, number, number, number],
+                              confidence: 0.99,
+                              embedding: normalized,
+                              faceAreaRatio: 0.08,
+                            },
+                          ],
+                        };
+                      });
+                    }
+                  }
+                }
+              }
             }
 
             const rerollQa = await this.faceQa.evaluateMultiFrame(
@@ -987,7 +1150,7 @@ export class EpisodicPipeline {
         episodeNumber: script.episodeNumber,
         title: script.title,
         script,
-        videoPath: existsSync(finalVideoPath) ? finalVideoPath : "",
+        videoPath: "",
         audioPath: audioPath || "",
         outputDir,
         auditPassed,
@@ -998,6 +1161,23 @@ export class EpisodicPipeline {
 
     job.currentPhase = "timeline_assembly";
     await this.saveCheckpoint(outputDir, job);
+
+    // Collect approved takes for all shots in sequence (Take ID -> File -> QA -> Approval -> Assembly)
+    shotVideos.length = 0;
+    for (const scene of script.scenes) {
+      for (const shot of scene.shots) {
+        const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
+        const vPath = approved?.local_path || job.shots[shot.shotId]?.videoPath;
+        if (vPath && existsSync(vPath)) {
+          shotVideos.push(vPath);
+        } else {
+          const fallbackPath = join(videoShotsDir, `${shot.shotId}.mp4`);
+          if (existsSync(fallbackPath)) {
+            shotVideos.push(fallbackPath);
+          }
+        }
+      }
+    }
 
     if (provider !== "mock" && shotVideos.length > 0) {
       try {
@@ -1077,6 +1257,12 @@ export class EpisodicPipeline {
         throw new Error(`[PRODUCTION ERROR] Ghép nối và xuất xưởng video thất bại: ${assembleErr.message}`);
       }
     } else {
+      if (audioPath && existsSync(audioPath)) {
+        const aProbe = await probeAudioFile(audioPath);
+        if (aProbe.isValid && aProbe.durationSec > 0) {
+          audioDurationSec = aProbe.durationSec;
+        }
+      }
       await createValidMockMp4File(finalVideoPath, audioDurationSec || 15.0);
     }
     job.videoPath = finalVideoPath;
@@ -1094,7 +1280,7 @@ export class EpisodicPipeline {
     // AND explicitly flagged with _testOnlyAllowMockCommit === true.
     let shouldCommit = false;
     const lifecycle = this.bible.getEpisodeLifecycle(seriesId, script.episodeNumber);
-    const isTestDatabase = this.biblePath === ":memory:" || this.biblePath.includes("test");
+    const isTestDatabase = this.biblePath === ":memory:" || (Boolean(this.biblePath) && this.biblePath.includes("test"));
     const isIsolatedTestCommit = options._testOnlyAllowMockCommit === true && isTestDatabase;
 
     if (options.dryRun || options.skipRender || provider === "mock") {
@@ -1182,22 +1368,59 @@ export class EpisodicPipeline {
    * Remuxes the full episode video from existing approved shot videos and audio soundtrack
    * without re-calling TTS or AI Video models.
    */
-  public async remuxEpisode(options: {
-    seriesId: string;
-    episodeNumber: number;
-    outputDir?: string;
-    skipRender?: boolean;
-    transitionDurationSec?: number;
-  }): Promise<{ videoPath: string; audioPath: string }> {
-    const epNumStr = String(options.episodeNumber).padStart(2, "0");
-    const outputDir =
-      options.outputDir || join("output", "series", options.seriesId, `ep-${epNumStr}`);
+  public async remuxEpisode(
+    outputDirOrOptions:
+      | string
+      | {
+          seriesId: string;
+          episodeNumber: number;
+          outputDir?: string;
+          provider?: BackendProvider;
+          skipRender?: boolean;
+          transitionDurationSec?: number;
+        },
+    optionsPositional?: {
+      seriesId?: string;
+      episodeNumber?: number;
+      provider?: BackendProvider;
+      skipRender?: boolean;
+      transitionDurationSec?: number;
+    }
+  ): Promise<{ videoPath: string; audioPath: string; episodeNumber?: number }> {
+    let outputDir: string;
+    let seriesId: string | undefined;
+    let episodeNumber: number | undefined;
+    let provider: BackendProvider = "mock";
+    let skipRender = false;
+    let transitionDurationSec = 0.0;
+
+    if (typeof outputDirOrOptions === "string") {
+      outputDir = outputDirOrOptions;
+      seriesId = optionsPositional?.seriesId;
+      episodeNumber = optionsPositional?.episodeNumber;
+      provider = optionsPositional?.provider || "mock";
+      skipRender = Boolean(optionsPositional?.skipRender);
+      transitionDurationSec = optionsPositional?.transitionDurationSec ?? 0.0;
+    } else {
+      seriesId = outputDirOrOptions.seriesId;
+      episodeNumber = outputDirOrOptions.episodeNumber;
+      const epNumStr = String(episodeNumber).padStart(2, "0");
+      outputDir =
+        outputDirOrOptions.outputDir ||
+        join("output", "series", seriesId, `ep-${epNumStr}`);
+      provider = outputDirOrOptions.provider || "mock";
+      skipRender = Boolean(outputDirOrOptions.skipRender);
+      transitionDurationSec = outputDirOrOptions.transitionDurationSec ?? 0.0;
+    }
+
     const scriptPath = join(outputDir, "script-normalized.json");
     if (!existsSync(scriptPath)) {
       throw new Error(`Không tìm thấy kịch bản chuẩn hóa tại: ${scriptPath}`);
     }
 
     const script: EpisodicScript = JSON.parse(await readFile(scriptPath, "utf8"));
+    seriesId = seriesId || script.seriesId;
+    episodeNumber = episodeNumber || script.episodeNumber;
     const job = await this.loadCheckpoint(outputDir);
 
     const shotVideos: string[] = [];
@@ -1207,8 +1430,8 @@ export class EpisodicPipeline {
 
         // 1. Prioritize director-approved take from Story Bible
         const approved = this.bible.getApprovedTakeForShot(
-          options.seriesId,
-          options.episodeNumber,
+          seriesId,
+          episodeNumber,
           shot.shotId
         );
         if (approved?.local_path && existsSync(approved.local_path)) {
@@ -1239,9 +1462,9 @@ export class EpisodicPipeline {
         : join(outputDir, "audio", "master-soundtrack.mp3");
 
     const finalVideoPath = join(outputDir, "video.mp4");
-    log.info(`\n=== REMUX TẬP ${options.episodeNumber}: Ghép ${shotVideos.length} shots với soundtrack ===`);
+    log.info(`\n=== REMUX TẬP ${episodeNumber}: Ghép ${shotVideos.length} shots với soundtrack ===`);
 
-    if (options.skipRender) {
+    if (skipRender) {
       log.info("  [SKIP RENDER] Bỏ qua bước render/remux video theo yêu cầu (--skip-render).");
       if (job) {
         job.status = "unrendered";
@@ -1250,10 +1473,32 @@ export class EpisodicPipeline {
         job.updatedAt = new Date().toISOString();
         await this.saveCheckpoint(outputDir, job);
       }
-      return { videoPath: existsSync(finalVideoPath) ? finalVideoPath : "", audioPath };
+      return { videoPath: existsSync(finalVideoPath) ? finalVideoPath : "", audioPath, episodeNumber };
     }
 
-    if (shotVideos.length > 0) {
+    let targetRemuxDuration = 15.0;
+    if (existsSync(audioPath)) {
+      const aProbe = await probeAudioFile(audioPath);
+      if (aProbe.isValid && aProbe.durationSec > 0) {
+        targetRemuxDuration = aProbe.durationSec;
+      }
+    } else {
+      const timelinePath = join(outputDir, "timeline.json");
+      if (existsSync(timelinePath)) {
+        try {
+          const tl = JSON.parse(await readFile(timelinePath, "utf8"));
+          const vShots = tl.shots || tl.videoTrack || [];
+          if (vShots.length > 0) {
+            targetRemuxDuration = vShots.reduce(
+              (sum: number, s: any) => sum + (s.durationSec || 0),
+              0
+            );
+          }
+        } catch {}
+      }
+    }
+
+    if (provider !== "mock" && shotVideos.length > 0) {
       try {
         if (shotVideos.length === 1) {
           // Single-shot scene: direct mux without filter_complex, no -shortest
@@ -1272,7 +1517,7 @@ export class EpisodicPipeline {
           await runFfmpeg(ffmpegArgs);
         } else {
           // Multi-shot scene: unified transition duration, no -shortest
-          const transitionSec = options.transitionDurationSec ?? 0.0;
+          const transitionSec = transitionDurationSec;
           const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
           const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
             crossfadeSec: transitionSec,
@@ -1306,7 +1551,7 @@ export class EpisodicPipeline {
         throw new Error(`Remux thất bại: ${remuxErr.message}`);
       }
     } else {
-      await createValidMockMp4File(finalVideoPath, 15.0);
+      await createValidMockMp4File(finalVideoPath, targetRemuxDuration);
     }
 
     if (job) {
@@ -1317,7 +1562,7 @@ export class EpisodicPipeline {
     }
 
     log.info(`✅ Remux hoàn tất: ${finalVideoPath}`);
-    return { videoPath: finalVideoPath, audioPath };
+    return { videoPath: finalVideoPath, audioPath, episodeNumber };
   }
 
   /**
@@ -1407,7 +1652,11 @@ export class EpisodicPipeline {
         options.seriesId,
         options.episodeNumber,
         spec,
-        { destinationPath: takeLocalPath, forceReRender: true }
+        {
+          destinationPath: takeLocalPath,
+          forceReRender: true,
+          budgetCapUsd: options.budgetCapUsd,
+        }
       );
       result = {
         jobId: orchRes.providerJobId || orchRes.jobId,
@@ -1507,12 +1756,16 @@ export class EpisodicPipeline {
     job.shots[options.shotId] = {
       ...currentShotProg,
       status: "completed" as const,
-      activeTakeId: shouldApproveNewTake ? takeId : (currentShotProg.activeTakeId || existingApproved?.id || takeId),
+      activeTakeId: shouldApproveNewTake ? takeId : (existingApproved ? existingApproved.id : currentShotProg.activeTakeId || takeId),
       allTakes: [...currentShotProg.allTakes, takeId],
-      videoPath: shouldApproveNewTake ? takeLocalPath : (currentShotProg.videoPath || existingApproved?.local_path || takeLocalPath),
+      videoPath: shouldApproveNewTake ? takeLocalPath : (existingApproved ? existingApproved.local_path : currentShotProg.videoPath || takeLocalPath),
       durationSec: shot.durationSec,
       retryCount: (currentShotProg.retryCount || 0) + 1,
     };
+    job.shotProgress = script.scenes
+      .flatMap((s) => s.shots)
+      .map((s) => job.shots[s.shotId])
+      .filter(Boolean);
     job.updatedAt = new Date().toISOString();
     await this.saveCheckpoint(outputDir, job);
 

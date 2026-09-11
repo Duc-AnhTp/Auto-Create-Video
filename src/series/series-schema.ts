@@ -103,7 +103,7 @@ export const ShotSchema = z
     return {
       ...shot,
       dialogues,
-      dialogue: firstDialogue,
+      ...(firstDialogue ? { dialogue: firstDialogue } : {}),
     };
   });
 
@@ -241,6 +241,7 @@ export type ShotProductionStatus =
 export interface ShotProgress {
   shotId: string;
   status: ShotProductionStatus;
+  candidateTakeId?: string;
   activeTakeId?: string;
   allTakes: string[]; // List of take IDs
   videoPath?: string;
@@ -273,6 +274,7 @@ export interface EpisodeProductionJob {
   status: "pending" | "in_progress" | "paused" | "completed" | "failed" | "unrendered";
   currentPhase: JobPhase;
   shots: Record<string, ShotProgress>;
+  shotProgress?: ShotProgress[];
   audioPath?: string;
   videoPath?: string;
   timelinePath?: string;

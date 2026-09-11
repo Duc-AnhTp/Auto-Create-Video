@@ -198,6 +198,7 @@ export class TimelineScheduler {
                   durationFrames: transitionFrames,
                 }
               : undefined,
+          trimStartSec: 0,
         });
 
         // 6. Schedule Dialogue Cues inside the shot

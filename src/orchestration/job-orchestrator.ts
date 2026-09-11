@@ -44,6 +44,21 @@ export class UncertainTimeoutError extends Error {
   }
 }
 
+/**
+ * Worker Lock Conflict Error (Requirement 15)
+ */
+export class WorkerLockConflictError extends Error {
+  public readonly reason?: string;
+
+  constructor(reason?: string) {
+    super(
+      `[WORKER LOCK CONFLICT] Job đang bị khóa bởi worker khác: ${reason || "Worker lease active"}`
+    );
+    this.name = "WorkerLockConflictError";
+    this.reason = reason;
+  }
+}
+
 export interface OrchestratorOptions {
   workerId?: string;
   maxAttempts?: number;
@@ -94,11 +109,11 @@ export class ResilientJobOrchestrator {
 
   constructor(
     bible: StoryBibleManager,
-    gateway: VideoModelGateway,
+    gateway?: VideoModelGateway,
     options: OrchestratorOptions = {}
   ) {
     this.bible = bible;
-    this.gateway = gateway;
+    this.gateway = gateway ?? new VideoModelGateway();
     this.ledger = new BudgetLedger(bible);
     this.rateManager = new RateCardManager(bible);
     this.rateManager.seedDefaultRatesIfEmpty();
@@ -145,26 +160,33 @@ export class ResilientJobOrchestrator {
       modelName?: string;
       forceReRender?: boolean;
       budgetCapUsd?: number;
+      adapter?: VideoProviderAdapter;
+      specHashOverride?: string;
     } = {}
   ): Promise<ShotOrchestrationResult> {
+    if (options.adapter) {
+      this.gateway.registerAdapter(options.adapter);
+    }
     const provider = spec.backend || "mock";
     const modelName = options.modelName || (spec.metadata?.modelName as string) || "default";
     const destinationPath = options.destinationPath || spec.destinationLocalPath;
 
     // STEP 1: Compute full deterministic spec hash (Requirement 5)
-    const specHash = computeVideoSpecHash({
-      prompt: spec.prompt,
-      negativePrompt: spec.metadata?.negativePrompt as string,
-      provider,
-      modelName,
-      durationSec: spec.durationSec,
-      aspectRatio: spec.aspectRatio,
-      seed: spec.seed,
-      referenceImagePath: spec.referenceImage,
-      firstFrameConditionPath: spec.firstFrameCondition,
-      loras: spec.loras,
-      extraParameters: spec.metadata,
-    });
+    const specHash =
+      options.specHashOverride ||
+      computeVideoSpecHash({
+        prompt: spec.prompt,
+        negativePrompt: spec.metadata?.negativePrompt as string,
+        provider,
+        modelName,
+        durationSec: spec.durationSec,
+        aspectRatio: spec.aspectRatio,
+        seed: spec.seed,
+        referenceImagePath: spec.referenceImage,
+        firstFrameConditionPath: spec.firstFrameCondition,
+        loras: spec.loras,
+        extraParameters: spec.metadata,
+      });
 
     // STEP 2: Cache Hit Check (Requirement 5)
     if (!options.forceReRender) {
@@ -190,34 +212,46 @@ export class ResilientJobOrchestrator {
     // STEP 3: Existing In-Flight Job Check (Requirements 2 & 3: Resume after restart)
     const baseJobId = `pjob_${seriesId}_ep${episodeNumber}_${spec.shotId}`;
     let localJobId = baseJobId;
-    const existingJob = this.bible.getProviderJob(baseJobId);
-    if (existingJob) {
-      if (existingJob.status === "uncertain_timeout") {
-        throw new UncertainTimeoutError(
-          existingJob.id,
-          existingJob.provider,
-          existingJob.spec_hash,
-          "Job đang ở trạng thái 'uncertain_timeout'. Cần chạy lệnh đối soát (reconcile) trước khi submit lại."
-        );
-      }
 
+    const shotJobs = this.bible.getProviderJobsForShot(seriesId, episodeNumber, spec.shotId);
+
+    const uncertainJob = shotJobs.find((j) => j.status === "uncertain_timeout");
+    if (uncertainJob) {
+      throw new UncertainTimeoutError(
+        uncertainJob.id,
+        uncertainJob.provider,
+        uncertainJob.spec_hash,
+        "Job đang ở trạng thái 'uncertain_timeout'. Cần chạy lệnh đối soát (reconcile) trước khi submit lại."
+      );
+    }
+
+    const matchingInFlight = shotJobs.find(
+      (j) =>
+        (j.status === "submitted" || j.status === "running") &&
+        Boolean(j.provider_job_id) &&
+        j.provider === provider &&
+        j.spec_hash === specHash
+    );
+
+    if (matchingInFlight) {
+      log.info(
+        `[RESUME POLLING] Phát hiện job [${matchingInFlight.id}] đã submit lên provider '${matchingInFlight.provider}' (Remote ID: ${matchingInFlight.provider_job_id}) khớp spec hash. Tiếp tục polling, không gửi lại job mới.`
+      );
+      return await this.pollExistingJobToCompletion(matchingInFlight, spec, destinationPath);
+    }
+
+    const baseJob = shotJobs.find((j) => j.id === baseJobId) || this.bible.getProviderJob(baseJobId);
+    if (baseJob) {
       if (
-        (existingJob.status === "submitted" || existingJob.status === "running") &&
-        existingJob.provider_job_id
+        (baseJob.status === "submitted" || baseJob.status === "running") &&
+        (baseJob.provider !== provider || baseJob.spec_hash !== specHash)
       ) {
-        // Resume polling only if provider and spec_hash match!
-        if (existingJob.provider === provider && existingJob.spec_hash === specHash) {
-          log.info(
-            `[RESUME POLLING] Phát hiện job [${existingJob.id}] đã submit lên provider '${existingJob.provider}' (Remote ID: ${existingJob.provider_job_id}). Tiếp tục polling, không gửi lại job mới.`
-          );
-          return await this.pollExistingJobToCompletion(existingJob, spec, destinationPath);
-        } else {
-          log.warn(
-            `[IN-FLIGHT SPEC MISMATCH] Job cũ [${existingJob.id}] đang chạy trên provider '${existingJob.provider}' với specHash ${existingJob.spec_hash.slice(0, 8)}, nhưng yêu cầu mới dùng provider '${provider}' với specHash ${specHash.slice(0, 8)}. Giữ nguyên job cũ để đối soát và tạo phiên bản mới.`
-          );
-          // Version new job ID to preserve historical job identity and cost
-          localJobId = `${baseJobId}_v${Date.now()}`;
-        }
+        log.warn(
+          `[IN-FLIGHT SPEC MISMATCH] Job cũ [${baseJob.id}] đang chạy trên provider '${baseJob.provider}' với specHash ${baseJob.spec_hash.slice(0, 8)}, nhưng yêu cầu mới dùng provider '${provider}' với specHash ${specHash.slice(0, 8)}. Giữ nguyên job cũ để đối soát và tạo phiên bản mới.`
+        );
+        localJobId = `${baseJobId}_v${Date.now()}`;
+      } else if (baseJob.status === "completed" || baseJob.status === "failed") {
+        localJobId = `${baseJobId}_v${Date.now()}`;
       }
     }
 
@@ -250,6 +284,9 @@ export class ResilientJobOrchestrator {
     );
 
     if (!reservation.allowed) {
+      if (reservation.reason?.includes("locked by worker")) {
+        throw new WorkerLockConflictError(reservation.reason);
+      }
       throw new BudgetExceededError(
         reservation.totalCommittedUsd,
         options.budgetCapUsd !== undefined ? options.budgetCapUsd : this.bible.getSeriesBudget(seriesId).max_budget_usd,
@@ -564,5 +601,35 @@ export class ResilientJobOrchestrator {
       uncertainCount,
       failedCount,
     };
+  }
+
+  /**
+   * Recovers and completes a shot when previous worker crashed or when resuming with an explicit adapter/specHash.
+   */
+  public async executeShotWithRecovery(options: {
+    seriesId: string;
+    episodeNumber: number;
+    shotId: string;
+    spec: ShotExecutionSpec;
+    specHash?: string;
+    adapter?: VideoProviderAdapter;
+    destinationPath?: string;
+    modelName?: string;
+    budgetCapUsd?: number;
+    forceReRender?: boolean;
+  }): Promise<ShotOrchestrationResult> {
+    return await this.executeShot(
+      options.seriesId,
+      options.episodeNumber,
+      options.spec,
+      {
+        destinationPath: options.destinationPath,
+        modelName: options.modelName,
+        forceReRender: options.forceReRender,
+        budgetCapUsd: options.budgetCapUsd,
+        adapter: options.adapter,
+        specHashOverride: options.specHash,
+      }
+    );
   }
 }

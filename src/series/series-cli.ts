@@ -478,9 +478,8 @@ export async function runSeriesCli(args: string[]): Promise<void> {
       console.log(`\n📊 SỔ CÁI CHI PHÍ 4 TRẠNG THÁI & NGÂN SÁCH BẢO VỆ (${effectiveSeriesId}):`);
       console.log(`  - Hạn mức ngân sách tối đa (Budget Cap): $${ledger.maxBudgetUsd.toFixed(4)} USD`);
       console.log(`  - Tổng cam kết (Committed):             $${ledger.totalCommittedUsd.toFixed(4)} USD`);
-      console.log(`  - Số dư khả dụng (Available):           $${ledger.availableBudgetUsd.toFixed(4)} USD`);
-      console.log(`  - Chi tiết 4 trạng thái chi phí:`);
-      console.log(`    + Ước tính (Estimated):      $${ledger.estimatedCostUsd.toFixed(4)} USD`);
+      console.log(`  - Số dư khả dụng (Available):           $${ledger.remainingAvailableUsd.toFixed(4)} USD`);
+      console.log(`  - Chi tiết các trạng thái chi phí:`);
       console.log(`    + Đã giữ chỗ (Reserved):     $${ledger.reservedCostUsd.toFixed(4)} USD`);
       console.log(`    + Đã xác nhận (Confirmed):   $${ledger.confirmedCostUsd.toFixed(4)} USD`);
       console.log(`    + Chưa xác định (Uncertain): $${ledger.uncertainCostUsd.toFixed(4)} USD`);
@@ -524,15 +523,24 @@ export async function runSeriesCli(args: string[]): Promise<void> {
 
     case "series:reconcile": {
       const jobId = getArgValue(subArgs, "--job");
-      const action = (getArgValue(subArgs, "--action") as "confirm" | "discard") || "discard";
+      const rawAction = getArgValue(subArgs, "--action") || "discard";
+      let resolution: "confirmed_success" | "confirmed_no_charge" | "confirmed_billed_failure";
+      if (rawAction === "confirm" || rawAction === "confirmed_success") {
+        resolution = "confirmed_success";
+      } else if (rawAction === "fail" || rawAction === "confirmed_billed_failure") {
+        resolution = "confirmed_billed_failure";
+      } else {
+        resolution = "confirmed_no_charge";
+      }
       const costArg = getArgValue(subArgs, "--cost");
       const finalCost = costArg ? parseFloat(costArg) : undefined;
+      const details = finalCost !== undefined ? { actualCostUsd: finalCost } : undefined;
       const sId = seriesId || "default-series";
 
       const ledger = new BudgetLedger(bible);
       if (jobId) {
-        console.log(`\n🔍 [RECONCILE] Đang đối soát job [${jobId}] với hành động '${action}'...`);
-        const updated = ledger.reconcileUncertainJob(jobId, action, finalCost);
+        console.log(`\n🔍 [RECONCILE] Đang đối soát job [${jobId}] với hành động '${resolution}'...`);
+        const updated = ledger.reconcileUncertainJob(jobId, resolution, details);
         console.log(`✅ Đã cập nhật job [${updated.id}]: Trạng thái mới: ${updated.status}. Chi phí xác nhận: $${updated.confirmed_cost_usd.toFixed(4)} USD.`);
       } else {
         const pending = bible.listPendingJobsForSeries(sId);
@@ -543,7 +551,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         } else {
           for (const uj of uncertainJobs) {
             console.log(`  - Đang xử lý job [${uj.id}] (Remote: ${uj.provider_job_id || "none"})...`);
-            ledger.reconcileUncertainJob(uj.id, action, finalCost);
+            ledger.reconcileUncertainJob(uj.id, resolution, details);
           }
           console.log(`✅ Đã hoàn tất đối soát ${uncertainJobs.length} job(s). Ngân sách đã được đồng bộ hóa.`);
         }
@@ -554,17 +562,16 @@ export async function runSeriesCli(args: string[]): Promise<void> {
     case "series:budget": {
       const sId = seriesId || "default-series";
       const setMax = getArgValue(subArgs, "--set-max");
-      const cur = bible.getSeriesBudget(sId);
       if (setMax) {
         const maxVal = parseFloat(setMax);
-        bible.setSeriesBudget(sId, maxVal, cur.spent_budget_usd);
+        bible.setSeriesBudget(sId, maxVal);
         console.log(`\n✅ Đã cập nhật hạn mức ngân sách series [${sId}] thành: $${maxVal.toFixed(2)} USD`);
       } else {
         const l = bible.getSeriesBudgetLedger(sId);
         console.log(`\n💰 NGÂN SÁCH SERIES [${sId}]:`);
         console.log(`  - Hạn mức tối đa: $${l.maxBudgetUsd.toFixed(2)} USD`);
         console.log(`  - Tổng cam kết:   $${l.totalCommittedUsd.toFixed(4)} USD`);
-        console.log(`  - Còn lại:        $${l.availableBudgetUsd.toFixed(4)} USD`);
+        console.log(`  - Còn lại:        $${l.remainingAvailableUsd.toFixed(4)} USD`);
       }
       break;
     }

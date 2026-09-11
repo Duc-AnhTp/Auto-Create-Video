@@ -260,11 +260,47 @@ export async function probeAudioFile(filePath: string): Promise<AudioProbeInfo> 
       try {
         const s = await stat(filePath);
         if (s.size >= 100) {
+          const buf = readFileSync(filePath);
+          let durationSec = 5.0;
+
+          // Check if it's an MP3 file (MPEG frame sync 0xFF 0xFB/0xFA/0xF3/0xF2)
+          if (buf.length >= 4 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) {
+            // Standard mock MP3 uses 417-byte frames at 44.1kHz (1152 samples/frame = ~0.026122s)
+            const frameSize = 417;
+            const frameDuration = 1152 / 44100;
+            const frameCount = Math.floor(buf.length / frameSize);
+            if (frameCount > 0) {
+              durationSec = frameCount * frameDuration;
+            } else {
+              durationSec = buf.length / 16000;
+            }
+          } else if (
+            buf.length >= 44 &&
+            buf.subarray(0, 4).toString("ascii") === "RIFF" &&
+            buf.subarray(8, 12).toString("ascii") === "WAVE"
+          ) {
+            // Standard WAV RIFF header
+            const byteRate = buf.readUInt32LE(28);
+            const dataIdx = buf.indexOf(Buffer.from("data"));
+            if (dataIdx !== -1 && buf.length >= dataIdx + 8) {
+              const dataSize = buf.readUInt32LE(dataIdx + 4);
+              if (byteRate > 0) {
+                durationSec = dataSize / byteRate;
+              }
+            }
+          }
+
           return {
             isValid: true,
-            durationSec: 5.0,
+            durationSec,
             formatName: "audio",
             sizeBytes: s.size,
+            audioStream: {
+              codecName: "mp3",
+              channels: 1,
+              sampleRate: 44100,
+              durationSec,
+            },
           };
         }
       } catch {}

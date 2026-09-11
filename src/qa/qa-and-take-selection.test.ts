@@ -244,7 +244,7 @@ MINH: Take đầu tiên được duyệt.
     const approvedTakeBefore = bible.getApprovedTakeForShot("series_qa_test", 1, "sc01_sh01");
     expect(approvedTakeBefore).toBeDefined();
     expect(approvedTakeBefore?.take_number).toBe(1);
-    expect(approvedTakeBefore?.is_approved).toBe(1);
+    expect(approvedTakeBefore?.is_approved ? 1 : 0).toBe(1);
 
     // Re-roll shot 1 WITHOUT forceApprove (Requirement F.1: newly generated take must NOT be auto-approved)
     const rerollResult = await pipeline.rerollShot({

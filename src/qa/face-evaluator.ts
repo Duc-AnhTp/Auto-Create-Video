@@ -328,16 +328,19 @@ export class UninstalledVisualQaBackend implements VisualQaBackend {
  */
 export class MockVisualQaBackend implements VisualQaBackend {
   public name = "mock_visual_qa";
+  public hasCustomMockFrames = false;
   private mockFrames: FrameEvaluationSample[] = [];
 
   constructor(presetFrames?: FrameEvaluationSample[]) {
     if (presetFrames) {
       this.mockFrames = presetFrames;
+      this.hasCustomMockFrames = true;
     }
   }
 
   public setMockFrames(frames: FrameEvaluationSample[]): void {
     this.mockFrames = frames;
+    this.hasCustomMockFrames = true;
   }
 
   public async checkLipSyncSupport(): Promise<{ status: string; isAvailable: boolean; modelName: string; notes: string }> {

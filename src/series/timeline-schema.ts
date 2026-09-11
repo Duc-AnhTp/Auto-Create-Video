@@ -225,7 +225,14 @@ export const UnifiedTimelineSchema = z.object({
       isWithinTolerance: z.boolean().default(true),
       toleranceSec: z.number().default(0.05),
     })
-    .default({}),
+    .default({
+      videoDurationSec: 0,
+      audioDurationSec: 0,
+      driftSec: 0,
+      driftFrames: 0,
+      isWithinTolerance: true,
+      toleranceSec: 0.05,
+    }),
 });
 
 export type UnifiedTimeline = z.infer<typeof UnifiedTimelineSchema>;

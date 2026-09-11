@@ -439,11 +439,15 @@ export class AudioAssembler {
     }
 
     // ── STEP 2: Schedule Unified Timeline Based on Measured Audio Durations ───
+    const transitionType =
+      options.transitionType ??
+      (options.transitionDurationSec && options.transitionDurationSec > 0 ? "crossfade" : "cut");
+
     const unifiedTimeline = TimelineScheduler.schedule(script, measuredTtsDurations, {
       fps: script.fps ?? 30,
       overflowPolicy: options.overflowPolicy ?? "extend_shot",
       transitionDurationSec: options.transitionDurationSec ?? 0.0,
-      transitionType: options.transitionType ?? "cut",
+      transitionType,
     });
 
     // ── STEP 3: Assemble Stem 1 - Dialogue Track ──────────────────────────────
@@ -466,8 +470,8 @@ export class AudioAssembler {
         if (!mockTts) {
           try {
             await concatWithSilence(turnFiles, 0.15, shotCombinedPath);
-          } catch {
-            await createValidMockMp3File(shotCombinedPath, vShot.durationSec);
+          } catch (err: any) {
+            throw new Error(`Ghép các lượt thoại cho shot [${vShot.shotId}] thất bại: ${err.message}`);
           }
         } else {
           const totalDur = turnFiles.length * 1.5;
@@ -481,9 +485,28 @@ export class AudioAssembler {
     const stemDialoguePath = join(stemsDir, "stem_dialogue.mp3");
     if (shotDialoguePaddedPaths.length > 0 && !mockTts) {
       try {
-        await concatWithSilence(shotDialoguePaddedPaths, 0.0, stemDialoguePath);
-      } catch {
-        await createValidMockMp3File(stemDialoguePath, unifiedTimeline.targetTotalDurationSec);
+        if (transitionType === "crossfade" && (options.transitionDurationSec ?? 0) > 0) {
+          const dialogueMixList: SfxMixSpec[] = [];
+          for (let i = 0; i < unifiedTimeline.videoTrack.length; i++) {
+            const vShot = unifiedTimeline.videoTrack[i];
+            const pPath = shotDialoguePaddedPaths[i];
+            if (pPath && existsSync(pPath) && !pPath.includes("silent-")) {
+              dialogueMixList.push({
+                path: pPath,
+                startSec: vShot.startSec,
+                volume: 1.0,
+              });
+            }
+          }
+          await createValidMockMp3File(stemDialoguePath, unifiedTimeline.targetTotalDurationSec);
+          if (dialogueMixList.length > 0) {
+            await mixSfxOntoVoice(stemDialoguePath, dialogueMixList, stemDialoguePath);
+          }
+        } else {
+          await concatWithSilence(shotDialoguePaddedPaths, 0.0, stemDialoguePath);
+        }
+      } catch (err: any) {
+        throw new Error(`Ghép toàn bộ stem dialogue thất bại: ${err.message}`);
       }
     } else {
       await createValidMockMp3File(stemDialoguePath, unifiedTimeline.targetTotalDurationSec);
@@ -569,6 +592,11 @@ export class AudioAssembler {
     } else {
       await copyFile(voiceWithSfxPath, masterSoundtrackPath);
     }
+
+    const soundtrackMasterWav = join(audioDir, "soundtrack_master.wav");
+    try {
+      await copyFile(masterSoundtrackPath, soundtrackMasterWav);
+    } catch {}
 
     // Measure actual master audio duration
     let actualAudioDur = unifiedTimeline.targetTotalDurationSec;

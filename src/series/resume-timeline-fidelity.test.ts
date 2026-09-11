@@ -273,8 +273,8 @@ CÚ MÁY 5 (wide, 2s): Hai người rời khỏi bàn tiệc.
 
     expect(result.episodeNumber).toBe(1);
     const checkpoint = await pipeline.loadCheckpoint(testOutputDir);
-    expect(checkpoint?.shotProgress.length).toBe(4);
-    expect(checkpoint?.shotProgress.map((s) => s.shotId)).toEqual([
+    expect(checkpoint?.shotProgress?.length).toBe(4);
+    expect(checkpoint?.shotProgress?.map((s) => s.shotId)).toEqual([
       "sc01_sh02",
       "sc01_sh04",
       "sc01_sh03",

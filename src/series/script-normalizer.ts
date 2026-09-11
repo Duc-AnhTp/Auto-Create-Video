@@ -619,6 +619,7 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
 }
 
 export interface NormalizerOptions {
+  seriesId?: string;
   skipAudit?: boolean;
   strictCharacters?: boolean;
   characterMapping?: Record<string, string>; // Map raw speaker name -> Story Bible characterId
@@ -859,6 +860,7 @@ export function enrichWithBibleContext(
     title: parsed.title,
     logline: parsed.logline,
     aspectRatio,
+    fps: series?.fps || 30,
     bgm: parsed.bgm,
     unresolvedCharacters: unresolvedList,
     scenes: enrichedScenes,

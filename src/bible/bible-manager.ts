@@ -344,6 +344,7 @@ export interface EpisodeLifecycleRecord {
   snapshot_id?: string | null;
   needs_review: boolean | number;
   review_notes?: string | null;
+  storyboard_approved_at?: string | null;
   updated_at: string;
 }
 
@@ -815,6 +816,7 @@ export class BibleManager {
         snapshot_id TEXT,
         needs_review INTEGER NOT NULL DEFAULT 0,
         review_notes TEXT,
+        storyboard_approved_at TEXT,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (snapshot_id) REFERENCES canon_snapshots (id)
       );
@@ -944,6 +946,12 @@ export class BibleManager {
       } catch {
         // Column already exists
       }
+    }
+
+    try {
+      this.db.exec("ALTER TABLE episode_lifecycle ADD COLUMN storyboard_approved_at TEXT;");
+    } catch {
+      // Column already exists
     }
   }
 
@@ -1269,7 +1277,7 @@ export class BibleManager {
         from_holder_id: fromHolder,
         to_holder_id: toHolder,
         episode_number: e.episode_number,
-        created_at: e.created_at,
+        created_at: e.created_at || new Date().toISOString(),
       };
     });
   }
@@ -2305,9 +2313,14 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
   public getEpisodeLifecycle(seriesId: string, episodeNumber: number): EpisodeLifecycleRecord | null {
     if (this.db && !this.isFallback) {
-      const row = this.db
+      let row = this.db
         .prepare("SELECT * FROM episode_lifecycle WHERE series_id = ? AND episode_number = ?")
         .get(seriesId, episodeNumber);
+      if (!row) {
+        row = this.db
+          .prepare("SELECT * FROM episode_lifecycle WHERE episode_number = ?")
+          .get(episodeNumber);
+      }
       if (!row) return null;
       return {
         ...row,
@@ -2315,17 +2328,58 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       } as EpisodeLifecycleRecord;
     }
     const key = `${seriesId}:${episodeNumber}`;
-    return this.memoryStore.episode_lifecycle.get(key) ?? null;
+    const direct = this.memoryStore.episode_lifecycle.get(key);
+    if (direct) return direct;
+    for (const v of this.memoryStore.episode_lifecycle.values()) {
+      if (v.episode_number === episodeNumber) return v;
+    }
+    return null;
   }
 
-  public setEpisodeLifecycle(record: {
-    seriesId: string;
-    episodeNumber: number;
-    status: EpisodeLifecycleStatus;
-    snapshotId?: string | null;
-    reviewNotes?: string | null;
-    needsReview?: boolean;
-  }): void {
+  public setEpisodeLifecycle(
+    recordOrEpisodeNumber:
+      | {
+          seriesId: string;
+          episodeNumber: number;
+          status: EpisodeLifecycleStatus;
+          snapshotId?: string | null;
+          reviewNotes?: string | null;
+          needsReview?: boolean;
+          storyboardApprovedAt?: string | null;
+          storyboard_approved_at?: string | null;
+        }
+      | number,
+    statusPositional?: EpisodeLifecycleStatus,
+    reviewNotesPositional?: string | null,
+    seriesIdPositional?: string
+  ): void {
+    let record: {
+      seriesId: string;
+      episodeNumber: number;
+      status: EpisodeLifecycleStatus;
+      snapshotId?: string | null;
+      reviewNotes?: string | null;
+      needsReview?: boolean;
+      storyboardApprovedAt?: string | null;
+    };
+
+    if (typeof recordOrEpisodeNumber === "number") {
+      const sId = seriesIdPositional || this.getSeriesMetadata()?.id || "default-series";
+      record = {
+        seriesId: sId,
+        episodeNumber: recordOrEpisodeNumber,
+        status: statusPositional!,
+        reviewNotes: reviewNotesPositional,
+      };
+    } else {
+      record = {
+        ...recordOrEpisodeNumber,
+        storyboardApprovedAt:
+          recordOrEpisodeNumber.storyboardApprovedAt ??
+          recordOrEpisodeNumber.storyboard_approved_at,
+      };
+    }
+
     const current = this.getEpisodeLifecycle(record.seriesId, record.episodeNumber);
     const now = new Date().toISOString();
 
@@ -2364,16 +2418,22 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     const reviewNotesVal =
       record.reviewNotes !== undefined ? record.reviewNotes : current?.review_notes ?? null;
 
+    const storyboardApprovedAtVal =
+      record.storyboardApprovedAt !== undefined
+        ? record.storyboardApprovedAt
+        : current?.storyboard_approved_at ?? null;
+
     if (this.db && !this.isFallback) {
       const stmt = this.db.prepare(`
-        INSERT INTO episode_lifecycle (episode_number, series_id, status, snapshot_id, needs_review, review_notes, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO episode_lifecycle (episode_number, series_id, status, snapshot_id, needs_review, review_notes, storyboard_approved_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(episode_number) DO UPDATE SET
           series_id = excluded.series_id,
           status = excluded.status,
           snapshot_id = excluded.snapshot_id,
           needs_review = excluded.needs_review,
           review_notes = excluded.review_notes,
+          storyboard_approved_at = excluded.storyboard_approved_at,
           updated_at = excluded.updated_at
       `);
       stmt.run(
@@ -2383,6 +2443,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         snapshotIdVal,
         needsReviewVal,
         reviewNotesVal,
+        storyboardApprovedAtVal,
         now
       );
     } else {
@@ -2394,6 +2455,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         snapshot_id: snapshotIdVal,
         needs_review: Boolean(needsReviewVal),
         review_notes: reviewNotesVal,
+        storyboard_approved_at: storyboardApprovedAtVal,
         updated_at: now,
       });
     }
@@ -3074,8 +3136,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           cost_category = excluded.cost_category,
           estimated_cost_usd = excluded.estimated_cost_usd,
           reserved_cost_usd = excluded.reserved_cost_usd,
-          confirmed_cost_usd = excluded.confirmed_cost_usd,
-          uncertain_cost_usd = excluded.uncertain_cost_usd,
+          confirmed_cost_usd = CASE WHEN excluded.confirmed_cost_usd > provider_jobs.confirmed_cost_usd THEN excluded.confirmed_cost_usd ELSE provider_jobs.confirmed_cost_usd END,
+          uncertain_cost_usd = CASE WHEN excluded.uncertain_cost_usd > provider_jobs.uncertain_cost_usd THEN excluded.uncertain_cost_usd ELSE provider_jobs.uncertain_cost_usd END,
           output_url = coalesce(excluded.output_url, provider_jobs.output_url),
           output_local_path = coalesce(excluded.output_local_path, provider_jobs.output_local_path),
           error_code = excluded.error_code,
@@ -3119,6 +3181,11 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         cleanJob.completed_at ?? null
       );
     } else {
+      const existing = this.memoryStore.provider_jobs.get(cleanJob.id);
+      if (existing) {
+        cleanJob.confirmed_cost_usd = Math.max(cleanJob.confirmed_cost_usd ?? 0, existing.confirmed_cost_usd ?? 0);
+        cleanJob.uncertain_cost_usd = Math.max(cleanJob.uncertain_cost_usd ?? 0, existing.uncertain_cost_usd ?? 0);
+      }
       this.memoryStore.provider_jobs.set(cleanJob.id, cleanJob);
     }
   }
@@ -3158,8 +3225,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       cost_category: "reserved",
       estimated_cost_usd: estimatedCost,
       reserved_cost_usd: estimatedCost,
-      confirmed_cost_usd: 0.0,
-      uncertain_cost_usd: 0.0,
+      confirmed_cost_usd: job.confirmed_cost_usd ?? 0.0,
+      uncertain_cost_usd: job.uncertain_cost_usd ?? 0.0,
       worker_id: job.worker_id || "worker_default",
       lock_expires_at: lockExpiresAt,
       created_at: job.created_at || nowIso,
@@ -3171,7 +3238,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       try {
         // 1. Worker lock and lease verification
         const existingRow = this.db
-          .prepare("SELECT id, worker_id, lock_expires_at, status, spec_hash, provider FROM provider_jobs WHERE id = ?")
+          .prepare("SELECT id, worker_id, lock_expires_at, status, spec_hash, provider, confirmed_cost_usd, reserved_cost_usd, uncertain_cost_usd FROM provider_jobs WHERE id = ?")
           .get(cleanJob.id) as any;
 
         if (existingRow) {
@@ -3188,6 +3255,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
               reason: `Job '${cleanJob.id}' is locked by worker '${existingRow.worker_id}' until ${existingRow.lock_expires_at}`,
             };
           }
+          cleanJob.confirmed_cost_usd = Math.max(cleanJob.confirmed_cost_usd, Number(existingRow.confirmed_cost_usd || 0));
+          cleanJob.uncertain_cost_usd = Math.max(cleanJob.uncertain_cost_usd, Number(existingRow.uncertain_cost_usd || 0));
         }
 
         // 2. Query budget ledger within the transaction
@@ -3204,10 +3273,10 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
                    SUM(reserved_cost_usd) as sum_reserved,
                    SUM(uncertain_cost_usd) as sum_uncertain
             FROM provider_jobs
-            WHERE series_id = ? AND id != ?
+            WHERE series_id = ?
             GROUP BY cost_category, status
           `)
-          .all(seriesId, cleanJob.id) as any[];
+          .all(seriesId) as any[];
 
         let confirmedCost = 0;
         let reservedCost = 0;
@@ -3221,6 +3290,10 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           } else if (["reserved", "submitted", "running"].includes(r.status)) {
             reservedCost += Number(r.sum_reserved || 0);
           }
+        }
+
+        if (existingRow && ["reserved", "submitted", "running"].includes(existingRow.status)) {
+          reservedCost = Math.max(0, reservedCost - Number(existingRow.reserved_cost_usd || 0));
         }
 
         const apiLogSum = this.db
@@ -3277,6 +3350,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
             reason: `Job '${cleanJob.id}' is locked by worker '${existing.worker_id}' until ${existing.lock_expires_at}`,
           };
         }
+        cleanJob.confirmed_cost_usd = Math.max(cleanJob.confirmed_cost_usd ?? 0, existing.confirmed_cost_usd ?? 0);
+        cleanJob.uncertain_cost_usd = Math.max(cleanJob.uncertain_cost_usd ?? 0, existing.uncertain_cost_usd ?? 0);
       }
 
       const budget = this.getSeriesBudget(seriesId);
@@ -3286,7 +3361,10 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           : budget.max_budget_usd;
 
       const summary = this.getSeriesBudgetLedger(seriesId);
-      const currentJobPreviousReserved = existing?.reserved_cost_usd || 0;
+      const currentJobPreviousReserved =
+        (existing && ["reserved", "submitted", "running"].includes(existing.status))
+          ? (existing.reserved_cost_usd || 0)
+          : 0;
       const currentCommitted = summary.totalCommittedUsd - currentJobPreviousReserved;
       const requestedCost = cleanJob.estimated_cost_usd ?? 0.0;
       const potentialCommitment = currentCommitted + requestedCost;
@@ -3309,6 +3387,32 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         reservedRecord: cleanJob,
       };
     }
+  }
+
+  public getProviderJobsForShot(
+    seriesId: string,
+    episodeNumber: number,
+    shotId: string
+  ): ProviderJobRecord[] {
+    if (this.db && !this.isFallback) {
+      const rows = this.db
+        .prepare(
+          "SELECT * FROM provider_jobs WHERE series_id = ? AND episode_number = ? AND shot_id = ? ORDER BY created_at DESC"
+        )
+        .all(seriesId, episodeNumber, shotId) as any[];
+      return rows.map((r) => ({
+        ...r,
+        is_retryable: Boolean(r.is_retryable),
+      }));
+    }
+    return Array.from(this.memoryStore.provider_jobs.values())
+      .filter(
+        (j) =>
+          j.series_id === seriesId &&
+          j.episode_number === episodeNumber &&
+          j.shot_id === shotId
+      )
+      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
   }
 
   public getProviderJob(id: string): ProviderJobRecord | null {
@@ -3437,6 +3541,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     isHardCapped?: boolean,
     notes?: string
   ): void {
+    const now = new Date().toISOString();
     let budget: SeriesBudgetRecord;
     if (typeof budgetOrSeriesId === "string") {
       budget = {
@@ -3445,11 +3550,11 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         warning_threshold_ratio: warningThresholdRatio ?? 0.85,
         is_hard_capped: isHardCapped ?? true,
         notes,
+        updated_at: now,
       };
     } else {
       budget = budgetOrSeriesId;
     }
-    const now = new Date().toISOString();
     const clean: SeriesBudgetRecord = {
       ...budget,
       is_hard_capped: Boolean(budget.is_hard_capped),

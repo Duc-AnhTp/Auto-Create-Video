@@ -1987,10 +1987,17 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
     // 3. Lifecycle gate: draft/rendered/rejected/failed cannot mutate official canon
     const lifecycle = this.getEpisodeLifecycle(seriesId, summary.episode_number);
-    if (!options?.force && lifecycle && lifecycle.status !== "approved") {
-      throw new UnauthorizedCanonCommitError(
-        `Cannot commit episode ${summary.episode_number} to canon because its lifecycle status is '${lifecycle.status}' (must be 'approved').`
-      );
+    if (!options?.force) {
+      if (!lifecycle) {
+        throw new UnauthorizedCanonCommitError(
+          `Cannot commit episode ${summary.episode_number} to canon because no lifecycle record exists (must be explicitly approved before commit).`
+        );
+      }
+      if (lifecycle.status !== "approved") {
+        throw new UnauthorizedCanonCommitError(
+          `Cannot commit episode ${summary.episode_number} to canon because its lifecycle status is '${lifecycle.status}' (must be 'approved').`
+        );
+      }
     }
 
     // 4. Atomic Transaction execution
@@ -3113,6 +3120,194 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       );
     } else {
       this.memoryStore.provider_jobs.set(cleanJob.id, cleanJob);
+    }
+  }
+
+  /**
+   * Atomically checks available balance, checks worker lease, and reserves budget
+   * for a provider job inside an immediate SQLite transaction (BEGIN IMMEDIATE TRANSACTION).
+   * Free jobs (estimatedCost = 0) strictly retain 0.0 without default substitutions.
+   */
+  public atomicReserveProviderJob(
+    job: ProviderJobRecord,
+    options: {
+      budgetCapUsd?: number;
+      workerLeaseSec?: number;
+    } = {}
+  ): {
+    allowed: boolean;
+    remainingUsd: number;
+    totalCommittedUsd: number;
+    reason?: string;
+    reservedRecord?: ProviderJobRecord;
+  } {
+    const seriesId = job.series_id;
+    const workerLeaseSec = options.workerLeaseSec ?? 120;
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const lockExpiresAt = new Date(now.getTime() + workerLeaseSec * 1000).toISOString();
+
+    const estimatedCost =
+      job.estimated_cost_usd !== undefined
+        ? job.estimated_cost_usd
+        : (job.reserved_cost_usd ?? 0.0);
+
+    const cleanJob: ProviderJobRecord = {
+      ...job,
+      status: "reserved",
+      cost_category: "reserved",
+      estimated_cost_usd: estimatedCost,
+      reserved_cost_usd: estimatedCost,
+      confirmed_cost_usd: 0.0,
+      uncertain_cost_usd: 0.0,
+      worker_id: job.worker_id || "worker_default",
+      lock_expires_at: lockExpiresAt,
+      created_at: job.created_at || nowIso,
+      updated_at: nowIso,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+      try {
+        // 1. Worker lock and lease verification
+        const existingRow = this.db
+          .prepare("SELECT id, worker_id, lock_expires_at, status, spec_hash, provider FROM provider_jobs WHERE id = ?")
+          .get(cleanJob.id) as any;
+
+        if (existingRow) {
+          const isExpired = existingRow.lock_expires_at
+            ? new Date(existingRow.lock_expires_at).getTime() <= now.getTime()
+            : true;
+          if (existingRow.worker_id && existingRow.worker_id !== cleanJob.worker_id && !isExpired) {
+            this.db.exec("ROLLBACK;");
+            const summary = this.getSeriesBudgetLedger(seriesId);
+            return {
+              allowed: false,
+              remainingUsd: summary.remainingAvailableUsd,
+              totalCommittedUsd: summary.totalCommittedUsd,
+              reason: `Job '${cleanJob.id}' is locked by worker '${existingRow.worker_id}' until ${existingRow.lock_expires_at}`,
+            };
+          }
+        }
+
+        // 2. Query budget ledger within the transaction
+        const budget = this.getSeriesBudget(seriesId);
+        const effectiveCap =
+          options.budgetCapUsd !== undefined
+            ? Math.min(budget.max_budget_usd, options.budgetCapUsd)
+            : budget.max_budget_usd;
+
+        const rows = this.db
+          .prepare(`
+            SELECT cost_category, status,
+                   SUM(confirmed_cost_usd) as sum_confirmed,
+                   SUM(reserved_cost_usd) as sum_reserved,
+                   SUM(uncertain_cost_usd) as sum_uncertain
+            FROM provider_jobs
+            WHERE series_id = ? AND id != ?
+            GROUP BY cost_category, status
+          `)
+          .all(seriesId, cleanJob.id) as any[];
+
+        let confirmedCost = 0;
+        let reservedCost = 0;
+        let uncertainCost = 0;
+
+        for (const r of rows) {
+          if (r.cost_category === "confirmed" || r.status === "completed") {
+            confirmedCost += Number(r.sum_confirmed || 0);
+          } else if (r.status === "uncertain_timeout" || r.cost_category === "uncertain") {
+            uncertainCost += Number(r.sum_uncertain || r.sum_reserved || 0);
+          } else if (["reserved", "submitted", "running"].includes(r.status)) {
+            reservedCost += Number(r.sum_reserved || 0);
+          }
+        }
+
+        const apiLogSum = this.db
+          .prepare("SELECT SUM(cost_usd) as total FROM api_usage_logs WHERE shot_id LIKE ?")
+          .get(`${seriesId}%`) as any;
+        if (apiLogSum?.total) {
+          confirmedCost = Math.max(confirmedCost, Number(apiLogSum.total));
+        }
+
+        const currentCommitted = confirmedCost + reservedCost + uncertainCost;
+        const requestedCost = cleanJob.estimated_cost_usd ?? 0.0;
+        const potentialCommitment = currentCommitted + requestedCost;
+
+        if (potentialCommitment > effectiveCap) {
+          this.db.exec("ROLLBACK;");
+          return {
+            allowed: false,
+            remainingUsd: Math.max(0, effectiveCap - currentCommitted),
+            totalCommittedUsd: Math.round(currentCommitted * 10000) / 10000,
+            reason: `Budget cap exceeded ($${effectiveCap.toFixed(2)})`,
+          };
+        }
+
+        // 3. Write reservation record inside the transaction
+        this.createOrUpdateProviderJob(cleanJob);
+        this.db.exec("COMMIT;");
+
+        const newTotalCommitted = Math.round((currentCommitted + requestedCost) * 10000) / 10000;
+        return {
+          allowed: true,
+          remainingUsd: Math.max(0, Math.round((effectiveCap - newTotalCommitted) * 10000) / 10000),
+          totalCommittedUsd: newTotalCommitted,
+          reservedRecord: cleanJob,
+        };
+      } catch (err) {
+        try {
+          this.db.exec("ROLLBACK;");
+        } catch {}
+        throw err;
+      }
+    } else {
+      // Memory store fallback
+      const existing = this.memoryStore.provider_jobs.get(cleanJob.id);
+      if (existing) {
+        const isExpired = existing.lock_expires_at
+          ? new Date(existing.lock_expires_at).getTime() <= now.getTime()
+          : true;
+        if (existing.worker_id && existing.worker_id !== cleanJob.worker_id && !isExpired) {
+          const summary = this.getSeriesBudgetLedger(seriesId);
+          return {
+            allowed: false,
+            remainingUsd: summary.remainingAvailableUsd,
+            totalCommittedUsd: summary.totalCommittedUsd,
+            reason: `Job '${cleanJob.id}' is locked by worker '${existing.worker_id}' until ${existing.lock_expires_at}`,
+          };
+        }
+      }
+
+      const budget = this.getSeriesBudget(seriesId);
+      const effectiveCap =
+        options.budgetCapUsd !== undefined
+          ? Math.min(budget.max_budget_usd, options.budgetCapUsd)
+          : budget.max_budget_usd;
+
+      const summary = this.getSeriesBudgetLedger(seriesId);
+      const currentJobPreviousReserved = existing?.reserved_cost_usd || 0;
+      const currentCommitted = summary.totalCommittedUsd - currentJobPreviousReserved;
+      const requestedCost = cleanJob.estimated_cost_usd ?? 0.0;
+      const potentialCommitment = currentCommitted + requestedCost;
+
+      if (potentialCommitment > effectiveCap) {
+        return {
+          allowed: false,
+          remainingUsd: Math.max(0, effectiveCap - currentCommitted),
+          totalCommittedUsd: Math.round(currentCommitted * 10000) / 10000,
+          reason: `Budget cap exceeded ($${effectiveCap.toFixed(2)})`,
+        };
+      }
+
+      this.createOrUpdateProviderJob(cleanJob);
+      const newTotalCommitted = Math.round((currentCommitted + requestedCost) * 10000) / 10000;
+      return {
+        allowed: true,
+        remainingUsd: Math.max(0, Math.round((effectiveCap - newTotalCommitted) * 10000) / 10000),
+        totalCommittedUsd: newTotalCommitted,
+        reservedRecord: cleanJob,
+      };
     }
   }
 

@@ -10,6 +10,9 @@
  * 6. Bounded re-roll loop with take immutability and persistent evidence logging
  */
 
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+
 export type BackendAvailability = "AVAILABLE" | "NOT_INSTALLED" | "UNAVAILABLE";
 export type LipSyncStatus = "SUPPORTED" | "NOT_SUPPORTED" | "UNAVAILABLE";
 export type ShotQaStatus = "PASS" | "WARN" | "FAIL" | "NOT_RUN" | "UNAVAILABLE";
@@ -124,6 +127,7 @@ export interface VisualQaBackend {
     videoPath: string,
     options?: { sampleRateFps?: number; maxFrames?: number }
   ): Promise<{ frames: FrameEvaluationSample[]; error?: string }>;
+  extractImageEmbedding?(imagePath: string): Promise<{ embedding?: number[]; error?: string }>;
 }
 
 export interface ReviewEscalation {
@@ -143,6 +147,10 @@ export interface ShotQaReport {
   shotId: string;
   characterId: string;
   referenceAssetId?: string;
+  takeId?: string;
+  mediaHash?: string;
+  referenceVersion?: string;
+  isMockVector?: boolean;
   maxSimilarity: number;
   minSimilarity?: number;
   meanSimilarity?: number;
@@ -306,6 +314,12 @@ export class UninstalledVisualQaBackend implements VisualQaBackend {
       error: `Visual QA backend '${this.name}' is not installed in current environment.`,
     };
   }
+
+  public async extractImageEmbedding(_imagePath: string): Promise<{ embedding?: number[]; error?: string }> {
+    return {
+      error: `Visual QA backend '${this.name}' is not installed in current environment.`,
+    };
+  }
 }
 
 /**
@@ -376,6 +390,39 @@ export class MockVisualQaBackend implements VisualQaBackend {
     }
     return { frames: syntheticFrames };
   }
+
+  public async extractImageEmbedding(imagePath: string): Promise<{ embedding?: number[]; error?: string }> {
+    return { embedding: generateDeterministicEmbedding(`mock_ref_${imagePath}`) };
+  }
+}
+
+// ── Reference Embedding Cache by Image Hash & Model Version (Requirement E.2) ──
+
+const globalReferenceEmbeddingCache = new Map<string, number[]>();
+
+export function getReferenceCacheKey(imagePath: string, modelVersion = "facenet_512_v1"): string {
+  try {
+    if (existsSync(imagePath)) {
+      const buf = readFileSync(imagePath);
+      const hash = createHash("sha256").update(buf).digest("hex");
+      return `${hash}:${modelVersion}`;
+    }
+  } catch {}
+  return `${imagePath}:${modelVersion}`;
+}
+
+export function getCachedReferenceEmbedding(imagePath: string, modelVersion = "facenet_512_v1"): number[] | undefined {
+  const key = getReferenceCacheKey(imagePath, modelVersion);
+  return globalReferenceEmbeddingCache.get(key);
+}
+
+export function setCachedReferenceEmbedding(imagePath: string, modelVersion = "facenet_512_v1", embedding: number[]): void {
+  const key = getReferenceCacheKey(imagePath, modelVersion);
+  globalReferenceEmbeddingCache.set(key, embedding);
+}
+
+export function clearReferenceEmbeddingCache(): void {
+  globalReferenceEmbeddingCache.clear();
 }
 
 // ── Multi-Frame Face QA Evaluator ────────────────────────────────────────────
@@ -395,6 +442,19 @@ export class FaceQaEvaluator {
   public styleCategory: VisualStyleCategory;
   public backend: VisualQaBackend;
   private reRollTracker: Map<string, number> = new Map();
+  private referenceEmbeddingCache: Map<string, number[]> = new Map();
+
+  public getCachedReferenceEmbedding(key: string): number[] | undefined {
+    return this.referenceEmbeddingCache.get(key);
+  }
+
+  public setCachedReferenceEmbedding(key: string, emb: number[]): void {
+    this.referenceEmbeddingCache.set(key, emb);
+  }
+
+  public clearReferenceEmbeddingCache(): void {
+    this.referenceEmbeddingCache.clear();
+  }
 
   constructor(opts?: FaceQaEvaluatorOptions) {
     this.styleCategory = opts?.styleCategory ?? "photorealistic";
@@ -461,6 +521,30 @@ export class FaceQaEvaluator {
           required: true,
           reason: "BACKEND_UNAVAILABLE",
           directorInstructions: "Backend QA không khả dụng. Cần kiểm tra môi trường hoặc chuyển sang kiểm duyệt thủ công.",
+        },
+        calibrationSource: profile.calibrationSource,
+        disclaimer: profile.disclaimer,
+      };
+    }
+
+    if (!referenceEmbedding || referenceEmbedding.length === 0) {
+      return {
+        shotId,
+        characterId,
+        referenceAssetId,
+        maxSimilarity: 0,
+        status: "UNAVAILABLE",
+        reRollAttempt: currentAttempt,
+        shouldReRoll: false,
+        styleCategory: this.styleCategory,
+        backendName: backendStatus.backendName,
+        backendAvailability: backendStatus.availability,
+        lipSyncStatus: backendStatus.lipSyncStatus,
+        notes: "Missing or empty reference embedding. Cannot perform biometric face comparison.",
+        reviewEscalation: {
+          required: true,
+          reason: "BACKEND_UNAVAILABLE",
+          directorInstructions: "Không có vector đặc trưng từ ảnh tham chiếu. Cần kiểm tra ảnh tham chiếu hoặc trích xuất lại.",
         },
         calibrationSource: profile.calibrationSource,
         disclaimer: profile.disclaimer,

@@ -133,6 +133,7 @@ CÚ MÁY 1 (establishing, 3s): Đường phố Sài Gòn vắng lặng dưới m
 MINH: Chúng ta không còn nhiều thời gian.
     `.trim();
 
+    // Test 1: dry-run + skip-render must NEVER mutate canon by default
     await runSeriesCli([
       "series:episode",
       "--bible",
@@ -146,8 +147,25 @@ MINH: Chúng ta không còn nhiều thời gian.
     ]);
 
     const bible = new BibleManager(testDbPath);
-    const history = bible.getCanonHistory();
-    expect(history.length).toBe(1);
-    expect(history[0].title).toBe("BẢN HỢP ĐỒNG");
+    let history = bible.getCanonHistory();
+    expect(history.length).toBe(0);
+
+    // Test 2: CLI with --provider mock must NEVER mutate canon even when --commit-canon is passed
+    await runSeriesCli([
+      "series:episode",
+      "--bible",
+      testDbPath,
+      "--series",
+      "test-cli-ep",
+      "--script",
+      rawScript,
+      "--provider",
+      "mock",
+      "--mock-tts",
+      "--commit-canon",
+    ]);
+
+    history = bible.getCanonHistory();
+    expect(history.length).toBe(0);
   });
 });

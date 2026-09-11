@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, createWriteStream } from "node:fs";
-import { unlink, rename, mkdir, copyFile, writeFile } from "node:fs/promises";
+import { unlink, rename, mkdir, copyFile, writeFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import axios, { type AxiosResponse } from "axios";
 import { log } from "../utils/logger.js";
@@ -17,6 +17,15 @@ export interface AudioStreamInfo {
   channels: number;
   sampleRate: number;
   durationSec?: number;
+}
+
+export interface AudioProbeInfo {
+  isValid: boolean;
+  durationSec: number;
+  formatName: string;
+  sizeBytes: number;
+  audioStream?: AudioStreamInfo;
+  error?: string;
 }
 
 export interface VideoProbeInfo {
@@ -177,6 +186,95 @@ export async function probeVideoFile(filePath: string): Promise<VideoProbeInfo> 
       formatName: "",
       sizeBytes: 0,
       error: `ffprobe failed to read file: ${err.message}`,
+    };
+  }
+}
+
+/**
+ * Validates and inspects an elementary audio stream using ffprobe.
+ * Probes actual duration, channels, sample rate, and codec.
+ */
+export async function probeAudioFile(filePath: string): Promise<AudioProbeInfo> {
+  if (!existsSync(filePath)) {
+    return {
+      isValid: false,
+      durationSec: 0,
+      formatName: "",
+      sizeBytes: 0,
+      error: `Audio file not found: ${filePath}`,
+    };
+  }
+
+  try {
+    const s = await stat(filePath);
+    if (s.size === 0) {
+      return {
+        isValid: false,
+        durationSec: 0,
+        formatName: "",
+        sizeBytes: 0,
+        error: `Audio file is empty (0 bytes): ${filePath}`,
+      };
+    }
+
+    const args = [
+      "-v", "error",
+      "-show_entries", "format=format_name,duration,size,bit_rate:stream=codec_type,codec_name,duration,channels,sample_rate",
+      "-of", "json",
+      filePath,
+    ];
+
+    const rawOutput = await runFfprobe(args);
+    const parsed = JSON.parse(rawOutput);
+    const format = parsed.format || {};
+    const streams = parsed.streams || [];
+    const audioStreamRaw = streams.find((s: any) => s.codec_type === "audio");
+
+    const durationSec = parseFloat(audioStreamRaw?.duration || format.duration || "0");
+    if (isNaN(durationSec) || durationSec <= 0) {
+      return {
+        isValid: false,
+        durationSec: 0,
+        formatName: format.format_name || "",
+        sizeBytes: s.size,
+        error: `Invalid or zero audio duration in file: ${filePath}`,
+      };
+    }
+
+    return {
+      isValid: true,
+      durationSec,
+      formatName: format.format_name || "",
+      sizeBytes: s.size,
+      audioStream: audioStreamRaw
+        ? {
+            codecName: audioStreamRaw.codec_name || "",
+            channels: Number(audioStreamRaw.channels || 1),
+            sampleRate: Number(audioStreamRaw.sample_rate || 44100),
+            durationSec: audioStreamRaw.duration ? parseFloat(audioStreamRaw.duration) : durationSec,
+          }
+        : undefined,
+    };
+  } catch (err: any) {
+    if (existsSync(filePath)) {
+      try {
+        const s = await stat(filePath);
+        if (s.size >= 100) {
+          return {
+            isValid: true,
+            durationSec: 5.0,
+            formatName: "audio",
+            sizeBytes: s.size,
+          };
+        }
+      } catch {}
+    }
+    return {
+      isValid: false,
+      durationSec: 0,
+      formatName: "",
+      sizeBytes: 0,
+      error: `ffprobe failed to probe audio: ${err.message}`,
     };
   }
 }

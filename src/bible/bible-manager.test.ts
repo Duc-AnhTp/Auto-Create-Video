@@ -314,4 +314,69 @@ describe("BibleManager (Phân Hệ I: Story Bible Engine)", () => {
     expect(prompt).toContain("Căn Cứ Ngầm");
     expect(prompt).toContain("Chìa Khóa Cổ");
   });
+
+  it("commitEpisode strictly requires approved lifecycle status", () => {
+    // Attempting to commit without an approved lifecycle throws error
+    expect(() => {
+      manager.commitEpisode({
+        episodeNumber: 1,
+        title: "Tập Chưa Duyệt",
+        logline: "Thử commit khi chưa có lifecycle",
+      });
+    }).toThrow(/Cannot commit episode.*lifecycle.*is not 'approved'/);
+
+    // Setting lifecycle to draft still rejects
+    manager.setEpisodeLifecycle(1, "draft", "Reviewer");
+    expect(() => {
+      manager.commitEpisode({
+        episodeNumber: 1,
+        title: "Tập Chưa Duyệt",
+        logline: "Thử commit khi lifecycle là draft",
+      });
+    }).toThrow(/is not 'approved'/);
+
+    // Setting lifecycle to approved allows commit
+    manager.setEpisodeLifecycle(1, "approved", "Director");
+    const record = manager.commitEpisode({
+      episodeNumber: 1,
+      title: "Tập Đã Duyệt",
+      logline: "Commit thành công sau khi duyệt",
+    });
+    expect(record.episode_number).toBe(1);
+    expect(record.title).toBe("Tập Đã Duyệt");
+    expect(manager.getCanonHistory().length).toBe(1);
+  });
+
+  it("atomicReserveProviderJob enforces worker lease locking to prevent clobbering", () => {
+    const job = {
+      id: "job_worker_race",
+      series_id: "series_race",
+      episode_number: 1,
+      shot_id: "sh01",
+      provider: "mock",
+      spec_hash: "hash123",
+      attempt_count: 1,
+      max_attempts: 3,
+      cost_category: "reserved" as const,
+      status: "reserved" as const,
+      estimated_cost_usd: 0.0,
+      reserved_cost_usd: 0.0,
+      confirmed_cost_usd: 0.0,
+      uncertain_cost_usd: 0.0,
+      is_retryable: true,
+      worker_id: "worker_alice",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Worker Alice reserves the job with 60s lease
+    const resAlice = manager.atomicReserveProviderJob(job, { workerLeaseSec: 60 });
+    expect(resAlice.allowed).toBe(true);
+
+    // Worker Bob tries to acquire the same job while Alice's lease is active
+    const jobBob = { ...job, worker_id: "worker_bob" };
+    const resBob = manager.atomicReserveProviderJob(jobBob, { workerLeaseSec: 60 });
+    expect(resBob.allowed).toBe(false);
+    expect(resBob.reason).toContain("locked by worker 'worker_alice'");
+  });
 });

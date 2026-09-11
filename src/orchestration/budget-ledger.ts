@@ -28,12 +28,14 @@ export class BudgetLedger {
   }
 
   /**
-   * Atomically checks available balance and reserves budget for a job.
-   * If available budget is insufficient, reservation is immediately rejected.
-   * Prevents multi-worker double-spend by recording the reservation in the persistent DB.
+   * Atomically checks available balance, verifies worker lease, and reserves budget for a job.
+   * If available budget is insufficient or job is leased by another worker, reservation is rejected.
+   * Prevents multi-worker double-spend by recording the reservation inside an immediate SQLite transaction.
+   * Zero-cost / mock jobs strictly retain $0.00 cost without substituting default rates.
    */
   public atomicReserveForJob(
-    job: Omit<ProviderJobRecord, "created_at" | "updated_at" | "status" | "cost_category">
+    job: Omit<ProviderJobRecord, "created_at" | "updated_at" | "status" | "cost_category">,
+    options?: { budgetCapUsd?: number; workerLeaseSec?: number }
   ): {
     allowed: boolean;
     remainingUsd: number;
@@ -41,27 +43,12 @@ export class BudgetLedger {
     reason?: string;
     reservedRecord?: ProviderJobRecord;
   } {
-    const seriesId = job.series_id;
-    const estimatedCost = job.estimated_cost_usd > 0 ? job.estimated_cost_usd : (job.reserved_cost_usd || 0.1);
+    const estimatedCost =
+      job.estimated_cost_usd !== undefined
+        ? job.estimated_cost_usd
+        : (job.reserved_cost_usd ?? 0.0);
 
-    // Get current ledger
-    const summary = this.bible.getSeriesBudgetLedger(seriesId);
-    const potentialCommitment = summary.totalCommittedUsd + estimatedCost;
-
-    if (potentialCommitment > summary.maxBudgetUsd) {
-      log.warn(
-        `[BUDGET HARD CAP] Không thể giữ chỗ ngân sách cho job ${job.id}! Đã cam kết: $${summary.totalCommittedUsd.toFixed(4)}, Cần thêm: $${estimatedCost.toFixed(4)}, Ngân sách tối đa: $${summary.maxBudgetUsd.toFixed(4)}`
-      );
-      return {
-        allowed: false,
-        remainingUsd: summary.remainingAvailableUsd,
-        totalCommittedUsd: summary.totalCommittedUsd,
-        reason: `Budget cap exceeded ($${summary.maxBudgetUsd.toFixed(2)})`,
-      };
-    }
-
-    const now = new Date().toISOString();
-    const reservedRecord: ProviderJobRecord = {
+    const recordToReserve: ProviderJobRecord = {
       ...job,
       status: "reserved",
       cost_category: "reserved",
@@ -72,19 +59,40 @@ export class BudgetLedger {
       attempt_count: job.attempt_count || 1,
       max_attempts: job.max_attempts || 3,
       is_retryable: job.is_retryable ?? true,
-      created_at: now,
-      updated_at: now,
+      worker_id: job.worker_id || "worker_default",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
-    // Store reserved record into SQLite
-    this.bible.createOrUpdateProviderJob(reservedRecord);
+    if (typeof (this.bible as any).atomicReserveProviderJob === "function") {
+      return (this.bible as any).atomicReserveProviderJob(recordToReserve, options);
+    }
 
+    // Fallback if atomicReserveProviderJob not present
+    const seriesId = job.series_id;
+    const summary = this.bible.getSeriesBudgetLedger(seriesId);
+    const effectiveCap = options?.budgetCapUsd !== undefined ? Math.min(summary.maxBudgetUsd, options.budgetCapUsd) : summary.maxBudgetUsd;
+    const potentialCommitment = summary.totalCommittedUsd + estimatedCost;
+
+    if (potentialCommitment > effectiveCap) {
+      log.warn(
+        `[BUDGET HARD CAP] Không thể giữ chỗ ngân sách cho job ${job.id}! Đã cam kết: $${summary.totalCommittedUsd.toFixed(4)}, Cần thêm: $${estimatedCost.toFixed(4)}, Ngân sách tối đa: $${effectiveCap.toFixed(4)}`
+      );
+      return {
+        allowed: false,
+        remainingUsd: summary.remainingAvailableUsd,
+        totalCommittedUsd: summary.totalCommittedUsd,
+        reason: `Budget cap exceeded ($${effectiveCap.toFixed(2)})`,
+      };
+    }
+
+    this.bible.createOrUpdateProviderJob(recordToReserve);
     const updatedSummary = this.bible.getSeriesBudgetLedger(seriesId);
     return {
       allowed: true,
       remainingUsd: updatedSummary.remainingAvailableUsd,
       totalCommittedUsd: updatedSummary.totalCommittedUsd,
-      reservedRecord,
+      reservedRecord: recordToReserve,
     };
   }
 

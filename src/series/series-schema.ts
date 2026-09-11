@@ -247,6 +247,9 @@ export interface ShotProgress {
   durationSec?: number;
   error?: string;
   retryCount: number;
+  specHash?: string;
+  provider?: string;
+  isMock?: boolean;
 }
 
 export type JobPhase =
@@ -256,6 +259,7 @@ export type JobPhase =
   | "video_generation"
   | "qa_review"
   | "timeline_assembly"
+  | "render_skipped"
   | "committed"
   | "mock_completed"
   | "assembled_pending_review"
@@ -266,11 +270,15 @@ export interface EpisodeProductionJob {
   seriesId: string;
   episodeNumber: number;
   title: string;
-  status: "pending" | "in_progress" | "paused" | "completed" | "failed";
+  status: "pending" | "in_progress" | "paused" | "completed" | "failed" | "unrendered";
   currentPhase: JobPhase;
   shots: Record<string, ShotProgress>;
   audioPath?: string;
   videoPath?: string;
+  timelinePath?: string;
+  audioFingerprint?: string;
+  isMock?: boolean;
+  isRendered?: boolean;
   totalCostUsd: number;
   createdAt: string;
   updatedAt: string;

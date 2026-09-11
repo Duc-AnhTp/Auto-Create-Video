@@ -144,6 +144,7 @@ export class ResilientJobOrchestrator {
       destinationPath?: string;
       modelName?: string;
       forceReRender?: boolean;
+      budgetCapUsd?: number;
     } = {}
   ): Promise<ShotOrchestrationResult> {
     const provider = spec.backend || "mock";
@@ -186,8 +187,10 @@ export class ResilientJobOrchestrator {
       }
     }
 
-    // STEP 3: Existing In-Flight Job Check (Requirement 2 & 3: Resume after restart)
-    const existingJob = this.bible.getProviderJob(`pjob_${seriesId}_ep${episodeNumber}_${spec.shotId}`);
+    // STEP 3: Existing In-Flight Job Check (Requirements 2 & 3: Resume after restart)
+    const baseJobId = `pjob_${seriesId}_ep${episodeNumber}_${spec.shotId}`;
+    let localJobId = baseJobId;
+    const existingJob = this.bible.getProviderJob(baseJobId);
     if (existingJob) {
       if (existingJob.status === "uncertain_timeout") {
         throw new UncertainTimeoutError(
@@ -202,10 +205,19 @@ export class ResilientJobOrchestrator {
         (existingJob.status === "submitted" || existingJob.status === "running") &&
         existingJob.provider_job_id
       ) {
-        log.info(
-          `[RESUME POLLING] Phát hiện job [${existingJob.id}] đã submit lên provider '${existingJob.provider}' (Remote ID: ${existingJob.provider_job_id}). Tiếp tục polling, không gửi lại job mới.`
-        );
-        return await this.pollExistingJobToCompletion(existingJob, spec, destinationPath);
+        // Resume polling only if provider and spec_hash match!
+        if (existingJob.provider === provider && existingJob.spec_hash === specHash) {
+          log.info(
+            `[RESUME POLLING] Phát hiện job [${existingJob.id}] đã submit lên provider '${existingJob.provider}' (Remote ID: ${existingJob.provider_job_id}). Tiếp tục polling, không gửi lại job mới.`
+          );
+          return await this.pollExistingJobToCompletion(existingJob, spec, destinationPath);
+        } else {
+          log.warn(
+            `[IN-FLIGHT SPEC MISMATCH] Job cũ [${existingJob.id}] đang chạy trên provider '${existingJob.provider}' với specHash ${existingJob.spec_hash.slice(0, 8)}, nhưng yêu cầu mới dùng provider '${provider}' với specHash ${specHash.slice(0, 8)}. Giữ nguyên job cũ để đối soát và tạo phiên bản mới.`
+          );
+          // Version new job ID to preserve historical job identity and cost
+          localJobId = `${baseJobId}_v${Date.now()}`;
+        }
       }
     }
 
@@ -213,30 +225,34 @@ export class ResilientJobOrchestrator {
     const rateInfo = this.rateManager.resolveRate(provider, modelName);
     const estimatedCostUsd = Number((spec.durationSec * rateInfo.ratePerSecUsd).toFixed(4));
 
-    // STEP 5: Atomic Budget Reservation (Requirement 8 & 9)
-    const localJobId = `pjob_${seriesId}_ep${episodeNumber}_${spec.shotId}`;
-    const reservation = this.ledger.atomicReserveForJob({
-      id: localJobId,
-      series_id: seriesId,
-      episode_number: episodeNumber,
-      shot_id: spec.shotId,
-      provider,
-      model_name: modelName,
-      spec_hash: specHash,
-      attempt_count: 1,
-      max_attempts: this.maxAttempts,
-      estimated_cost_usd: estimatedCostUsd,
-      reserved_cost_usd: estimatedCostUsd,
-      confirmed_cost_usd: 0.0,
-      uncertain_cost_usd: 0.0,
-      worker_id: this.workerId,
-      is_retryable: true,
-    });
+    // STEP 5: Atomic Budget Reservation (Requirements 8 & 9)
+    const reservation = this.ledger.atomicReserveForJob(
+      {
+        id: localJobId,
+        series_id: seriesId,
+        episode_number: episodeNumber,
+        shot_id: spec.shotId,
+        provider,
+        model_name: modelName,
+        spec_hash: specHash,
+        attempt_count: 1,
+        max_attempts: this.maxAttempts,
+        estimated_cost_usd: estimatedCostUsd,
+        reserved_cost_usd: estimatedCostUsd,
+        confirmed_cost_usd: 0.0,
+        uncertain_cost_usd: 0.0,
+        worker_id: this.workerId,
+        is_retryable: true,
+      },
+      {
+        budgetCapUsd: options.budgetCapUsd,
+      }
+    );
 
     if (!reservation.allowed) {
       throw new BudgetExceededError(
         reservation.totalCommittedUsd,
-        this.bible.getSeriesBudget(seriesId).max_budget_usd,
+        options.budgetCapUsd !== undefined ? options.budgetCapUsd : this.bible.getSeriesBudget(seriesId).max_budget_usd,
         estimatedCostUsd
       );
     }

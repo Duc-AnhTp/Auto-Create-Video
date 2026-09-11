@@ -67,4 +67,19 @@ describe("Shot Chaining & Autoregressive Frame Extension", () => {
     expect(filterComplex).toContain("offset=0.00[vout]");
     expect(filterComplex.endsWith(";")).toBe(false);
   });
+
+  it("handles cut transition (crossfadeSec <= 0) using concat filter", () => {
+    const clips = ["clip1.mp4", "clip2.mp4", "clip3.mp4"];
+    const durations = [3.0, 4.0, 5.0];
+
+    // Number argument variant with 0s cut transition
+    const resultNum = buildCrossfadeStitchFilter(clips, durations, 0);
+    expect(resultNum.filterComplex).toBe("[0:v][1:v][2:v]concat=n=3:v=1:a=0[vout]");
+    expect(resultNum.totalOutputDuration).toBe(12.0);
+
+    // Options object variant with 0s cut transition
+    const resultOpts = buildCrossfadeStitchFilter(clips, durations, { crossfadeSec: 0 });
+    expect(resultOpts.filterComplex).toContain("concat=n=3:v=1:a=0[vout]");
+    expect(resultOpts.totalOutputDuration).toBe(12.0);
+  });
 });

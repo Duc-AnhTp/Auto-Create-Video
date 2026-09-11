@@ -260,6 +260,15 @@ export function buildCrossfadeStitchFilter(
       return { filterComplex: "", totalOutputDuration: clipDurations[0] ?? 0 };
     }
     const crossfadeSec = options;
+    if (crossfadeSec <= 0) {
+      const inputs = clipPaths.map((_, i) => `[${i}:v]`).join("");
+      const filter = `${inputs}concat=n=${clipPaths.length}:v=1:a=0[vout]`;
+      const totalOutputDuration = clipDurations.reduce((acc, d) => acc + d, 0);
+      return {
+        filterComplex: filter,
+        totalOutputDuration: Math.round(totalOutputDuration * 100) / 100,
+      };
+    }
     let filter = "";
     let lastStream = "[0:v]";
     let currentOffset = Math.max(0, clipDurations[0] - crossfadeSec);
@@ -331,6 +340,24 @@ export function buildCrossfadeStitchFilter(
     return {
       filterComplex: filterSteps.join(";"),
       totalOutputDuration: finalDur,
+    };
+  }
+
+  // Handle cut transition (zero crossfade) using concat filter
+  if (crossfadeSec <= 0) {
+    const inputs = clipPaths.map((_, i) => `[v${i}_norm]`).join("");
+    const outStream = targetDurationSec !== undefined ? "[vconcat]" : "[vout]";
+    filterSteps.push(`${inputs}concat=n=${clipPaths.length}:v=1:a=0${outStream}`);
+    let totalOutputDuration = clipDurations.reduce((acc, d) => acc + d, 0);
+    if (targetDurationSec !== undefined) {
+      filterSteps.push(
+        `[vconcat]trim=duration=${targetDurationSec.toFixed(3)},setpts=PTS-STARTPTS[vout]`
+      );
+      totalOutputDuration = targetDurationSec;
+    }
+    return {
+      filterComplex: filterSteps.join(";"),
+      totalOutputDuration: Math.round(totalOutputDuration * 1000) / 1000,
     };
   }
 

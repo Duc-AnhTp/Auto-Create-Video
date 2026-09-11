@@ -93,4 +93,34 @@ describe("Face Similarity & ArcFace QA Evaluator (Phân Hệ IV)", () => {
     expect(r3.shouldReRoll).toBe(false);
     expect(r3.notes).toContain("HALTING for human intervention");
   });
+
+  it("returns UNAVAILABLE with review escalation when reference embedding is missing/empty", () => {
+    const evaluator = new FaceQaEvaluator({ tPass: 0.80, tWarn: 0.68 });
+    const frames = [[0.85, 0.1, 0]];
+
+    // Missing reference vector
+    const reportEmptyRef = evaluator.evaluateShot("shot_03", "char_hero", frames, []);
+    expect(reportEmptyRef.status).toBe("UNAVAILABLE");
+    expect(reportEmptyRef.shouldReRoll).toBe(false);
+    expect(reportEmptyRef.notes).toContain("Escalating to review");
+  });
+
+  it("binds QA evidence (takeId, mediaHash, referenceVersion, isMockVector)", () => {
+    const evaluator = new FaceQaEvaluator({ tPass: 0.80, tWarn: 0.68 });
+    const ref = [1, 0, 0];
+    const frames = [[0.9, 0.05, 0]];
+
+    const report = evaluator.evaluateShot("shot_evidence", "char_hero", frames, ref, {
+      takeId: "sc01_sh01_take02",
+      mediaHash: "sha256:abc123def456",
+      referenceVersion: "v1.2",
+      isMockVector: true,
+    });
+
+    expect(report.status).toBe("PASS");
+    expect(report.takeId).toBe("sc01_sh01_take02");
+    expect(report.mediaHash).toBe("sha256:abc123def456");
+    expect(report.referenceVersion).toBe("v1.2");
+    expect(report.isMockVector).toBe(true);
+  });
 });

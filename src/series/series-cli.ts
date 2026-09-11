@@ -24,6 +24,36 @@ function hasFlag(args: string[], flag: string, short?: string): boolean {
   return args.includes(flag) || (!!short && args.includes(short));
 }
 
+function resolveExecutionMode(subArgs: string[]): {
+  dryRun: boolean;
+  provider: BackendProvider;
+  mockTts: boolean;
+  skipRender: boolean;
+  skipAudit: boolean;
+  commitCanon: boolean;
+} {
+  const dryRun = hasFlag(subArgs, "--dry-run");
+  const explicitProvider = getArgValue(subArgs, "--provider") as BackendProvider | undefined;
+  if (dryRun && explicitProvider && explicitProvider !== "mock") {
+    log.warn(
+      `⚠️ [DRY-RUN MODE] Cờ --dry-run được chỉ định: chuyển provider '${explicitProvider}' sang 'mock' và bật mock TTS để ngăn chi phí API.`
+    );
+  }
+  const provider: BackendProvider = dryRun ? "mock" : (explicitProvider || "local_comfyui");
+  const mockTts = dryRun || hasFlag(subArgs, "--mock-tts");
+  const skipRender = hasFlag(subArgs, "--skip-render");
+  const skipAudit = hasFlag(subArgs, "--skip-audit");
+  const rawCommitCanon = hasFlag(subArgs, "--commit-canon");
+  if ((dryRun || provider === "mock" || skipRender) && rawCommitCanon) {
+    log.warn(
+      `⚠️ [CANON GUARD] Cờ --commit-canon bị bỏ qua vì đang chạy ở chế độ ${dryRun ? "dry-run" : provider === "mock" ? "mock" : "skip-render"}. Mock không được phép cập nhật Story Bible canon chính thức.`
+    );
+  }
+  const commitCanon = (dryRun || provider === "mock" || skipRender) ? false : rawCommitCanon;
+
+  return { dryRun, provider, mockTts, skipRender, skipAudit, commitCanon };
+}
+
 function resolveBiblePath(seriesId?: string, explicitBiblePath?: string): string {
   if (explicitBiblePath) return explicitBiblePath;
   if (seriesId) return join("data", "series", seriesId, "story_bible.db");
@@ -227,11 +257,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         process.exit(2);
       }
 
-      const dryRun = hasFlag(subArgs, "--dry-run");
-      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "local_comfyui");
-      const skipRender = hasFlag(subArgs, "--skip-render");
-      const mockTts = dryRun || hasFlag(subArgs, "--mock-tts");
-      const skipAudit = hasFlag(subArgs, "--skip-audit");
+      const { dryRun, provider, mockTts, skipRender, skipAudit, commitCanon } = resolveExecutionMode(subArgs);
       const resume = hasFlag(subArgs, "--resume");
 
       const pipeline = new EpisodicPipeline(biblePath);
@@ -239,10 +265,12 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         seriesId,
         biblePath,
         provider,
+        dryRun,
         mockTts,
         skipRender,
         skipAudit,
         resume,
+        commitCanon,
       });
 
       console.log("\n=======================================================");
@@ -272,11 +300,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         process.exit(2);
       }
 
-      const dryRun = hasFlag(subArgs, "--dry-run");
-      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "local_comfyui");
-      const skipRender = hasFlag(subArgs, "--skip-render");
-      const mockTts = dryRun || hasFlag(subArgs, "--mock-tts");
-      const skipAudit = hasFlag(subArgs, "--skip-audit");
+      const { dryRun, provider, mockTts, skipRender, skipAudit, commitCanon } = resolveExecutionMode(subArgs);
 
       console.log(`\n🔄 [RESUME] Đang tiếp tục sản xuất từ checkpoint...`);
       const pipeline = new EpisodicPipeline(biblePath);
@@ -284,10 +308,12 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         seriesId: sId,
         biblePath,
         provider,
+        dryRun,
         mockTts,
         skipRender,
         skipAudit,
         resume: true,
+        commitCanon,
       });
 
       console.log("\n=======================================================");
@@ -309,8 +335,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
 
       const episodeNumber = epArg ? parseInt(epArg, 10) : 1;
       const sId = seriesId || "default-series";
-      const dryRun = hasFlag(subArgs, "--dry-run");
-      const provider = (getArgValue(subArgs, "--provider") as BackendProvider) || (dryRun ? "mock" : "local_comfyui");
+      const { dryRun, provider } = resolveExecutionMode(subArgs);
       const promptOverride = getArgValue(subArgs, "--prompt");
       const noRemux = hasFlag(subArgs, "--no-remux");
 
@@ -321,6 +346,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         episodeNumber,
         shotId,
         provider,
+        dryRun,
         promptOverride,
         remuxAfterReroll: !noRemux,
       });

@@ -108,7 +108,7 @@ CÚ MÁY 1 (close_up, 3s): Vô Danh ngồi lặng lẽ bên cửa sổ.
 VÔ DANH: Tôi không có ảnh chân dung trong Story Bible.
     `.trim();
 
-    const pipeline = new EpisodicPipeline(testDbPath);
+    const pipeline = new EpisodicPipeline(bible);
     const result = await pipeline.produceEpisode(rawScript, {
       seriesId: "series_qa_test",
       provider: "mock",
@@ -190,7 +190,7 @@ CÚ MÁY 1 (close_up, 3s): An nhìn thẳng vào camera.
 AN: Đang kiểm tra chứng cứ QA.
     `.trim();
 
-    const pipeline = new EpisodicPipeline(testDbPath);
+    const pipeline = new EpisodicPipeline(bible);
     await pipeline.produceEpisode(rawScript, {
       seriesId: "series_qa_test",
       provider: "mock",
@@ -233,7 +233,7 @@ CÚ MÁY 1 (close_up, 3s): Minh ngồi trong bóng tối.
 MINH: Take đầu tiên được duyệt.
     `.trim();
 
-    const pipeline = new EpisodicPipeline(testDbPath);
+    const pipeline = new EpisodicPipeline(bible);
 
     // Initial production: Take 1 is generated and approved
     await pipeline.produceEpisode(rawScript, {
@@ -297,7 +297,7 @@ CÚ MÁY 1 (close_up, 3s): Minh bước nhanh trong hẻm.
 MINH: Cần chọn take diễn xuất đạt hơn.
     `.trim();
 
-    const pipeline = new EpisodicPipeline(testDbPath);
+    const pipeline = new EpisodicPipeline(bible);
     await pipeline.produceEpisode(rawScript, {
       seriesId: "series_qa_test",
       provider: "mock",

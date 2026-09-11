@@ -572,6 +572,10 @@ export class BibleManager {
     BibleManager.openInstances.clear();
   }
 
+  public getDbPath(): string {
+    return this.dbPath;
+  }
+
   public getAppliedMigrations(): CanonMigrationRecord[] {
     if (this.db && !this.isFallback) {
       return this.db.prepare("SELECT * FROM canon_migrations ORDER BY version ASC").all() as CanonMigrationRecord[];
@@ -2819,10 +2823,12 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     const take = this.getShotTake(takeId);
     if (!take) return;
 
+    const shotIds = this.getEquivalentShotIds(take.shot_id);
     if (this.db && !this.isFallback) {
+      const placeholders = shotIds.map(() => "?").join(", ");
       this.db.prepare(
-        "UPDATE shot_takes SET is_approved = 0 WHERE series_id = ? AND episode_number = ? AND shot_id = ?"
-      ).run(take.series_id, take.episode_number, take.shot_id);
+        `UPDATE shot_takes SET is_approved = 0 WHERE series_id = ? AND episode_number = ? AND shot_id IN (${placeholders})`
+      ).run(take.series_id, take.episode_number, ...shotIds);
 
       this.db.prepare("UPDATE shot_takes SET is_approved = 1 WHERE id = ?").run(takeId);
     } else {
@@ -2830,7 +2836,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         if (
           t.series_id === take.series_id &&
           t.episode_number === take.episode_number &&
-          t.shot_id === take.shot_id
+          shotIds.includes(t.shot_id)
         ) {
           t.is_approved = false;
         }
@@ -2890,6 +2896,31 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         Boolean(t.is_approved)
     );
     return match ?? null;
+  }
+
+  public getNextTakeNumber(
+    seriesId: string,
+    episodeNumber: number,
+    shotId: string
+  ): number {
+    const shotIds = this.getEquivalentShotIds(shotId);
+    if (this.db && !this.isFallback) {
+      const placeholders = shotIds.map(() => "?").join(", ");
+      const row = this.db
+        .prepare(
+          `SELECT COALESCE(MAX(take_number), 0) AS max_take FROM shot_takes WHERE series_id = ? AND episode_number = ? AND shot_id IN (${placeholders})`
+        )
+        .get(seriesId, episodeNumber, ...shotIds) as { max_take: number } | undefined;
+      return (row?.max_take ?? 0) + 1;
+    }
+    const takes = Array.from(this.memoryStore.shot_takes.values()).filter(
+      (t) =>
+        t.series_id === seriesId &&
+        t.episode_number === episodeNumber &&
+        shotIds.includes(t.shot_id)
+    );
+    const maxTake = takes.reduce((acc, t) => Math.max(acc, t.take_number ?? 0), 0);
+    return maxTake + 1;
   }
 
   public getSeriesCostAndTakesSummary(seriesId: string): {

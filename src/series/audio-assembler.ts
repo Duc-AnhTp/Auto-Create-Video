@@ -344,6 +344,10 @@ export class AudioAssembler {
     this.ambienceDir = options.ambienceDir ?? join(__dirname, "..", "..", "assets", "ambience");
   }
 
+  public getCfg(): Config {
+    return this.cfg;
+  }
+
   /**
    * Generates all dialogue audio tracks for an episode, separates tracks into individual stems
    * (dialogue, sfx, ambience, bgm), mixes them into master soundtrack, and formats subtitles.
@@ -358,6 +362,7 @@ export class AudioAssembler {
     const measuredTtsDurations: MeasuredTtsDurations = {};
     const dialogueTracks: DialogueAudioResult[] = [];
     const synthesizedFilesByShotId = new Map<string, string[]>();
+    const dialogueAudioMap = new Map<string, string>();
 
     for (const scene of script.scenes) {
       for (const shot of scene.shots) {
@@ -420,6 +425,10 @@ export class AudioAssembler {
 
           measuredTtsDurations[turnId] = measuredDur;
           shotFiles.push(turnPath);
+          dialogueAudioMap.set(turnId, turnPath);
+          if (dialogue.dialogueId) {
+            dialogueAudioMap.set(dialogue.dialogueId, turnPath);
+          }
 
           dialogueTracks.push({
             shotId: shot.shotId,
@@ -449,6 +458,13 @@ export class AudioAssembler {
       transitionDurationSec: options.transitionDurationSec ?? 0.0,
       transitionType,
     });
+
+    for (const cue of unifiedTimeline.dialogueTrack) {
+      const aPath = dialogueAudioMap.get(cue.dialogueId);
+      if (aPath) {
+        cue.audioPath = aPath;
+      }
+    }
 
     // ── STEP 3: Assemble Stem 1 - Dialogue Track ──────────────────────────────
     const shotDialoguePaddedPaths: string[] = [];
@@ -487,14 +503,13 @@ export class AudioAssembler {
       try {
         if (transitionType === "crossfade" && (options.transitionDurationSec ?? 0) > 0) {
           const dialogueMixList: SfxMixSpec[] = [];
-          for (let i = 0; i < unifiedTimeline.videoTrack.length; i++) {
-            const vShot = unifiedTimeline.videoTrack[i];
-            const pPath = shotDialoguePaddedPaths[i];
-            if (pPath && existsSync(pPath) && !pPath.includes("silent-")) {
+          for (const cue of unifiedTimeline.dialogueTrack) {
+            const turnAudio = dialogueAudioMap.get(cue.dialogueId) || cue.audioPath;
+            if (turnAudio && existsSync(turnAudio)) {
               dialogueMixList.push({
-                path: pPath,
-                startSec: vShot.startSec,
-                volume: 1.0,
+                path: turnAudio,
+                startSec: cue.startSec,
+                volume: cue.volume ?? 1.0,
               });
             }
           }

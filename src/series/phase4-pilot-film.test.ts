@@ -72,7 +72,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       });
 
       const rawScriptText = await readFile(pilotScriptPath, "utf8");
-      const normalized = normalizeScript(rawScriptText, bible, { seriesId: "cyber-saigon" });
+      const normalized = await normalizeScript(rawScriptText, bible, { seriesId: "cyber-saigon" });
 
       // 1. Validate Schema
       const validated = EpisodicScriptSchema.parse(normalized);
@@ -245,7 +245,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
     it("hosts the review dashboard, lists takes, and allows approving takes via API", async () => {
       const bible = new BibleManager(":memory:");
       const rawScriptText = await readFile(pilotScriptPath, "utf8");
-      const script = normalizeScript(rawScriptText, bible, { seriesId: "cyber-saigon" });
+      const script = await normalizeScript(rawScriptText, bible, { seriesId: "cyber-saigon" });
 
       // Record 2 takes for shot 1
       bible.recordShotTake({
@@ -369,7 +369,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       const takesAfterReroll = bible.listShotTakes("cyber-saigon", 1);
       expect(takesAfterReroll.length).toBe(33);
 
-      const shot1Takes = takesAfterReroll.filter((t) => t.shot_id === "sc1_sh1");
+      const shot1Takes = takesAfterReroll.filter((t) => t.shot_id === "sc1_sh1" || t.shot_id === "sc01_sh01");
       expect(shot1Takes.length).toBe(2);
       // New take should be approved, old take should be unapproved
       const take1 = shot1Takes.find((t) => t.take_number === 1);

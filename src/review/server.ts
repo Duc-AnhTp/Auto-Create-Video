@@ -707,6 +707,11 @@ export function renderSeriesDashboardHtml(
     (acc: number, s: any) => acc + (s.shots || []).reduce((shAcc: number, sh: any) => shAcc + (sh.durationSec || 0), 0),
     0
   );
+  const fullTitle = script.title
+    ? (script.title.toUpperCase().startsWith("TẬP") || script.title.toUpperCase().startsWith("EPISODE")
+        ? script.title
+        : `TẬP ${script.episodeNumber || 1}: ${script.title}`)
+    : `TẬP ${script.episodeNumber || 1}`;
 
   return `<!DOCTYPE html>
 <html lang="vi">
@@ -864,7 +869,7 @@ export function renderSeriesDashboardHtml(
 <body>
   <div class="header">
     <div>
-      <h1>🎬 Episodic AI Film Series: ${escapeHtml(script.title || "Tập Phim Mới")}</h1>
+      <h1>🎬 Episodic AI Film Series: ${escapeHtml(fullTitle)}</h1>
       <div class="subtitle">Tập ${escapeHtml(script.episodeNumber || 1)} &bull; Series ID: ${escapeHtml(script.seriesId || "N/A")} &bull; Tỷ lệ: ${escapeHtml(script.aspectRatio || "9:16")}</div>
     </div>
   </div>

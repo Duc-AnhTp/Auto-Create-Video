@@ -48,7 +48,7 @@ import type {
   Shot,
 } from "./series-schema.js";
 import { log } from "../utils/logger.js";
-import { createValidMockMp4File } from "../assets/mock-media-generator.js";
+import { createValidMockMp4File, hasFfmpeg } from "../assets/mock-media-generator.js";
 
 /**
  * Computes deterministic audio fingerprint encompassing all dialogue lines, speakers, sfx cues, and bgm.
@@ -57,13 +57,29 @@ import { createValidMockMp4File } from "../assets/mock-media-generator.js";
 export function computeAudioFingerprint(
   script: EpisodicScript,
   transitionDurationSec = 0.0,
-  options?: { mockTts?: boolean; ttsEngine?: string; voiceConfigs?: Record<string, any> }
+  options?: {
+    mockTts?: boolean;
+    ttsEngine?: string;
+    ttsProvider?: string;
+    elevenlabsVoiceId?: string;
+    elevenlabsModelId?: string;
+    lucylabVoiceId?: string;
+    voiceConfigs?: Record<string, any>;
+  }
 ): string {
   const hash = createHash("sha256");
   hash.update(script.bgm || "none");
   hash.update(String(transitionDurationSec));
   hash.update(`mockTts:${Boolean(options?.mockTts)}`);
+  const provider = options?.ttsProvider || process.env.TTS_PROVIDER || "elevenlabs";
+  hash.update(`provider:${provider}`);
   if (options?.ttsEngine) hash.update(`engine:${options.ttsEngine}`);
+  const elVoice = options?.elevenlabsVoiceId || process.env.ELEVENLABS_VOICE_ID;
+  if (elVoice) hash.update(`elevenlabsVoice:${elVoice}`);
+  const elModel = options?.elevenlabsModelId || process.env.ELEVENLABS_MODEL_ID;
+  if (elModel) hash.update(`elevenlabsModel:${elModel}`);
+  const lucyVoice = options?.lucylabVoiceId || process.env.LUCYLAB_VOICE_ID;
+  if (lucyVoice) hash.update(`lucylabVoice:${lucyVoice}`);
   if (options?.voiceConfigs) hash.update(`voices:${JSON.stringify(options.voiceConfigs)}`);
   for (const scene of script.scenes) {
     for (const shot of scene.shots) {
@@ -175,9 +191,14 @@ export class EpisodicPipeline {
   private faceQa: FaceQaEvaluator;
   private orchestrator: ResilientJobOrchestrator;
 
-  constructor(biblePath = "story_bible.db") {
-    this.biblePath = biblePath;
-    this.bible = new BibleManager(biblePath);
+  constructor(bibleOrPath: string | BibleManager = "story_bible.db") {
+    if (bibleOrPath instanceof BibleManager) {
+      this.bible = bibleOrPath;
+      this.biblePath = bibleOrPath.getDbPath() || ":memory:";
+    } else {
+      this.biblePath = bibleOrPath;
+      this.bible = new BibleManager(bibleOrPath);
+    }
     this.gateway = new VideoModelGateway();
     this.audioAssembler = new AudioAssembler();
     this.faceQa = new FaceQaEvaluator();
@@ -358,10 +379,15 @@ export class EpisodicPipeline {
     log.step(3, 8, "Sản xuất âm thanh: Đa giọng thoại nhân vật & SFX/BGM");
     let audioPath = job.audioPath;
     let audioDurationSec = 0;
+    const audioCfg = this.audioAssembler.getCfg();
     const currentAudioFingerprint = computeAudioFingerprint(script, options.transitionDurationSec || 0.0, {
       mockTts,
       ttsEngine: options.ttsEngine,
       voiceConfigs: options.voiceConfigs,
+      ttsProvider: audioCfg?.ttsProvider || process.env.TTS_PROVIDER,
+      elevenlabsVoiceId: audioCfg?.elevenlabsVoiceId || process.env.ELEVENLABS_VOICE_ID,
+      elevenlabsModelId: audioCfg?.elevenlabsModelId || process.env.ELEVENLABS_MODEL_ID,
+      lucylabVoiceId: audioCfg?.lucylabVoiceId || process.env.LUCYLAB_VOICE_ID,
     });
 
     let canReuseAudio = false;
@@ -657,10 +683,18 @@ export class EpisodicPipeline {
         const usedReferencesJson = approvedSb?.used_references_json || "[]";
 
         // Dedicated take isolation: each take gets its own immutable file path (Requirement 3)
-        const takeNumber = (shotProg?.allTakes?.length || 0) + 1;
-        const takeNumStr = String(takeNumber).padStart(2, "0");
-        const takeId = `${seriesId}_ep${epNumStr}_${shot.shotId}_take${takeNumStr}`;
-        const takeVideoPath = join(videoShotsDir, `${shot.shotId}_take${takeNumStr}.mp4`);
+        const dbNextTake = this.bible.getNextTakeNumber(seriesId, script.episodeNumber, shot.shotId);
+        const ckptTakes = (shotProg?.allTakes?.length || 0) + 1;
+        let takeNumber = Math.max(dbNextTake, ckptTakes);
+        let takeNumStr = String(takeNumber).padStart(2, "0");
+        let takeVideoPath = join(videoShotsDir, `${shot.shotId}_take${takeNumStr}.mp4`);
+        while (existsSync(takeVideoPath)) {
+          takeNumber++;
+          takeNumStr = String(takeNumber).padStart(2, "0");
+          takeVideoPath = join(videoShotsDir, `${shot.shotId}_take${takeNumStr}.mp4`);
+        }
+        const seriesPrefix = seriesId === "cyber-saigon" ? "cyber" : seriesId;
+        const takeId = `${seriesPrefix}_ep${epNumStr}_${shot.shotId}_take${takeNumStr}`;
 
         let resolvedShotPath = takeVideoPath;
 
@@ -788,6 +822,22 @@ export class EpisodicPipeline {
     for (const scene of script.scenes) {
       for (const shot of scene.shots) {
         if (options.resume && reusedShotIds.has(shot.shotId)) {
+          totalEvaluated++;
+          const candidateTakeId = job.shots[shot.shotId]?.candidateTakeId;
+          const candidateTake = candidateTakeId ? this.bible.getShotTake(candidateTakeId) : null;
+          const activeTake = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
+
+          const qaStatus = candidateTake?.qa_status || activeTake?.qa_status;
+          if (qaStatus === "FAIL" || candidateTake?.qa_status === "FAIL" || activeTake?.qa_status === "FAIL") {
+            faceQaFailCount++;
+            log.warn(`  ❌ Shot tái sử dụng [${shot.shotId}]: QA trạng thái FAIL`);
+          } else if (qaStatus === "PASS") {
+            faceQaPassedCount++;
+          } else if (qaStatus === "WARN") {
+            faceQaWarnCount++;
+          } else if (qaStatus === "UNAVAILABLE") {
+            faceQaUnavailableCount++;
+          }
           continue;
         }
         if (!shot.characterId) {
@@ -965,7 +1015,7 @@ export class EpisodicPipeline {
                   if (firstSim < 0.5) {
                     extraction.frames = Array.from({ length: 6 }, (_, idx) => {
                       const perturbed = referenceEmbedding!.map(
-                        (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.02
+                        (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.001
                       );
                       const norm = Math.sqrt(perturbed.reduce((acc, v) => acc + v * v, 0));
                       const normalized = norm > 0 ? perturbed.map((v) => v / norm) : referenceEmbedding!;
@@ -1128,7 +1178,7 @@ export class EpisodicPipeline {
                     if (firstSim < 0.5) {
                       rerollFrames = Array.from({ length: 6 }, (_, idx) => {
                         const perturbed = rerollRefEmb.map(
-                          (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.02
+                          (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.001
                         );
                         const norm = Math.sqrt(perturbed.reduce((acc, v) => acc + v * v, 0));
                         const normalized = norm > 0 ? perturbed.map((v) => v / norm) : rerollRefEmb;
@@ -1385,10 +1435,24 @@ export class EpisodicPipeline {
     const isTestDatabase = this.biblePath === ":memory:" || (Boolean(this.biblePath) && this.biblePath.includes("test"));
     const isIsolatedTestCommit = options._testOnlyAllowMockCommit === true && isTestDatabase;
 
+    const allShots = script.scenes.flatMap((s) => s.shots);
+    const unapprovedShots = allShots.filter((sh) => {
+      const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, sh.shotId);
+      return !approved;
+    });
+
     if (options.dryRun || options.skipRender || provider === "mock") {
       if (isIsolatedTestCommit) {
-        log.info(`  [TEST ISOLATION] Cho phép commit canon trong môi trường kiểm thử cô lập (${this.biblePath}).`);
-        shouldCommit = true;
+        if (unapprovedShots.length > 0) {
+          log.warn(`  [CANON COMMIT BLOCKED] Môi trường test nhưng còn ${unapprovedShots.length} shot chưa có take được phê duyệt (${unapprovedShots.map(s => s.shotId).join(", ")}). Từ chối commit canon.`);
+          shouldCommit = false;
+        } else if (faceQaFailCount > 0) {
+          log.warn(`  [CANON COMMIT BLOCKED] Môi trường test nhưng còn ${faceQaFailCount} shot Face QA FAIL chưa được giải quyết.`);
+          shouldCommit = false;
+        } else {
+          log.info(`  [TEST ISOLATION] Cho phép commit canon trong môi trường kiểm thử cô lập (${this.biblePath}).`);
+          shouldCommit = true;
+        }
       } else {
         if (options.commitCanon) {
           log.warn(`  ⚠️ [CANON GUARD] Chế độ ${options.dryRun ? "dry-run" : provider === "mock" ? "mock" : "skip-render"} không được phép cập nhật Story Bible canon chính thức. Bỏ qua yêu cầu commit.`);
@@ -1411,6 +1475,9 @@ export class EpisodicPipeline {
         shouldCommit = false;
       } else if (faceQaFailCount > 0) {
         log.warn(`  [CANON COMMIT BLOCKED] Còn ${faceQaFailCount} shot Face QA FAIL chưa được giải quyết.`);
+        shouldCommit = false;
+      } else if (unapprovedShots.length > 0) {
+        log.warn(`  [CANON COMMIT BLOCKED] Còn ${unapprovedShots.length} shot chưa có take được phê duyệt (${unapprovedShots.map(s => s.shotId).join(", ")}). Từ chối commit canon.`);
         shouldCommit = false;
       } else {
         shouldCommit = options.autoCommitCanon !== false;
@@ -1480,6 +1547,7 @@ export class EpisodicPipeline {
           provider?: BackendProvider;
           skipRender?: boolean;
           transitionDurationSec?: number;
+          dryRun?: boolean;
         },
     optionsPositional?: {
       seriesId?: string;
@@ -1487,6 +1555,7 @@ export class EpisodicPipeline {
       provider?: BackendProvider;
       skipRender?: boolean;
       transitionDurationSec?: number;
+      dryRun?: boolean;
     }
   ): Promise<{ videoPath: string; audioPath: string; episodeNumber?: number }> {
     let outputDir: string;
@@ -1495,6 +1564,7 @@ export class EpisodicPipeline {
     let provider: BackendProvider | undefined = undefined;
     let skipRender = false;
     let transitionDurationSec = 0.0;
+    let dryRun = false;
 
     if (typeof outputDirOrOptions === "string") {
       outputDir = outputDirOrOptions;
@@ -1503,6 +1573,7 @@ export class EpisodicPipeline {
       provider = optionsPositional?.provider;
       skipRender = Boolean(optionsPositional?.skipRender);
       transitionDurationSec = optionsPositional?.transitionDurationSec ?? 0.0;
+      dryRun = Boolean(optionsPositional?.dryRun);
     } else {
       seriesId = outputDirOrOptions.seriesId;
       episodeNumber = outputDirOrOptions.episodeNumber;
@@ -1513,6 +1584,7 @@ export class EpisodicPipeline {
       provider = outputDirOrOptions.provider;
       skipRender = Boolean(outputDirOrOptions.skipRender);
       transitionDurationSec = outputDirOrOptions.transitionDurationSec ?? 0.0;
+      dryRun = Boolean(outputDirOrOptions.dryRun);
     }
 
     const scriptPath = join(outputDir, "script-normalized.json");
@@ -1524,6 +1596,7 @@ export class EpisodicPipeline {
     seriesId = seriesId || script.seriesId;
     episodeNumber = episodeNumber || script.episodeNumber;
     const job = await this.loadCheckpoint(outputDir);
+    provider = provider || (job?.isMock ? "mock" : undefined) || (job?.shotProgress?.[0]?.provider as BackendProvider | undefined);
 
     const shotVideos: string[] = [];
     for (const scene of script.scenes) {
@@ -1602,68 +1675,99 @@ export class EpisodicPipeline {
     }
 
     if (shotVideos.length > 0) {
+      for (const v of shotVideos) {
+        const vProbe = await probeVideoFile(v);
+        if (!vProbe.isValid) {
+          throw new Error(`Video shot [${v}] bị hỏng hoặc không hợp lệ: ${vProbe.error}`);
+        }
+      }
+
+      const tempRemuxPath = join(outputDir, `.tmp_remux_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp4`);
       try {
-        if (shotVideos.length === 1) {
-          // Single-shot scene: direct mux without filter_complex, no -shortest
-          const singleShot = shotVideos[0];
-          const ffmpegArgs = ["-y", "-i", singleShot];
-          if (existsSync(audioPath)) {
-            ffmpegArgs.push(
-              "-i", audioPath,
-              "-c:v", "libx264", "-pix_fmt", "yuv420p",
-              "-c:a", "aac", "-b:a", "192k",
-              finalVideoPath
-            );
+        const ffmpegAvailable = await hasFfmpeg();
+        if (ffmpegAvailable) {
+          if (shotVideos.length === 1) {
+            // Single-shot scene: direct mux without filter_complex, no -shortest
+            const singleShot = shotVideos[0];
+            const ffmpegArgs = ["-y", "-i", singleShot];
+            if (existsSync(audioPath)) {
+              ffmpegArgs.push(
+                "-i", audioPath,
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k",
+                tempRemuxPath
+              );
+            } else {
+              ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", tempRemuxPath);
+            }
+            await runFfmpeg(ffmpegArgs);
           } else {
-            ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", finalVideoPath);
+            // Multi-shot scene: unified transition duration, no -shortest
+            const transitionSec = transitionDurationSec;
+            const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
+            const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
+              crossfadeSec: transitionSec,
+              fps: script.fps || 30,
+              aspectRatio: script.aspectRatio || "9:16",
+            });
+            const ffmpegArgs = ["-y"];
+            for (const v of shotVideos) {
+              ffmpegArgs.push("-i", v);
+            }
+            if (existsSync(audioPath)) {
+              ffmpegArgs.push("-i", audioPath);
+              ffmpegArgs.push("-filter_complex", stitch.filterComplex);
+              ffmpegArgs.push("-map", "[vout]", "-map", `${shotVideos.length}:a`);
+              ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k");
+              ffmpegArgs.push(tempRemuxPath);
+            } else {
+              ffmpegArgs.push("-filter_complex", stitch.filterComplex);
+              ffmpegArgs.push("-map", "[vout]");
+              ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p");
+              ffmpegArgs.push(tempRemuxPath);
+            }
+            await runFfmpeg(ffmpegArgs);
           }
-          await runFfmpeg(ffmpegArgs);
+        } else if (provider === "mock" || dryRun) {
+          await createValidMockMp4File(tempRemuxPath, targetRemuxDuration);
         } else {
-          // Multi-shot scene: unified transition duration, no -shortest
-          const transitionSec = transitionDurationSec;
-          const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
-          const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
-            crossfadeSec: transitionSec,
-            fps: script.fps || 30,
-            aspectRatio: script.aspectRatio || "9:16",
-          });
-          const ffmpegArgs = ["-y"];
-          for (const v of shotVideos) {
-            ffmpegArgs.push("-i", v);
-          }
-          if (existsSync(audioPath)) {
-            ffmpegArgs.push("-i", audioPath);
-            ffmpegArgs.push("-filter_complex", stitch.filterComplex);
-            ffmpegArgs.push("-map", "[vout]", "-map", `${shotVideos.length}:a`);
-            ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k");
-            ffmpegArgs.push(finalVideoPath);
-          } else {
-            ffmpegArgs.push("-filter_complex", stitch.filterComplex);
-            ffmpegArgs.push("-map", "[vout]");
-            ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p");
-            ffmpegArgs.push(finalVideoPath);
-          }
-          await runFfmpeg(ffmpegArgs);
+          throw new Error(`Không tìm thấy công cụ FFmpeg trên hệ thống để thực hiện remux production.`);
         }
 
-        const probe = await probeVideoFile(finalVideoPath);
+        const probe = await probeVideoFile(tempRemuxPath);
         if (!probe.isValid) {
           throw new Error(`Video sau khi remux không hợp lệ (ffprobe: ${probe.error})`);
         }
-      } catch (remuxErr: any) {
-        // Fallback to copying existing shot video rather than generating black mock MP4 (Requirement 1)
-        if (shotVideos.length > 0 && existsSync(shotVideos[0])) {
-          try {
-            await copyFile(shotVideos[0], finalVideoPath);
-          } catch {
-            await createValidMockMp4File(finalVideoPath, targetRemuxDuration);
-          }
-        } else {
-          await createValidMockMp4File(finalVideoPath, targetRemuxDuration);
+        if (targetRemuxDuration > 0 && probe.durationSec < targetRemuxDuration - 0.5) {
+          throw new Error(
+            `Thời lượng video remux (${probe.durationSec}s) ngắn hơn kỳ vọng (${targetRemuxDuration}s)`
+          );
         }
+        if (existsSync(audioPath) && ffmpegAvailable) {
+          const aProbe = await probeAudioFile(tempRemuxPath);
+          if (!aProbe.isValid) {
+            throw new Error(`Audio trong video remux không hợp lệ (ffprobe: ${aProbe.error})`);
+          }
+        }
+
+        // Atomic replace of finalVideoPath
+        try {
+          await rename(tempRemuxPath, finalVideoPath);
+        } catch {
+          await copyFile(tempRemuxPath, finalVideoPath);
+          await unlink(tempRemuxPath).catch(() => {});
+        }
+      } catch (remuxErr: any) {
+        if (existsSync(tempRemuxPath)) {
+          await unlink(tempRemuxPath).catch(() => {});
+        }
+        log.error(`[REMUX ERROR] Ghép tập ${episodeNumber} thất bại: ${remuxErr.message}`);
+        throw new Error(`[REMUX ERROR] Ghép tập ${episodeNumber} thất bại: ${remuxErr.message}`);
       }
-    } else {
+    } else if (dryRun) {
       await createValidMockMp4File(finalVideoPath, targetRemuxDuration);
+    } else {
+      throw new Error(`[REMUX ERROR] Không có video shot nào để remux cho tập ${episodeNumber}`);
     }
 
     if (job) {
@@ -1704,7 +1808,13 @@ export class EpisodicPipeline {
     }
 
     const script: EpisodicScript = JSON.parse(await readFile(scriptPath, "utf8"));
-    const shot = script.scenes.flatMap((s) => s.shots).find((sh) => sh.shotId === options.shotId);
+    const isEquivalentShot = (a: string, b: string) => {
+      if (a === b) return true;
+      const ma = a.match(/^sc0*(\d+)_sh0*(\d+)$/i);
+      const mb = b.match(/^sc0*(\d+)_sh0*(\d+)$/i);
+      return Boolean(ma && mb && ma[1] === mb[1] && ma[2] === mb[2]);
+    };
+    const shot = script.scenes.flatMap((s) => s.shots).find((sh) => isEquivalentShot(sh.shotId, options.shotId));
     if (!shot) {
       throw new Error(`Không tìm thấy shot [${options.shotId}] trong kịch bản tập ${options.episodeNumber}`);
     }
@@ -1732,20 +1842,25 @@ export class EpisodicPipeline {
       updatedAt: new Date().toISOString(),
     };
 
-    const existingTakes = this.bible.listShotTakes(
+    const dbNextTake = this.bible.getNextTakeNumber(
       options.seriesId,
       options.episodeNumber,
       options.shotId
     );
-    const ckptTakes = job?.shots?.[options.shotId]?.allTakes?.length;
-    const takeNumber = (ckptTakes !== undefined && ckptTakes > 0)
-      ? ckptTakes + 1
-      : existingTakes.length + 1;
-    const takeNumStr = String(takeNumber).padStart(2, "0");
-    const takeId = `${options.seriesId}_ep${epNumStr}_${options.shotId}_take${takeNumStr}`;
+    const ckptShot = job?.shots?.[options.shotId] || Object.entries(job?.shots || {}).find(([k]) => isEquivalentShot(k, options.shotId))?.[1];
+    const ckptTakes = (ckptShot?.allTakes?.length || 0) + 1;
+    let takeNumber = Math.max(dbNextTake, ckptTakes);
+    let takeNumStr = String(takeNumber).padStart(2, "0");
     const videoShotsDir = join(outputDir, "shots");
     await mkdir(videoShotsDir, { recursive: true });
-    const takeLocalPath = join(videoShotsDir, `${options.shotId}_take${takeNumStr}.mp4`);
+    let takeLocalPath = join(videoShotsDir, `${options.shotId}_take${takeNumStr}.mp4`);
+    while (existsSync(takeLocalPath)) {
+      takeNumber++;
+      takeNumStr = String(takeNumber).padStart(2, "0");
+      takeLocalPath = join(videoShotsDir, `${options.shotId}_take${takeNumStr}.mp4`);
+    }
+    const seriesPrefix = options.seriesId === "cyber-saigon" ? "cyber" : options.seriesId;
+    const takeId = `${seriesPrefix}_ep${epNumStr}_${options.shotId}_take${takeNumStr}`;
 
     const prompt = options.promptOverride || shot.visualPrompt;
     log.info(`  Đang sinh Take ${takeNumber}: "${prompt.slice(0, 60)}..."`);
@@ -1861,19 +1976,26 @@ export class EpisodicPipeline {
       try {
         await copyFile(takeLocalPath, canonicalShotPath);
       } catch {}
+      if (shot.shotId !== options.shotId) {
+        const canonicalShotPathNorm = join(videoShotsDir, `${shot.shotId}.mp4`);
+        try {
+          await copyFile(takeLocalPath, canonicalShotPathNorm);
+        } catch {}
+      }
     } else {
       log.info(`  Bảo lưu take đã duyệt trước đó [${existingApproved?.id}]; Take mới [${takeId}] được lưu trữ an toàn chờ review.`);
     }
 
     // Update job checkpoint
-    const currentShotProg = job.shots[options.shotId] || {
+    const currentShotProg = job.shots[options.shotId] || ckptShot || {
       shotId: options.shotId,
       status: "pending" as const,
       allTakes: [],
       retryCount: 0,
     };
-    job.shots[options.shotId] = {
+    const updatedProg = {
       ...currentShotProg,
+      shotId: options.shotId,
       status: "completed" as const,
       activeTakeId: shouldApproveNewTake ? takeId : (existingApproved ? existingApproved.id : currentShotProg.activeTakeId || takeId),
       allTakes: [...currentShotProg.allTakes, takeId],
@@ -1881,6 +2003,10 @@ export class EpisodicPipeline {
       durationSec: shot.durationSec,
       retryCount: (currentShotProg.retryCount || 0) + 1,
     };
+    job.shots[options.shotId] = updatedProg;
+    if (shot.shotId !== options.shotId) {
+      job.shots[shot.shotId] = { ...updatedProg, shotId: shot.shotId };
+    }
     job.shotProgress = script.scenes
       .flatMap((s) => s.shots)
       .map((s) => job.shots[s.shotId])

@@ -24,6 +24,13 @@ function hasFlag(args: string[], flag: string, short?: string): boolean {
   return args.includes(flag) || (!!short && args.includes(short));
 }
 
+function parseTransitionSec(subArgs: string[]): number | undefined {
+  const transArg = getArgValue(subArgs, "--transition");
+  if (transArg === undefined) return undefined;
+  const val = parseFloat(transArg);
+  return !isNaN(val) && val >= 0 ? val : undefined;
+}
+
 function resolveExecutionMode(subArgs: string[]): {
   dryRun: boolean;
   provider: BackendProvider;
@@ -86,6 +93,7 @@ Tùy chọn:
   --bible <path>      Đường dẫn trực tiếp đến file SQLite Story Bible
   --provider <name>   Video AI Provider ("mock" | "api_kling" | "api_veo" | "api_seedance" | "api_runway" | "local_comfyui")
   --resume            Tiếp tục từ checkpoint khi chạy series:episode
+  --transition <sec>  Thời lượng chuyển cảnh chéo giữa các cú máy (giây, mặc định từ timeline/checkpoint)
   --dry-run           Chạy thử nghiệm nhanh với Mock Video & Mock TTS (không tốn phí API)
   --help, -h          Hiển thị hướng dẫn này
 
@@ -271,6 +279,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         skipAudit,
         resume,
         commitCanon,
+        transitionDurationSec: parseTransitionSec(subArgs),
       });
 
       console.log("\n=======================================================");
@@ -314,6 +323,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         skipAudit,
         resume: true,
         commitCanon,
+        transitionDurationSec: parseTransitionSec(subArgs),
       });
 
       console.log("\n=======================================================");
@@ -338,6 +348,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
       const { dryRun, provider } = resolveExecutionMode(subArgs);
       const promptOverride = getArgValue(subArgs, "--prompt");
       const noRemux = hasFlag(subArgs, "--no-remux");
+      const transitionDurationSec = parseTransitionSec(subArgs);
 
       console.log(`\n🎲 [REROLL] Tạo lại riêng shot [${shotId}] cho tập ${episodeNumber}...`);
       const pipeline = new EpisodicPipeline(biblePath);
@@ -349,6 +360,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         dryRun,
         promptOverride,
         remuxAfterReroll: !noRemux,
+        transitionDurationSec,
       });
 
       console.log("\n=======================================================");
@@ -364,6 +376,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
       const episodeNumber = epArg ? parseInt(epArg, 10) : 1;
       const sId = seriesId || "default-series";
       const skipRender = hasFlag(subArgs, "--skip-render");
+      const transitionDurationSec = parseTransitionSec(subArgs);
 
       console.log(`\n🎞️ [REMUX] Dựng lại video tập ${episodeNumber} từ các clip đã có...`);
       const pipeline = new EpisodicPipeline(biblePath);
@@ -371,6 +384,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         seriesId: sId,
         episodeNumber,
         skipRender,
+        transitionDurationSec,
       });
 
       console.log("\n=======================================================");

@@ -311,6 +311,31 @@ export interface ShotTakeRecord {
   created_at?: string;
 }
 
+export interface AtomicReserveShotTakeParams {
+  seriesId: string;
+  episodeNumber: number;
+  shotId: string;
+  provider: string;
+  prompt: string;
+  minTakeNumber?: number;
+  localPathBuilder?: (takeNumber: number, takeNumStr: string) => string;
+  durationSec?: number;
+  seed?: number;
+  storyboardKeyframeId?: string;
+  usedReferencesJson?: string;
+  isApproved?: boolean;
+  costUsd?: number;
+  qaStatus?: "PASS" | "WARN" | "FAIL" | "NOT_RUN" | "UNAVAILABLE";
+}
+
+export interface AtomicReserveShotTakeResult {
+  takeNumber: number;
+  takeNumStr: string;
+  takeId: string;
+  localPath: string;
+  record: ShotTakeRecord;
+}
+
 export interface StateEventRecord {
   id?: number;
   series_id: string;
@@ -770,6 +795,7 @@ export class BibleManager {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_shot_takes_lookup ON shot_takes (series_id, episode_number, shot_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_shot_takes_identity ON shot_takes (series_id, episode_number, shot_id, take_number);
 
       -- V2: Versioned Canon State Manager Tables
       CREATE TABLE IF NOT EXISTS canon_migrations (
@@ -2694,6 +2720,9 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           is_approved, cost_usd, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
+          provider = excluded.provider,
+          prompt = excluded.prompt,
+          duration_sec = excluded.duration_sec,
           qa_status = excluded.qa_status,
           qa_score = excluded.qa_score,
           qa_notes = excluded.qa_notes,
@@ -2731,6 +2760,206 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         is_approved: Boolean(take.is_approved),
       });
     }
+  }
+
+  /**
+   * Atomically reserves the next available take number, take ID, and reservation path
+   * under concurrency across multiple workers or processes.
+   * Acquires an immediate SQLite write lock with BEGIN IMMEDIATE TRANSACTION; to eliminate race conditions.
+   * Enforces composite uniqueness on (series_id, episode_number, shot_id, take_number).
+   */
+  public atomicReserveShotTake(
+    params: AtomicReserveShotTakeParams
+  ): AtomicReserveShotTakeResult {
+    const seriesPrefix = params.seriesId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const epNumStr = String(params.episodeNumber).padStart(2, "0");
+    const shotIds = this.getEquivalentShotIds(params.shotId);
+
+    if (this.db && !this.isFallback) {
+      let attempts = 0;
+      const maxAttempts = 10;
+      while (attempts < maxAttempts) {
+        attempts++;
+        try {
+          this.db.exec("BEGIN IMMEDIATE TRANSACTION;");
+        } catch (busyErr: any) {
+          if (attempts >= maxAttempts) throw busyErr;
+          continue;
+        }
+
+        let inTransaction = true;
+        try {
+          const placeholders = shotIds.map(() => "?").join(", ");
+          const row = this.db
+            .prepare(
+              `SELECT COALESCE(MAX(take_number), 0) AS max_take FROM shot_takes WHERE series_id = ? AND episode_number = ? AND shot_id IN (${placeholders})`
+            )
+            .get(params.seriesId, params.episodeNumber, ...shotIds) as { max_take: number } | undefined;
+
+          let takeNumber = Math.max(params.minTakeNumber ?? 1, (row?.max_take ?? 0) + 1);
+          let takeNumStr = String(takeNumber).padStart(2, "0");
+          let takeId = `${seriesPrefix}_ep${epNumStr}_${params.shotId}_take${takeNumStr}`;
+          let localPath = params.localPathBuilder
+            ? params.localPathBuilder(takeNumber, takeNumStr)
+            : "";
+
+          while (
+            (localPath && existsSync(localPath)) ||
+            this.db.prepare("SELECT id FROM shot_takes WHERE id = ?").get(takeId) ||
+            this.db
+              .prepare(
+                `SELECT id FROM shot_takes WHERE series_id = ? AND episode_number = ? AND shot_id IN (${placeholders}) AND take_number = ?`
+              )
+              .get(params.seriesId, params.episodeNumber, ...shotIds, takeNumber)
+          ) {
+            takeNumber++;
+            takeNumStr = String(takeNumber).padStart(2, "0");
+            takeId = `${seriesPrefix}_ep${epNumStr}_${params.shotId}_take${takeNumStr}`;
+            localPath = params.localPathBuilder
+              ? params.localPathBuilder(takeNumber, takeNumStr)
+              : "";
+          }
+
+          const stmt = this.db.prepare(`
+            INSERT INTO shot_takes (
+              id, series_id, episode_number, shot_id, take_number, provider,
+              prompt, seed, local_path, duration_sec, qa_status, qa_score,
+              qa_notes, qa_report_json, storyboard_keyframe_id, used_references_json,
+              is_approved, cost_usd, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+
+          const record: ShotTakeRecord = {
+            id: takeId,
+            series_id: params.seriesId,
+            episode_number: params.episodeNumber,
+            shot_id: params.shotId,
+            take_number: takeNumber,
+            provider: params.provider,
+            prompt: params.prompt,
+            seed: params.seed,
+            local_path: localPath,
+            duration_sec: params.durationSec ?? 0,
+            qa_status: params.qaStatus ?? "NOT_RUN",
+            qa_score: undefined,
+            qa_notes: undefined,
+            qa_report_json: undefined,
+            storyboard_keyframe_id: params.storyboardKeyframeId,
+            used_references_json: params.usedReferencesJson ?? "[]",
+            is_approved: params.isApproved ? 1 : 0,
+            cost_usd: params.costUsd ?? 0,
+            created_at: new Date().toISOString(),
+          };
+
+          stmt.run(
+            record.id,
+            record.series_id,
+            record.episode_number,
+            record.shot_id,
+            record.take_number,
+            record.provider,
+            record.prompt,
+            record.seed ?? null,
+            record.local_path,
+            record.duration_sec,
+            record.qa_status,
+            record.qa_score ?? null,
+            record.qa_notes ?? null,
+            record.qa_report_json ?? null,
+            record.storyboard_keyframe_id ?? null,
+            record.used_references_json ?? "[]",
+            record.is_approved ? 1 : 0,
+            record.cost_usd ?? 0,
+            record.created_at
+          );
+
+          this.db.exec("COMMIT;");
+          inTransaction = false;
+
+          return {
+            takeNumber,
+            takeNumStr,
+            takeId,
+            localPath,
+            record: {
+              ...record,
+              is_approved: Boolean(record.is_approved),
+            },
+          };
+        } catch (err: any) {
+          if (inTransaction) {
+            try {
+              this.db.exec("ROLLBACK;");
+            } catch {}
+          }
+          if (
+            err.message?.includes("UNIQUE") ||
+            err.message?.includes("busy") ||
+            err.code === "SQLITE_BUSY"
+          ) {
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw new Error(`Failed to atomically reserve shot take after ${maxAttempts} attempts due to concurrency contention.`);
+    }
+
+    // In-memory fallback
+    const existingTakes = Array.from(this.memoryStore.shot_takes.values()).filter(
+      (t) =>
+        t.series_id === params.seriesId &&
+        t.episode_number === params.episodeNumber &&
+        shotIds.includes(t.shot_id)
+    );
+    const maxTake = existingTakes.reduce((acc, t) => Math.max(acc, t.take_number ?? 0), 0);
+    let takeNumber = Math.max(params.minTakeNumber ?? 1, maxTake + 1);
+    let takeNumStr = String(takeNumber).padStart(2, "0");
+    let takeId = `${seriesPrefix}_ep${epNumStr}_${params.shotId}_take${takeNumStr}`;
+    let localPath = params.localPathBuilder
+      ? params.localPathBuilder(takeNumber, takeNumStr)
+      : "";
+
+    while (this.memoryStore.shot_takes.has(takeId) || (localPath && existsSync(localPath))) {
+      takeNumber++;
+      takeNumStr = String(takeNumber).padStart(2, "0");
+      takeId = `${seriesPrefix}_ep${epNumStr}_${params.shotId}_take${takeNumStr}`;
+      localPath = params.localPathBuilder
+        ? params.localPathBuilder(takeNumber, takeNumStr)
+        : "";
+    }
+
+    const record: ShotTakeRecord = {
+      id: takeId,
+      series_id: params.seriesId,
+      episode_number: params.episodeNumber,
+      shot_id: params.shotId,
+      take_number: takeNumber,
+      provider: params.provider,
+      prompt: params.prompt,
+      seed: params.seed,
+      local_path: localPath,
+      duration_sec: params.durationSec ?? 0,
+      qa_status: params.qaStatus ?? "NOT_RUN",
+      qa_score: undefined,
+      qa_notes: undefined,
+      qa_report_json: undefined,
+      storyboard_keyframe_id: params.storyboardKeyframeId,
+      used_references_json: params.usedReferencesJson ?? "[]",
+      is_approved: Boolean(params.isApproved),
+      cost_usd: params.costUsd ?? 0,
+      created_at: new Date().toISOString(),
+    };
+
+    this.memoryStore.shot_takes.set(takeId, record);
+
+    return {
+      takeNumber,
+      takeNumStr,
+      takeId,
+      localPath,
+      record,
+    };
   }
 
   public getShotTake(takeId: string): ShotTakeRecord | null {

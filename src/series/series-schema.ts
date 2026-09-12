@@ -280,6 +280,7 @@ export interface EpisodeProductionJob {
   audioPath?: string;
   videoPath?: string;
   timelinePath?: string;
+  transitionDurationSec?: number;
   audioFingerprint?: string;
   isMock?: boolean;
   isRendered?: boolean;

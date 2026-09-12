@@ -314,6 +314,11 @@ export class EpisodicPipeline {
       job = await this.loadCheckpoint(outputDir);
       if (job) {
         log.info(`  [RESUME] Khôi phục tiến trình sản xuất từ checkpoint (${Object.keys(job.shots).length} shots)`);
+        if (options.transitionDurationSec !== undefined) {
+          job.transitionDurationSec = options.transitionDurationSec;
+        } else if (job.transitionDurationSec === undefined) {
+          job.transitionDurationSec = 0.0;
+        }
       }
     }
 
@@ -326,6 +331,7 @@ export class EpisodicPipeline {
         status: "in_progress",
         currentPhase: "init",
         shots: {},
+        transitionDurationSec: options.transitionDurationSec ?? 0.0,
         totalCostUsd: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -446,7 +452,7 @@ export class EpisodicPipeline {
         outputDir,
         mockTts,
         overflowPolicy: options.overflowPolicy || "extend_shot",
-        transitionDurationSec: options.transitionDurationSec || 0.0,
+        transitionDurationSec: options.transitionDurationSec ?? job.transitionDurationSec ?? 0.0,
       });
       audioPath = audioRes.finalAudioPath;
       audioDurationSec = audioRes.totalDurationSec;
@@ -461,6 +467,7 @@ export class EpisodicPipeline {
         const timelineObj = {
           ...audioRes.unifiedTimeline,
           shots: audioRes.unifiedTimeline.videoTrack,
+          transitionDurationSec: options.transitionDurationSec ?? job.transitionDurationSec ?? 0.0,
         };
         await writeFile(timelinePath, JSON.stringify(timelineObj, null, 2), "utf8");
         job.timelinePath = timelinePath;
@@ -683,18 +690,23 @@ export class EpisodicPipeline {
         const usedReferencesJson = approvedSb?.used_references_json || "[]";
 
         // Dedicated take isolation: each take gets its own immutable file path (Requirement 3)
-        const dbNextTake = this.bible.getNextTakeNumber(seriesId, script.episodeNumber, shot.shotId);
-        const ckptTakes = (shotProg?.allTakes?.length || 0) + 1;
-        let takeNumber = Math.max(dbNextTake, ckptTakes);
-        let takeNumStr = String(takeNumber).padStart(2, "0");
-        let takeVideoPath = join(videoShotsDir, `${shot.shotId}_take${takeNumStr}.mp4`);
-        while (existsSync(takeVideoPath)) {
-          takeNumber++;
-          takeNumStr = String(takeNumber).padStart(2, "0");
-          takeVideoPath = join(videoShotsDir, `${shot.shotId}_take${takeNumStr}.mp4`);
-        }
-        const seriesPrefix = seriesId === "cyber-saigon" ? "cyber" : seriesId;
-        const takeId = `${seriesPrefix}_ep${epNumStr}_${shot.shotId}_take${takeNumStr}`;
+        const reservation = this.bible.atomicReserveShotTake({
+          seriesId,
+          episodeNumber: script.episodeNumber,
+          shotId: shot.shotId,
+          provider,
+          prompt: shot.visualPrompt,
+          durationSec: shot.durationSec,
+          minTakeNumber: (shotProg?.allTakes?.length || 0) + 1,
+          storyboardKeyframeId,
+          usedReferencesJson,
+          localPathBuilder: (_takeNum, takeNumStr) =>
+            join(videoShotsDir, `${shot.shotId}_take${takeNumStr}.mp4`),
+        });
+        const takeNumber = reservation.takeNumber;
+        const takeNumStr = String(takeNumber).padStart(2, "0");
+        const takeId = reservation.takeId;
+        const takeVideoPath = reservation.localPath;
 
         let resolvedShotPath = takeVideoPath;
 
@@ -822,23 +834,31 @@ export class EpisodicPipeline {
     for (const scene of script.scenes) {
       for (const shot of scene.shots) {
         if (options.resume && reusedShotIds.has(shot.shotId)) {
-          totalEvaluated++;
           const candidateTakeId = job.shots[shot.shotId]?.candidateTakeId;
           const candidateTake = candidateTakeId ? this.bible.getShotTake(candidateTakeId) : null;
           const activeTake = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
 
           const qaStatus = candidateTake?.qa_status || activeTake?.qa_status;
-          if (qaStatus === "FAIL" || candidateTake?.qa_status === "FAIL" || activeTake?.qa_status === "FAIL") {
-            faceQaFailCount++;
-            log.warn(`  ❌ Shot tái sử dụng [${shot.shotId}]: QA trạng thái FAIL`);
-          } else if (qaStatus === "PASS") {
-            faceQaPassedCount++;
-          } else if (qaStatus === "WARN") {
-            faceQaWarnCount++;
-          } else if (qaStatus === "UNAVAILABLE") {
-            faceQaUnavailableCount++;
+          const isPendingOrUnavailable = !qaStatus || qaStatus === "UNAVAILABLE" || qaStatus === "NOT_RUN";
+
+          // Scope D: Re-evaluate QA dynamically when backend becomes AVAILABLE, without re-rendering video
+          if (isPendingOrUnavailable && backendStatus.availability === "AVAILABLE") {
+            log.info(`  🔄 [RESUME QA] Tái đánh giá QA cho shot tái sử dụng [${shot.shotId}] vì Backend QA hiện đã khả dụng (trước đó: ${qaStatus || "chưa chạy"})...`);
+            // Do NOT continue: proceed to evaluateMultiFrame below using existing media file
+          } else {
+            totalEvaluated++;
+            if (qaStatus === "FAIL" || candidateTake?.qa_status === "FAIL" || activeTake?.qa_status === "FAIL") {
+              faceQaFailCount++;
+              log.warn(`  ❌ Shot tái sử dụng [${shot.shotId}]: QA trạng thái FAIL`);
+            } else if (qaStatus === "PASS") {
+              faceQaPassedCount++;
+            } else if (qaStatus === "WARN") {
+              faceQaWarnCount++;
+            } else if (qaStatus === "UNAVAILABLE" || qaStatus === "NOT_RUN") {
+              faceQaUnavailableCount++;
+            }
+            continue;
           }
-          continue;
         }
         if (!shot.characterId) {
           const candidateTakeId =
@@ -1563,7 +1583,7 @@ export class EpisodicPipeline {
     let episodeNumber: number | undefined;
     let provider: BackendProvider | undefined = undefined;
     let skipRender = false;
-    let transitionDurationSec = 0.0;
+    let explicitTransitionSec: number | undefined = undefined;
     let dryRun = false;
 
     if (typeof outputDirOrOptions === "string") {
@@ -1572,7 +1592,7 @@ export class EpisodicPipeline {
       episodeNumber = optionsPositional?.episodeNumber;
       provider = optionsPositional?.provider;
       skipRender = Boolean(optionsPositional?.skipRender);
-      transitionDurationSec = optionsPositional?.transitionDurationSec ?? 0.0;
+      explicitTransitionSec = optionsPositional?.transitionDurationSec;
       dryRun = Boolean(optionsPositional?.dryRun);
     } else {
       seriesId = outputDirOrOptions.seriesId;
@@ -1583,7 +1603,7 @@ export class EpisodicPipeline {
         join("output", "series", seriesId, `ep-${epNumStr}`);
       provider = outputDirOrOptions.provider;
       skipRender = Boolean(outputDirOrOptions.skipRender);
-      transitionDurationSec = outputDirOrOptions.transitionDurationSec ?? 0.0;
+      explicitTransitionSec = outputDirOrOptions.transitionDurationSec;
       dryRun = Boolean(outputDirOrOptions.dryRun);
     }
 
@@ -1597,6 +1617,26 @@ export class EpisodicPipeline {
     episodeNumber = episodeNumber || script.episodeNumber;
     const job = await this.loadCheckpoint(outputDir);
     provider = provider || (job?.isMock ? "mock" : undefined) || (job?.shotProgress?.[0]?.provider as BackendProvider | undefined);
+
+    // Scope C: Preserve timeline transition duration as single source of truth
+    let transitionDurationSec: number;
+    if (explicitTransitionSec !== undefined) {
+      transitionDurationSec = explicitTransitionSec;
+    } else if (job?.transitionDurationSec !== undefined) {
+      transitionDurationSec = job.transitionDurationSec;
+    } else {
+      const timelinePath = join(outputDir, "timeline.json");
+      let timelineTransitionSec: number | undefined;
+      if (existsSync(timelinePath)) {
+        try {
+          const tl = JSON.parse(await readFile(timelinePath, "utf8"));
+          if (tl?.transitionDurationSec !== undefined) {
+            timelineTransitionSec = tl.transitionDurationSec;
+          }
+        } catch {}
+      }
+      transitionDurationSec = timelineTransitionSec ?? 0.0;
+    }
 
     const shotVideos: string[] = [];
     for (const scene of script.scenes) {
@@ -1794,6 +1834,7 @@ export class EpisodicPipeline {
     outputDir?: string;
     promptOverride?: string;
     remuxAfterReroll?: boolean;
+    transitionDurationSec?: number;
     budgetCapUsd?: number;
     preserveExistingApproval?: boolean;
     forceApprove?: boolean;
@@ -1842,27 +1883,29 @@ export class EpisodicPipeline {
       updatedAt: new Date().toISOString(),
     };
 
-    const dbNextTake = this.bible.getNextTakeNumber(
-      options.seriesId,
-      options.episodeNumber,
-      options.shotId
-    );
     const ckptShot = job?.shots?.[options.shotId] || Object.entries(job?.shots || {}).find(([k]) => isEquivalentShot(k, options.shotId))?.[1];
     const ckptTakes = (ckptShot?.allTakes?.length || 0) + 1;
-    let takeNumber = Math.max(dbNextTake, ckptTakes);
-    let takeNumStr = String(takeNumber).padStart(2, "0");
     const videoShotsDir = join(outputDir, "shots");
     await mkdir(videoShotsDir, { recursive: true });
-    let takeLocalPath = join(videoShotsDir, `${options.shotId}_take${takeNumStr}.mp4`);
-    while (existsSync(takeLocalPath)) {
-      takeNumber++;
-      takeNumStr = String(takeNumber).padStart(2, "0");
-      takeLocalPath = join(videoShotsDir, `${options.shotId}_take${takeNumStr}.mp4`);
-    }
-    const seriesPrefix = options.seriesId === "cyber-saigon" ? "cyber" : options.seriesId;
-    const takeId = `${seriesPrefix}_ep${epNumStr}_${options.shotId}_take${takeNumStr}`;
 
     const prompt = options.promptOverride || shot.visualPrompt;
+
+    const reserved = this.bible.atomicReserveShotTake({
+      seriesId: options.seriesId,
+      episodeNumber: options.episodeNumber,
+      shotId: options.shotId,
+      provider,
+      prompt,
+      durationSec: shot.durationSec,
+      minTakeNumber: ckptTakes,
+      localPathBuilder: (num, numStr) => join(videoShotsDir, `${options.shotId}_take${numStr}.mp4`),
+    });
+
+    const takeNumber = reserved.takeNumber;
+    const takeNumStr = reserved.takeNumStr;
+    const takeId = reserved.takeId;
+    const takeLocalPath = reserved.localPath;
+
     log.info(`  Đang sinh Take ${takeNumber}: "${prompt.slice(0, 60)}..."`);
 
     const spec: ShotExecutionSpec = {
@@ -2022,6 +2065,7 @@ export class EpisodicPipeline {
         seriesId: options.seriesId,
         episodeNumber: options.episodeNumber,
         outputDir,
+        transitionDurationSec: options.transitionDurationSec,
       });
     }
 

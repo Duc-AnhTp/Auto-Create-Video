@@ -249,7 +249,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
 
       // Record 2 takes for shot 1
       bible.recordShotTake({
-        id: "cyber_ep01_sc1_sh1_take01",
+        id: "cyber-saigon_ep01_sc1_sh1_take01",
         series_id: "cyber-saigon",
         episode_number: 1,
         shot_id: "sc1_sh1",
@@ -263,7 +263,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       });
 
       bible.recordShotTake({
-        id: "cyber_ep01_sc1_sh1_take02",
+        id: "cyber-saigon_ep01_sc1_sh1_take02",
         series_id: "cyber-saigon",
         episode_number: 1,
         shot_id: "sc1_sh1",
@@ -303,15 +303,15 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
 
       // 3. POST /api/series/approve-take
       const approveRes = await axios.post(`${serverUrl}/api/series/approve-take`, {
-        takeId: "cyber_ep01_sc1_sh1_take02",
+        takeId: "cyber-saigon_ep01_sc1_sh1_take02",
       });
       expect(approveRes.status).toBe(200);
       expect(approveRes.data.success).toBe(true);
-      expect(approveRes.data.approvedTakeId).toBe("cyber_ep01_sc1_sh1_take02");
+      expect(approveRes.data.approvedTakeId).toBe("cyber-saigon_ep01_sc1_sh1_take02");
 
       // Verify in bible that take 2 is now approved and take 1 is unapproved
-      const take1 = bible.getShotTake("cyber_ep01_sc1_sh1_take01");
-      const take2 = bible.getShotTake("cyber_ep01_sc1_sh1_take02");
+      const take1 = bible.getShotTake("cyber-saigon_ep01_sc1_sh1_take01");
+      const take2 = bible.getShotTake("cyber-saigon_ep01_sc1_sh1_take02");
       expect(Boolean(take1?.is_approved)).toBe(false);
       expect(Boolean(take2?.is_approved)).toBe(true);
 
@@ -362,7 +362,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       });
 
       expect(rerollResult.shotId).toBe("sc1_sh1");
-      expect(rerollResult.takeId).toBe("cyber_ep01_sc1_sh1_take02");
+      expect(rerollResult.takeId).toBe("cyber-saigon_ep01_sc1_sh1_take02");
       expect(existsSync(rerollResult.videoPath)).toBe(true);
 
       // Verify shot takes count is now 33 (31 original + 2 takes for shot 1)
@@ -391,7 +391,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       // Verify checkpoint has the new take recorded
       const checkpointPath = join(testOutputDir, "checkpoint.json");
       const job = JSON.parse(readFileSync(checkpointPath, "utf8"));
-      expect(job.shots["sc1_sh1"].activeTakeId).toBe("cyber_ep01_sc1_sh1_take02");
+      expect(job.shots["sc1_sh1"].activeTakeId).toBe("cyber-saigon_ep01_sc1_sh1_take02");
     }, 120000);
   });
 });

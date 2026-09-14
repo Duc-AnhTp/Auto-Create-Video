@@ -295,6 +295,20 @@ export class ContinuityAuditor {
         const scriptLines = draftScript.split(/\r?\n/);
         let foundLine = "";
         for (const l of scriptLines) {
+          const trimmed = l.trim();
+          // Skip metadata and character headers
+          if (
+            trimmed.startsWith("Nhân vật:") ||
+            trimmed.startsWith("Đạo cụ:") ||
+            trimmed.startsWith("Logline:")
+          ) {
+            continue;
+          }
+          // Skip dialogue lines: spoken dialogue (e.g. "MINH: Chạy mau An!")
+          // represents spoken words, not physical action performed by the character.
+          if (/^[A-ZÀ-Ỹ0-9_\s]+(\s*\(.*\))?:/u.test(trimmed)) {
+            continue;
+          }
           if (namePattern.test(l) && actionPattern.test(l)) {
             foundLine = l.trim();
             break;

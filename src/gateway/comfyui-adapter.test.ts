@@ -127,9 +127,12 @@ describe("ComfyUiAdapter & Video Gateway Auto-Failover", () => {
 
     it("throws helpful error message when ComfyUI server is offline (ECONNREFUSED)", async () => {
       const adapter = new ComfyUiAdapter({ baseUrl: "http://127.0.0.1:9999" });
+      const netError = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:9999"), {
+        code: "ECONNREFUSED",
+      });
       nock("http://127.0.0.1:9999")
         .post("/prompt")
-        .replyWithError({ code: "ECONNREFUSED", message: "connect ECONNREFUSED 127.0.0.1:9999" });
+        .replyWithError(netError);
 
       const spec: ShotExecutionSpec = {
         shotId: "sc1_sh1",

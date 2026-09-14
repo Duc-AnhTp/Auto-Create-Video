@@ -125,7 +125,7 @@ export function buildSceneStitchFilter(
     if (trimStart > 0 || shot.trimEndSec !== undefined) {
       filter += `,trim=start=${trimStart.toFixed(3)}:end=${trimEnd.toFixed(3)},setpts=PTS-STARTPTS[${normLabel}]`;
     } else {
-      filter += `,setpts=PTS-STARTPTS[${normLabel}]`;
+      filter += `,trim=duration=${effectiveDur.toFixed(3)},setpts=PTS-STARTPTS[${normLabel}]`;
     }
 
     filterSteps.push(filter);
@@ -172,9 +172,13 @@ export function buildSceneStitchFilter(
     const shot = shots[i];
     const prevShot = shots[i - 1];
 
-    const transDur =
+    const rawTransDur =
       (shot.transitionIn?.type === "crossfade" ? shot.transitionIn.durationSec : undefined) ??
       (prevShot.transitionOut?.type === "crossfade" ? prevShot.transitionOut.durationSec : 0);
+
+    // Guard: ensure transition duration never exceeds 50% of either outgoing or incoming stream
+    const maxSafeTrans = Math.min(effectiveDurations[i - 1], effectiveDurations[i]) * 0.5;
+    const transDur = rawTransDur > 0 ? Math.min(rawTransDur, maxSafeTrans) : 0;
 
     const isFinal = i === shots.length - 1;
     const outStream = isFinal ? "[vout]" : `[vx_${i}]`;

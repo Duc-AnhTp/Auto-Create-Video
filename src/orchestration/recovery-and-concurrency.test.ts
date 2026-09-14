@@ -239,6 +239,16 @@ describe("Resilience, Recovery, Concurrency & Timeout Reconciliation Acceptance 
         created_at: new Date().toISOString(),
       });
       bible.setSeriesBudget("series_timeout", 50.0, 0.0);
+      bible.setRateCard({
+        id: "rate_mock_timeout_test",
+        provider: "mock",
+        rate_per_sec_usd: 0.02,
+        rate_per_unit_usd: 0.02,
+        unit_type: "second",
+        currency: "USD",
+        effective_date: "2026-09-01",
+        created_at: new Date().toISOString(),
+      });
 
       const adapter = new ControlledMockAdapter();
       adapter.simulateTimeoutOnSubmit = true; // Simulate network connection drop during submit

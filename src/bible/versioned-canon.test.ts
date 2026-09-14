@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, rmSync, mkdirSync } from "node:fs";
+import { existsSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   BibleManager,
@@ -685,8 +685,10 @@ describe("Versioned Canon State Manager (Story Bible v2)", () => {
   // ──────────────────────────────────────────────────────────────────────────
   describe("Yêu cầu 9: Strict SQLite Mode & Process Restart Persistence", () => {
     it("throws FatalSqliteError in production/strictSqlite mode if SQLite fails to open", () => {
-      // Using an invalid file path that cannot be created or written
-      const invalidPath = "Z:\\non_existent_drive_999\\story_bible.db";
+      // Using an invalid file path inside a regular file (guaranteed ENOTDIR across all OSes)
+      const blockerFile = join(TEST_DIR, "blocker_regular_file.txt");
+      writeFileSync(blockerFile, "I am a file, not a directory");
+      const invalidPath = join(blockerFile, "sub_dir", "story_bible.db");
 
       expect(() => {
         new BibleManager(invalidPath, { strictSqlite: true });

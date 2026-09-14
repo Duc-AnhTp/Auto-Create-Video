@@ -110,6 +110,7 @@ export interface CharacterWardrobeRecord {
 export interface LocationRecord {
   id: string;
   name: string;
+  series_id?: string;
   visual_summary?: string;
   atmospheric_rules?: string;
   reference_image_path?: string;
@@ -134,9 +135,10 @@ export interface KeyPropRecord {
   name: string;
   series_id?: string;
   visual_summary?: string;
+  description?: string;
   current_holder_id?: string;
   reference_image_path?: string;
-  status: "intact" | "damaged" | "lost" | "destroyed";
+  status?: "intact" | "damaged" | "lost" | "destroyed";
   created_at?: string;
 }
 
@@ -510,7 +512,7 @@ export class BibleManager {
   }
 
   private initDb() {
-    const isProduction = process.env.NODE_ENV === "production";
+    const isProduction = process.env.NODE_ENV === "production" || process.env.CLI_MODE === "1";
     const enforceStrict = this.options.strictSqlite ?? isProduction;
 
     const dir = dirname(this.dbPath);
@@ -643,6 +645,13 @@ export class BibleManager {
           applied_at: now,
         });
       }
+      if (!this.memoryStore.migrations.some((m) => m.version === 5)) {
+        this.memoryStore.migrations.push({
+          version: 5,
+          name: "preflight_dedup_and_unique_take_index",
+          applied_at: now,
+        });
+      }
       return;
     }
     if (!this.db) return;
@@ -687,6 +696,149 @@ export class BibleManager {
         this.db.prepare("INSERT INTO canon_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(
           4,
           "resilient_job_orchestration_and_ledger",
+          new Date().toISOString()
+        );
+      }
+
+      if (!appliedVersions.has(5)) {
+        // Step 1: Create shot_takes_legacy_archive table for deduplicated takes
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS shot_takes_legacy_archive (
+            id TEXT PRIMARY KEY,
+            series_id TEXT NOT NULL,
+            episode_number INTEGER NOT NULL,
+            shot_id TEXT NOT NULL,
+            take_number INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            seed INTEGER,
+            local_path TEXT NOT NULL,
+            duration_sec REAL NOT NULL,
+            qa_status TEXT NOT NULL,
+            qa_score REAL,
+            qa_notes TEXT,
+            is_approved INTEGER NOT NULL,
+            cost_usd REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            qa_report_json TEXT,
+            storyboard_keyframe_id TEXT,
+            used_references_json TEXT,
+            archived_at TEXT NOT NULL,
+            archival_reason TEXT NOT NULL
+          );
+        `);
+
+        // Step 2: Preflight deduplication for shot_takes to guarantee unique constraint safety
+        try {
+          const dupGroups = this.db
+            .prepare(`
+              SELECT series_id, episode_number, shot_id, take_number, COUNT(*) as cnt
+              FROM shot_takes
+              GROUP BY series_id, episode_number, shot_id, take_number
+              HAVING cnt > 1
+            `)
+            .all() as Array<{ series_id: string; episode_number: number; shot_id: string; take_number: number; cnt: number }>;
+
+          for (const grp of dupGroups) {
+            const rows = this.db
+              .prepare(`
+                SELECT * FROM shot_takes
+                WHERE series_id = ? AND episode_number = ? AND shot_id = ? AND take_number = ?
+                ORDER BY is_approved DESC, created_at DESC, id DESC
+              `)
+              .all(grp.series_id, grp.episode_number, grp.shot_id, grp.take_number) as any[];
+
+            const maxRow = this.db
+              .prepare(`
+                SELECT MAX(take_number) as max_take
+                FROM shot_takes
+                WHERE series_id = ? AND episode_number = ? AND shot_id = ?
+              `)
+              .get(grp.series_id, grp.episode_number, grp.shot_id) as { max_take: number } | undefined;
+
+            let nextTakeNum = ((maxRow?.max_take ?? grp.take_number) || grp.take_number) + 1;
+
+            // Keep index 0 at original take_number; renumber remaining duplicates and archive
+            for (let i = 1; i < rows.length; i++) {
+              const dupRow = rows[i];
+              try {
+                this.db.prepare(`
+                  INSERT OR REPLACE INTO shot_takes_legacy_archive (
+                    id, series_id, episode_number, shot_id, take_number, provider, prompt, seed,
+                    local_path, duration_sec, qa_status, qa_score, qa_notes, is_approved, cost_usd,
+                    created_at, qa_report_json, storyboard_keyframe_id, used_references_json,
+                    archived_at, archival_reason
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `).run(
+                  dupRow.id,
+                  dupRow.series_id,
+                  dupRow.episode_number,
+                  dupRow.shot_id,
+                  dupRow.take_number,
+                  dupRow.provider,
+                  dupRow.prompt,
+                  dupRow.seed ?? null,
+                  dupRow.local_path,
+                  dupRow.duration_sec,
+                  dupRow.qa_status,
+                  dupRow.qa_score ?? null,
+                  dupRow.qa_notes ?? null,
+                  dupRow.is_approved ? 1 : 0,
+                  dupRow.cost_usd,
+                  dupRow.created_at,
+                  dupRow.qa_report_json ?? null,
+                  dupRow.storyboard_keyframe_id ?? null,
+                  dupRow.used_references_json ?? null,
+                  new Date().toISOString(),
+                  `duplicate_renumbered_from_take_${dupRow.take_number}`
+                );
+              } catch {}
+
+              this.db.prepare("UPDATE shot_takes SET take_number = ? WHERE id = ?").run(nextTakeNum, dupRow.id);
+              nextTakeNum++;
+            }
+          }
+        } catch {
+          // Table may not exist yet or have no records
+        }
+
+        // Step 3: Migrate episode_lifecycle to composite PK (series_id, episode_number) if legacy single-column PK
+        try {
+          const tableInfo = this.db.prepare("PRAGMA table_info(episode_lifecycle)").all() as Array<{ name: string; pk: number }>;
+          const pkCols = tableInfo.filter((c) => c.pk > 0);
+          const hasCompositePk = pkCols.length >= 2 && pkCols.some((c) => c.name === "series_id") && pkCols.some((c) => c.name === "episode_number");
+
+          if (!hasCompositePk && tableInfo.length > 0) {
+            this.db.exec(`
+              CREATE TABLE IF NOT EXISTS episode_lifecycle_v5 (
+                series_id TEXT NOT NULL,
+                episode_number INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                snapshot_id TEXT,
+                needs_review INTEGER NOT NULL DEFAULT 0,
+                review_notes TEXT,
+                storyboard_approved_at TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (series_id, episode_number),
+                FOREIGN KEY (snapshot_id) REFERENCES canon_snapshots (id)
+              );
+              INSERT OR IGNORE INTO episode_lifecycle_v5 (series_id, episode_number, status, snapshot_id, needs_review, review_notes, storyboard_approved_at, updated_at)
+              SELECT series_id, episode_number, status, snapshot_id, needs_review, review_notes, storyboard_approved_at, updated_at FROM episode_lifecycle;
+              DROP TABLE episode_lifecycle;
+              ALTER TABLE episode_lifecycle_v5 RENAME TO episode_lifecycle;
+              CREATE INDEX IF NOT EXISTS idx_lifecycle_status ON episode_lifecycle (series_id, status);
+            `);
+          }
+        } catch {}
+
+        // Step 4: Safely create unique identity index on shot_takes
+        try {
+          this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_shot_takes_identity ON shot_takes (series_id, episode_number, shot_id, take_number);");
+        } catch {}
+
+        this.db.prepare("INSERT INTO canon_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(
+          5,
+          "preflight_dedup_and_unique_take_index",
           new Date().toISOString()
         );
       }
@@ -759,15 +911,19 @@ export class BibleManager {
         updated_at_episode INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS episode_summaries (
-        episode_number INTEGER PRIMARY KEY,
+        episode_number INTEGER NOT NULL,
+        series_id TEXT NOT NULL DEFAULT 'default-series',
         title TEXT NOT NULL,
         logline TEXT NOT NULL,
         major_events_json TEXT NOT NULL,
         delta_changes_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (series_id, episode_number)
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS uq_episode_summaries_identity ON episode_summaries (series_id, episode_number);
       CREATE TABLE IF NOT EXISTS api_usage_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        series_id TEXT,
         episode_number INTEGER,
         shot_id TEXT,
         provider TEXT NOT NULL,
@@ -795,7 +951,6 @@ export class BibleManager {
         created_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_shot_takes_lookup ON shot_takes (series_id, episode_number, shot_id);
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_shot_takes_identity ON shot_takes (series_id, episode_number, shot_id, take_number);
 
       -- V2: Versioned Canon State Manager Tables
       CREATE TABLE IF NOT EXISTS canon_migrations (
@@ -870,14 +1025,15 @@ export class BibleManager {
       CREATE INDEX IF NOT EXISTS idx_canon_snapshots_lookup ON canon_snapshots (series_id, episode_number);
 
       CREATE TABLE IF NOT EXISTS episode_lifecycle (
-        episode_number INTEGER PRIMARY KEY,
         series_id TEXT NOT NULL,
+        episode_number INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'draft',
         snapshot_id TEXT,
         needs_review INTEGER NOT NULL DEFAULT 0,
         review_notes TEXT,
         storyboard_approved_at TEXT,
         updated_at TEXT NOT NULL,
+        PRIMARY KEY (series_id, episode_number),
         FOREIGN KEY (snapshot_id) REFERENCES canon_snapshots (id)
       );
       CREATE INDEX IF NOT EXISTS idx_lifecycle_status ON episode_lifecycle (series_id, status);
@@ -1013,6 +1169,50 @@ export class BibleManager {
     } catch {
       // Column already exists
     }
+
+    try {
+      this.db.exec("ALTER TABLE episode_summaries ADD COLUMN series_id TEXT;");
+    } catch {
+      // Column already exists
+    }
+
+    try {
+      const tableInfo = this.db.prepare("PRAGMA table_info(episode_summaries);").all() as Array<{ name: string; pk: number }>;
+      const pkCols = tableInfo.filter((c) => c.pk > 0);
+      if (pkCols.length > 0 && pkCols.length < 2) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS episode_summaries_temp_mig (
+            episode_number INTEGER NOT NULL,
+            series_id TEXT NOT NULL DEFAULT 'default-series',
+            title TEXT NOT NULL,
+            logline TEXT NOT NULL,
+            major_events_json TEXT NOT NULL,
+            delta_changes_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (series_id, episode_number)
+          );
+          INSERT OR IGNORE INTO episode_summaries_temp_mig
+            SELECT episode_number, COALESCE(series_id, 'default-series'), title, logline, major_events_json, delta_changes_json, created_at
+            FROM episode_summaries;
+          DROP TABLE episode_summaries;
+          ALTER TABLE episode_summaries_temp_mig RENAME TO episode_summaries;
+        `);
+      }
+    } catch {
+      // Migration already applied or unneeded
+    }
+
+    try {
+      this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_episode_summaries_identity ON episode_summaries (series_id, episode_number);");
+    } catch {
+      // Index already exists
+    }
+
+    try {
+      this.db.exec("ALTER TABLE api_usage_logs ADD COLUMN series_id TEXT;");
+    } catch {
+      // Column already exists
+    }
   }
 
   // ── Series Metadata Operations ────────────────────────────────────────────
@@ -1117,16 +1317,34 @@ export class BibleManager {
     return this.memoryStore.characters.get(id) ?? null;
   }
 
-  public listCharacters(): CharacterRecord[] {
+  public listCharacters(seriesId?: string): CharacterRecord[] {
     if (this.db && !this.isFallback) {
+      if (seriesId) {
+        try {
+          const stmt = this.db.prepare(
+            "SELECT * FROM characters WHERE (series_id = ? OR series_id IS NULL) ORDER BY role ASC, name ASC"
+          );
+          const rows = stmt.all(seriesId);
+          return rows.map((r: any) => ({
+            ...r,
+            personality_traits: typeof r.personality_traits === "string" ? JSON.parse(r.personality_traits) : (r.personality_traits || []),
+          }));
+        } catch {
+          // Fallback if series_id column not present in older db
+        }
+      }
       const stmt = this.db.prepare("SELECT * FROM characters ORDER BY role ASC, name ASC");
       const rows = stmt.all();
       return rows.map((r: any) => ({
         ...r,
-        personality_traits: JSON.parse(r.personality_traits),
+        personality_traits: typeof r.personality_traits === "string" ? JSON.parse(r.personality_traits) : (r.personality_traits || []),
       }));
     }
-    return Array.from(this.memoryStore.characters.values());
+    const all = Array.from(this.memoryStore.characters.values());
+    if (seriesId) {
+      return all.filter((c) => !c.series_id || c.series_id === seriesId);
+    }
+    return all;
   }
 
   public updateCharacterStatus(
@@ -1251,11 +1469,22 @@ export class BibleManager {
     return this.memoryStore.locations.get(id) ?? null;
   }
 
-  public listLocations(): LocationRecord[] {
+  public listLocations(seriesId?: string): LocationRecord[] {
     if (this.db && !this.isFallback) {
+      if (seriesId) {
+        try {
+          return this.db
+            .prepare("SELECT * FROM locations WHERE (series_id = ? OR series_id IS NULL) ORDER BY name ASC")
+            .all(seriesId) as LocationRecord[];
+        } catch {}
+      }
       return this.db.prepare("SELECT * FROM locations ORDER BY name ASC").all() as LocationRecord[];
     }
-    return Array.from(this.memoryStore.locations.values());
+    const all = Array.from(this.memoryStore.locations.values());
+    if (seriesId) {
+      return all.filter((l) => !(l as any).series_id || (l as any).series_id === seriesId);
+    }
+    return all;
   }
 
   // ── Key Prop Operations ───────────────────────────────────────────────────
@@ -1350,11 +1579,22 @@ export class BibleManager {
     return this.memoryStore.props.get(id) ?? null;
   }
 
-  public listKeyProps(): KeyPropRecord[] {
+  public listKeyProps(seriesId?: string): KeyPropRecord[] {
     if (this.db && !this.isFallback) {
+      if (seriesId) {
+        try {
+          return this.db
+            .prepare("SELECT * FROM key_props WHERE (series_id = ? OR series_id IS NULL) ORDER BY name ASC")
+            .all(seriesId) as KeyPropRecord[];
+        } catch {}
+      }
       return this.db.prepare("SELECT * FROM key_props ORDER BY name ASC").all() as KeyPropRecord[];
     }
-    return Array.from(this.memoryStore.props.values());
+    const all = Array.from(this.memoryStore.props.values());
+    if (seriesId) {
+      return all.filter((p) => !p.series_id || p.series_id === seriesId);
+    }
+    return all;
   }
 
   public transferKeyProp(propId: string, newHolderId?: string, status?: KeyPropRecord["status"]): void {
@@ -1435,7 +1675,7 @@ export class BibleManager {
     return this.memoryStore.world_state.get(key)?.value ?? null;
   }
 
-  public getAllWorldState(): Record<string, unknown> {
+  public getAllWorldState(seriesId?: string): Record<string, unknown> {
     const result: Record<string, unknown> = {};
     if (this.db && !this.isFallback) {
       const rows = this.db.prepare("SELECT key, value_json FROM world_state").all();
@@ -1453,11 +1693,12 @@ export class BibleManager {
   // ── Episode Summaries & Delta Ingestion ───────────────────────────────────
 
   public recordEpisodeSummary(record: EpisodeSummaryRecord): void {
+    const seriesId = record.series_id || this.getSeriesMetadata()?.id || "default-series";
     if (this.db && !this.isFallback) {
       const stmt = this.db.prepare(`
-        INSERT INTO episode_summaries (episode_number, title, logline, major_events_json, delta_changes_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(episode_number) DO UPDATE SET
+        INSERT INTO episode_summaries (episode_number, series_id, title, logline, major_events_json, delta_changes_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(series_id, episode_number) DO UPDATE SET
           title = excluded.title,
           logline = excluded.logline,
           major_events_json = excluded.major_events_json,
@@ -1466,6 +1707,7 @@ export class BibleManager {
       `);
       stmt.run(
         record.episode_number,
+        seriesId,
         record.title,
         record.logline ?? null,
         JSON.stringify(record.major_events ?? []),
@@ -1473,15 +1715,28 @@ export class BibleManager {
         record.created_at ?? new Date().toISOString()
       );
     } else {
-      this.memoryStore.episodes.set(record.episode_number, record);
+      const rec = { ...record, series_id: seriesId };
+      const key = `${seriesId}:${record.episode_number}`;
+      this.memoryStore.episodes.set(key as any, rec);
     }
   }
 
-  public getEpisodeSummary(episodeNumber: number): EpisodeSummaryRecord | null {
+  public getEpisodeSummary(episodeNumber: number, seriesId?: string): EpisodeSummaryRecord | null {
+    const sId = seriesId || this.getSeriesMetadata()?.id;
     if (this.db && !this.isFallback) {
-      const row = this.db.prepare("SELECT * FROM episode_summaries WHERE episode_number = ?").get(episodeNumber);
+      let row: any;
+      if (sId) {
+        row = this.db
+          .prepare(
+            "SELECT * FROM episode_summaries WHERE (series_id = ? OR series_id IS NULL) AND episode_number = ? ORDER BY CASE WHEN series_id = ? THEN 0 ELSE 1 END ASC LIMIT 1"
+          )
+          .get(sId, episodeNumber, sId);
+      } else {
+        row = this.db.prepare("SELECT * FROM episode_summaries WHERE episode_number = ?").get(episodeNumber);
+      }
       if (!row) return null;
       return {
+        series_id: row.series_id ?? sId,
         episode_number: row.episode_number,
         title: row.title,
         logline: row.logline,
@@ -1490,13 +1745,32 @@ export class BibleManager {
         created_at: row.created_at,
       };
     }
-    return this.memoryStore.episodes.get(episodeNumber) ?? null;
+    if (sId) {
+      const key = `${sId}:${episodeNumber}`;
+      if (this.memoryStore.episodes.has(key as any)) {
+        return this.memoryStore.episodes.get(key as any) ?? null;
+      }
+    }
+    return (
+      Array.from(this.memoryStore.episodes.values()).find(
+        (e) => e.episode_number === episodeNumber && (!sId || !e.series_id || e.series_id === sId)
+      ) ?? null
+    );
   }
 
-  public listEpisodeSummaries(): EpisodeSummaryRecord[] {
+  public listEpisodeSummaries(seriesId?: string): EpisodeSummaryRecord[] {
+    const sId = seriesId || this.getSeriesMetadata()?.id;
     if (this.db && !this.isFallback) {
-      const rows = this.db.prepare("SELECT * FROM episode_summaries ORDER BY episode_number ASC").all();
+      let rows: any[];
+      if (sId) {
+        rows = this.db
+          .prepare("SELECT * FROM episode_summaries WHERE series_id = ? OR series_id IS NULL ORDER BY episode_number ASC")
+          .all(sId);
+      } else {
+        rows = this.db.prepare("SELECT * FROM episode_summaries ORDER BY episode_number ASC").all();
+      }
       return rows.map((r: any) => ({
+        series_id: r.series_id ?? sId,
         episode_number: r.episode_number,
         title: r.title,
         logline: r.logline,
@@ -1505,11 +1779,13 @@ export class BibleManager {
         created_at: r.created_at,
       }));
     }
-    return Array.from(this.memoryStore.episodes.values()).sort((a, b) => a.episode_number - b.episode_number);
+    return Array.from(this.memoryStore.episodes.values())
+      .filter((e) => !sId || !e.series_id || e.series_id === sId)
+      .sort((a, b) => a.episode_number - b.episode_number);
   }
 
-  public getCanonHistory(): EpisodeSummaryRecord[] {
-    return this.listEpisodeSummaries();
+  public getCanonHistory(seriesId?: string): EpisodeSummaryRecord[] {
+    return this.listEpisodeSummaries(seriesId);
   }
 
   /**
@@ -1816,13 +2092,15 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
   // ── Cost Tracking & Budget Guard ─────────────────────────────────────────
 
-  public logApiUsage(record: ApiUsageRecord): void {
+  public logApiUsage(record: ApiUsageRecord & { series_id?: string }): void {
+    const seriesId = record.series_id || this.getSeriesMetadata()?.id || null;
     if (this.db && !this.isFallback) {
       const stmt = this.db.prepare(`
-        INSERT INTO api_usage_logs (episode_number, shot_id, provider, type, units, cost_usd, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO api_usage_logs (series_id, episode_number, shot_id, provider, type, units, cost_usd, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
+        seriesId,
         record.episode_number ?? null,
         record.shot_id ?? null,
         record.provider,
@@ -1832,19 +2110,27 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         record.timestamp
       );
     } else {
-      this.memoryStore.api_logs.push(record);
+      this.memoryStore.api_logs.push({ ...record, series_id: seriesId } as any);
     }
   }
 
-  public getEpisodeCost(episodeNumber: number): number {
+  public getEpisodeCost(episodeNumber: number, seriesId?: string): number {
+    const sId = seriesId || this.getSeriesMetadata()?.id;
     if (this.db && !this.isFallback) {
-      const row = this.db.prepare(
-        "SELECT SUM(cost_usd) as total_cost FROM api_usage_logs WHERE episode_number = ?"
-      ).get(episodeNumber);
+      let row: any;
+      if (sId) {
+        row = this.db.prepare(
+          "SELECT SUM(cost_usd) as total_cost FROM api_usage_logs WHERE episode_number = ? AND (series_id = ? OR series_id IS NULL)"
+        ).get(episodeNumber, sId);
+      } else {
+        row = this.db.prepare(
+          "SELECT SUM(cost_usd) as total_cost FROM api_usage_logs WHERE episode_number = ?"
+        ).get(episodeNumber);
+      }
       return row?.total_cost ?? 0;
     }
     return this.memoryStore.api_logs
-      .filter((l) => l.episode_number === episodeNumber)
+      .filter((l) => l.episode_number === episodeNumber && (!sId || !(l as any).series_id || (l as any).series_id === sId))
       .reduce((sum, l) => sum + l.cost_usd, 0);
   }
 
@@ -1853,7 +2139,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
   /**
    * Exports the consolidated Story Bible state prior to the target episode.
    */
-  public exportBiblePayload(episodeNumber: number): StoryBiblePayload {
+  public exportBiblePayload(episodeNumber: number, seriesId?: string): StoryBiblePayload {
+    const sId = seriesId || this.getSeriesMetadata()?.id;
     const characters = this.listCharacters();
     const knowledge: CharacterKnowledgeRecord[] = [];
     for (const c of characters) {
@@ -1863,11 +2150,18 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     const episode_summaries: EpisodeSummaryRecord[] = [];
 
     if (this.db && !this.isFallback) {
-      const rows = this.db
-        .prepare("SELECT * FROM episode_summaries WHERE episode_number < ? ORDER BY episode_number ASC")
-        .all(episodeNumber);
-      for (const r of rows) {
+      const rows = sId
+        ? this.db
+            .prepare(
+              "SELECT * FROM episode_summaries WHERE (series_id = ? OR series_id IS NULL) AND episode_number < ? ORDER BY episode_number ASC"
+            )
+            .all(sId, episodeNumber)
+        : this.db
+            .prepare("SELECT * FROM episode_summaries WHERE episode_number < ? ORDER BY episode_number ASC")
+            .all(episodeNumber);
+      for (const r of rows as any[]) {
         episode_summaries.push({
+          series_id: r.series_id ?? sId,
           episode_number: r.episode_number,
           title: r.title,
           logline: r.logline,
@@ -1877,8 +2171,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         });
       }
     } else {
-      for (const [ep, record] of this.memoryStore.episodes.entries()) {
-        if (ep < episodeNumber) {
+      for (const record of this.memoryStore.episodes.values()) {
+        if (record.episode_number < episodeNumber && (!sId || !record.series_id || record.series_id === sId)) {
           episode_summaries.push(record);
         }
       }
@@ -2412,14 +2706,9 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
   public getEpisodeLifecycle(seriesId: string, episodeNumber: number): EpisodeLifecycleRecord | null {
     if (this.db && !this.isFallback) {
-      let row = this.db
+      const row = this.db
         .prepare("SELECT * FROM episode_lifecycle WHERE series_id = ? AND episode_number = ?")
         .get(seriesId, episodeNumber);
-      if (!row) {
-        row = this.db
-          .prepare("SELECT * FROM episode_lifecycle WHERE episode_number = ?")
-          .get(episodeNumber);
-      }
       if (!row) return null;
       return {
         ...row,
@@ -2429,9 +2718,6 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     const key = `${seriesId}:${episodeNumber}`;
     const direct = this.memoryStore.episode_lifecycle.get(key);
     if (direct) return direct;
-    for (const v of this.memoryStore.episode_lifecycle.values()) {
-      if (v.episode_number === episodeNumber) return v;
-    }
     return null;
   }
 
@@ -2487,7 +2773,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       const to = record.status;
 
       const validTransitions: Record<EpisodeLifecycleStatus, EpisodeLifecycleStatus[]> = {
-        draft: ["rendered", "rejected", "failed"],
+        draft: ["approved", "rendered", "rejected", "failed"],
         rendered: ["approved", "rejected", "failed", "draft"],
         approved: ["committed", "rejected", "rendered", "draft"],
         committed: ["rendered", "draft"],
@@ -2524,10 +2810,9 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
     if (this.db && !this.isFallback) {
       const stmt = this.db.prepare(`
-        INSERT INTO episode_lifecycle (episode_number, series_id, status, snapshot_id, needs_review, review_notes, storyboard_approved_at, updated_at)
+        INSERT INTO episode_lifecycle (series_id, episode_number, status, snapshot_id, needs_review, review_notes, storyboard_approved_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(episode_number) DO UPDATE SET
-          series_id = excluded.series_id,
+        ON CONFLICT(series_id, episode_number) DO UPDATE SET
           status = excluded.status,
           snapshot_id = excluded.snapshot_id,
           needs_review = excluded.needs_review,
@@ -2536,8 +2821,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           updated_at = excluded.updated_at
       `);
       stmt.run(
-        record.episodeNumber,
         record.seriesId,
+        record.episodeNumber,
         record.status,
         snapshotIdVal,
         needsReviewVal,
@@ -2974,7 +3259,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     return this.memoryStore.shot_takes.get(takeId) ?? null;
   }
 
-  private getEquivalentShotIds(shotId: string): string[] {
+  public getEquivalentShotIds(shotId: string): string[] {
     const set = new Set<string>([shotId]);
     const m = shotId.match(/^sc(\d+)_sh(\d+)$/i);
     if (m) {
@@ -3626,8 +3911,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         }
 
         const apiLogSum = this.db
-          .prepare("SELECT SUM(cost_usd) as total FROM api_usage_logs WHERE shot_id LIKE ?")
-          .get(`${seriesId}%`) as any;
+          .prepare("SELECT SUM(cost_usd) as total FROM api_usage_logs WHERE series_id = ? OR shot_id LIKE ?")
+          .get(seriesId, `${seriesId}%`) as any;
         if (apiLogSum?.total) {
           confirmedCost = Math.max(confirmedCost, Number(apiLogSum.total));
         }
@@ -3965,8 +4250,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
       // Also sum legacy api_usage_logs if present
       const apiLogSum = this.db.prepare(`
-        SELECT SUM(cost_usd) as total FROM api_usage_logs WHERE shot_id LIKE ?
-      `).get(`${seriesId}%`) as any;
+        SELECT SUM(cost_usd) as total FROM api_usage_logs WHERE series_id = ? OR shot_id LIKE ?
+      `).get(seriesId, `${seriesId}%`) as any;
       if (apiLogSum?.total) {
         confirmedCost = Math.max(confirmedCost, Number(apiLogSum.total));
       }

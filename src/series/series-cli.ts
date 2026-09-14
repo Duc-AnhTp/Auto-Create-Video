@@ -1,11 +1,18 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
+import { exec } from "node:child_process";
+import axios from "axios";
 import { BibleManager } from "../bible/bible-manager.js";
 import { BudgetLedger } from "../orchestration/budget-ledger.js";
 import { EpisodicPipeline } from "./episodic-pipeline.js";
 import { startSeriesReviewServer } from "../review/server.js";
 import type { BackendProvider } from "../gateway/video-gateway.js";
+import { isFfmpegAvailable, runFfmpeg, runFfprobe } from "../media/ffmpeg.js";
+import { RateCardManager } from "../orchestration/rate-card-manager.js";
+import { normalizeScript } from "./script-normalizer.js";
+import { StoryToScreenplayGenerator } from "./story-to-screenplay.js";
+import { ConceptArtGenerator } from "./concept-art-generator.js";
 import { log } from "../utils/logger.js";
 
 function getArgValue(args: string[], flag: string, short?: string): string | undefined {
@@ -21,7 +28,14 @@ function getArgValue(args: string[], flag: string, short?: string): string | und
 }
 
 function hasFlag(args: string[], flag: string, short?: string): boolean {
-  return args.includes(flag) || (!!short && args.includes(short));
+  if (args.includes(flag) || (!!short && args.includes(short))) return true;
+  for (const arg of args) {
+    if (arg.startsWith(`${flag}=`)) {
+      const val = arg.slice(flag.length + 1).toLowerCase();
+      return val === "true" || val === "1" || val === "";
+    }
+  }
+  return false;
 }
 
 function parseTransitionSec(subArgs: string[]): number | undefined {
@@ -72,16 +86,22 @@ export function printSeriesUsage(): void {
 🎬 Episodic AI Film Series CLI (Hệ Thống Làm Phim Dài Tập Bằng AI)
 
 Lệnh chính:
+  series:doctor     Kiểm tra môi trường hệ thống (FFmpeg, ffprobe, SQLite, GPU/ComfyUI)
+  series:plan       Dự toán chi phí sản xuất kịch bản theo bảng giá rate card từng provider
   series:init       Khởi tạo series mới với phong cách mỹ thuật và thông số chuẩn
   series:character  Đăng ký hoặc cập nhật nhân vật (khuôn mặt, trang phục, giọng nói)
+  series:gen-character-art Tự động vẽ ảnh concept art mẫu & mỏ neo khuôn mặt nhân vật
   series:location   Đăng ký hoặc cập nhật bối cảnh lặp lại (quán bar, phòng ngầm...)
+  series:gen-location-art Tự động vẽ ảnh concept art bối cảnh kiến trúc
   series:prop       Đăng ký hoặc chuyển giao đạo cụ đặc biệt "không được quên"
+  series:write-script Tự động biến prompt hoặc truyện thành kịch bản phân cảnh chuẩn điện ảnh
   series:episode    Sản xuất tập phim từ kịch bản text thô qua 8 bước tự động
   series:resume     Tiếp tục sản xuất tập phim dở dang từ checkpoint.json
   series:reroll     Tạo lại riêng một shot lỗi (--shot <shotId>) mà không sinh lại toàn bộ
   series:remux      Dựng lại video hoàn chỉnh từ các clip đã sinh mà không gọi lại AI
   series:review     Mở Web Review Dashboard để duyệt kịch bản phân cảnh và chọn take
   series:status     Xem báo cáo Story Bible: nhân vật, đạo cụ, lịch sử các tập & sổ cái ngân sách
+  series:studio     Khởi chạy Full-Flow Web Studio UI (Dark Mode Cinema tại http://127.0.0.1:3456)
   series:jobs       Xem danh sách tác vụ provider (jobId, remoteId, trạng thái, chi phí)
   series:reconcile  Đối soát và xử lý các job bị timeout chưa xác định (uncertain_timeout)
   series:budget     Xem hoặc cập nhật hạn mức ngân sách chi tiêu cho series
@@ -267,6 +287,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
 
       const { dryRun, provider, mockTts, skipRender, skipAudit, commitCanon } = resolveExecutionMode(subArgs);
       const resume = hasFlag(subArgs, "--resume");
+      const hierarchical = hasFlag(subArgs, "--hierarchical");
 
       const pipeline = new EpisodicPipeline(biblePath);
       const res = await pipeline.produceEpisode(scriptInput, {
@@ -280,6 +301,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         resume,
         commitCanon,
         transitionDurationSec: parseTransitionSec(subArgs),
+        useHierarchicalAssembly: hierarchical,
       });
 
       console.log("\n=======================================================");
@@ -287,6 +309,123 @@ export async function runSeriesCli(args: string[]): Promise<void> {
       console.log(`   Video: ${res.videoPath}`);
       console.log(`   Audio: ${res.audioPath}`);
       console.log(`   Thư mục xuất bản: ${res.outputDir}`);
+      console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:write-script": {
+      const idea = getArgValue(subArgs, "--idea") || getArgValue(subArgs, "--prompt");
+      const storyPathOrText = getArgValue(subArgs, "--story");
+      const outPath = getArgValue(subArgs, "--out");
+      const epArg = getArgValue(subArgs, "--episode");
+      const episodeNumber = epArg ? parseInt(epArg, 10) : undefined;
+      const sId = seriesId || "default-series";
+      const skipAudit = hasFlag(subArgs, "--skip-audit");
+
+      let storyText = "";
+      if (storyPathOrText) {
+        if (existsSync(storyPathOrText)) {
+          storyText = readFileSync(storyPathOrText, "utf8");
+        } else {
+          storyText = storyPathOrText;
+        }
+      }
+
+      if (!idea && !storyText) {
+        console.error("❌ Lỗi: Cần cung cấp --idea \"...\" hoặc --story <file_or_text>.");
+        process.exit(2);
+      }
+
+      console.log(`\n✍️ [BIÊN KỊCH AI] Đang chuyển đổi ý tưởng/truyện thành kịch bản phân cảnh chuẩn điện ảnh...`);
+      console.log(`   Series: [${sId}] | Story Bible: ${biblePath}`);
+
+      const generator = new StoryToScreenplayGenerator(bible);
+      const res = await generator.generateScreenplay({
+        seriesId: sId,
+        prompt: idea,
+        storyText,
+        episodeNumber,
+        skipAudit,
+      });
+
+      console.log("\n=======================================================");
+      console.log(`🎉 KỊCH BẢN ĐÃ TẠO XONG (${res.generatorUsed === "llm" ? "AI LLM" : "Rule-Based Offline Engine"})`);
+      console.log(`   Tiêu đề: Tập ${res.script.episodeNumber}: ${res.script.title}`);
+      console.log(`   Số cảnh: ${res.sceneCount} cảnh | Tổng số shot: ${res.shotCount} shots`);
+      console.log(`   Thời lượng ước tính: ${res.estimatedDurationSec}s`);
+      console.log(`   Nhân vật tham gia: ${res.charactersUsed.join(", ") || "N/A"}`);
+      console.log(`   Đạo cụ sử dụng: ${res.propsUsed.join(", ") || "Không"}`);
+      console.log("=======================================================\n");
+
+      if (outPath) {
+        await mkdir(dirname(outPath), { recursive: true });
+        writeFileSync(outPath, res.rawScreenplay, "utf8");
+        console.log(`💾 Kịch bản đã được lưu tại: ${outPath}`);
+      } else {
+        console.log(res.rawScreenplay);
+      }
+      break;
+    }
+
+    case "series:gen-character-art": {
+      const charId = getArgValue(subArgs, "--char") || getArgValue(subArgs, "--id");
+      const sId = seriesId || "default-series";
+      if (!charId) {
+        console.error("❌ Lỗi: Cần cung cấp --char <character_id>.");
+        process.exit(2);
+      }
+
+      const promptOverride = getArgValue(subArgs, "--prompt");
+      const outDir = getArgValue(subArgs, "--out");
+      const { provider } = resolveExecutionMode(subArgs);
+
+      console.log(`\n🎨 [T2I CONCEPT ART] Đang tạo hình ảnh chân dung mỏ neo cho nhân vật [${charId}]...`);
+      const generator = new ConceptArtGenerator(bible);
+      const res = await generator.generateCharacterConceptArt({
+        seriesId: sId,
+        characterId: charId,
+        promptOverride,
+        outputDir: outDir,
+        provider: provider === "local_comfyui" ? "local_comfyui" : "mock",
+      });
+
+      console.log("\n=======================================================");
+      console.log(`🎉 ẢNH CONCEPT ART ĐÃ ĐƯỢC TẠO VÀ LƯU TRỮ VĨNH VIỄN`);
+      console.log(`   Nhân vật: ${res.entityId}`);
+      console.log(`   Đường dẫn ảnh: ${res.imagePath} (${res.fileSizeBytes} bytes)`);
+      console.log(`   Engine: ${res.providerUsed}`);
+      console.log(`   Face Embedding: 512-D ArcFace vector đã khóa vào Story Bible.`);
+      console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:gen-location-art": {
+      const locId = getArgValue(subArgs, "--loc") || getArgValue(subArgs, "--id");
+      const sId = seriesId || "default-series";
+      if (!locId) {
+        console.error("❌ Lỗi: Cần cung cấp --loc <location_id>.");
+        process.exit(2);
+      }
+
+      const promptOverride = getArgValue(subArgs, "--prompt");
+      const outDir = getArgValue(subArgs, "--out");
+      const { provider } = resolveExecutionMode(subArgs);
+
+      console.log(`\n🏛️ [T2I CONCEPT ART] Đang tạo hình ảnh bối cảnh mẫu cho [${locId}]...`);
+      const generator = new ConceptArtGenerator(bible);
+      const res = await generator.generateLocationConceptArt({
+        seriesId: sId,
+        locationId: locId,
+        promptOverride,
+        outputDir: outDir,
+        provider: provider === "local_comfyui" ? "local_comfyui" : "mock",
+      });
+
+      console.log("\n=======================================================");
+      console.log(`🎉 ẢNH BỐI CẢNH ĐÃ ĐƯỢC TẠO VÀ LƯU TRỮ VĨNH VIỄN`);
+      console.log(`   Địa điểm: ${res.entityId}`);
+      console.log(`   Đường dẫn ảnh: ${res.imagePath} (${res.fileSizeBytes} bytes)`);
+      console.log(`   Engine: ${res.providerUsed}`);
       console.log("=======================================================\n");
       break;
     }
@@ -586,6 +725,216 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         console.log(`  - Hạn mức tối đa: $${l.maxBudgetUsd.toFixed(2)} USD`);
         console.log(`  - Tổng cam kết:   $${l.totalCommittedUsd.toFixed(4)} USD`);
         console.log(`  - Còn lại:        $${l.remainingAvailableUsd.toFixed(4)} USD`);
+      }
+      break;
+    }
+
+    case "series:doctor": {
+      console.log("\n=======================================================");
+      console.log("🩺 KIỂM TRA MÔI TRƯỜNG HỆ THỐNG (SERIES DOCTOR)");
+      console.log("=======================================================\n");
+
+      // 1. FFmpeg & FFprobe
+      const ffmpegOk = await isFfmpegAvailable();
+      if (ffmpegOk) {
+        try {
+          const vOut = await runFfmpeg(["-version"]);
+          const firstLine = vOut.split("\n")[0]?.trim() || "OK";
+          console.log(`✅ FFmpeg: Sẵn sàng (${firstLine})`);
+        } catch {
+          console.log(`⚠️ FFmpeg: Không khả dụng hoặc lỗi thực thi`);
+        }
+        try {
+          const pOut = await runFfprobe(["-version"]);
+          const firstLine = pOut.split("\n")[0]?.trim() || "OK";
+          console.log(`✅ FFprobe: Sẵn sàng (${firstLine})`);
+        } catch {
+          console.log(`⚠️ FFprobe: Không khả dụng hoặc lỗi thực thi`);
+        }
+      } else {
+        console.log("⚠️ FFmpeg / FFprobe: Không tìm thấy trên PATH hệ thống.");
+        console.log("   -> Pipeline sẽ chạy ở chế độ mô phỏng (mock media).");
+        console.log("   -> Để render video thật: hãy cài đặt FFmpeg và thêm vào PATH.");
+      }
+
+      // 2. SQLite Database
+      try {
+        const b = new BibleManager(biblePath);
+        const meta = b.getSeriesMetadata(seriesId);
+        const chars = b.listCharacters();
+        console.log(`\n✅ SQLite Database: Sẵn sàng (${biblePath})`);
+        console.log(
+          `   Series hiện tại: [${meta?.id || seriesId || "default-series"}] - ${chars.length} nhân vật đã khai báo`
+        );
+      } catch (dbErr: any) {
+        console.log(`\n❌ SQLite Database: Lỗi (${dbErr.message})`);
+      }
+
+      // 3. Local ComfyUI Server (GPU)
+      const host = process.env.COMFYUI_HOST || "127.0.0.1";
+      const port = process.env.COMFYUI_PORT || "8188";
+      const comfyUrl = process.env.COMFYUI_BASE_URL || `http://${host}:${port}`;
+      try {
+        const comfyRes = await axios.get(`${comfyUrl}/system_stats`, { timeout: 3000 });
+        const devices = comfyRes.data?.devices;
+        if (devices && Array.isArray(devices) && devices.length > 0) {
+          const dev = devices[0];
+          const vramGb = dev.vram_total
+            ? (dev.vram_total / (1024 * 1024 * 1024)).toFixed(1)
+            : "N/A";
+          console.log(`\n✅ Local ComfyUI: Đang chạy tại ${comfyUrl}`);
+          console.log(`   GPU: ${dev.name || "Unknown"} | VRAM: ${vramGb} GB`);
+        } else {
+          console.log(`\n✅ Local ComfyUI: Đang chạy tại ${comfyUrl}`);
+        }
+      } catch {
+        console.log(`\nℹ️ Local ComfyUI: Chưa kết nối tại ${comfyUrl}`);
+        console.log("   -> Khởi động ComfyUI (Wan 2.1/2.2) trên GPU nếu muốn tạo video 0-cost.");
+      }
+
+      // 4. Cloud AI Video Providers
+      const providers = [
+        { name: "Kling AI", envKey: "KLING_API_KEY", set: !!process.env.KLING_API_KEY },
+        { name: "Runway Gen-3", envKey: "RUNWAY_API_KEY", set: !!process.env.RUNWAY_API_KEY },
+        { name: "Google Veo", envKey: "VEO_API_KEY", set: !!process.env.VEO_API_KEY },
+        { name: "Seedance", envKey: "SEEDANCE_API_KEY", set: !!process.env.SEEDANCE_API_KEY },
+        { name: "Wan 2.2 API", envKey: "WAN_API_KEY", set: !!process.env.WAN_API_KEY },
+      ];
+      console.log("\n🌐 Cổng Cloud AI Video Providers:");
+      for (const p of providers) {
+        if (p.set) {
+          console.log(`   ✅ ${p.name}: Đã cấu hình (${p.envKey})`);
+        } else {
+          console.log(`   ⚪ ${p.name}: Chưa cấu hình (${p.envKey})`);
+        }
+      }
+
+      // 5. Audio & TTS Providers
+      console.log("\n🔊 Bộ Lồng Tiếng TTS:");
+      const elKey = !!process.env.ELEVENLABS_API_KEY;
+      const lucyKey = !!process.env.LUCYLAB_API_KEY;
+      if (elKey) {
+        console.log("   ✅ ElevenLabs: Đã cấu hình API key");
+      } else {
+        console.log("   ⚪ ElevenLabs: Chưa cấu hình (ELEVENLABS_API_KEY)");
+      }
+      if (lucyKey) {
+        console.log("   ✅ LucyLab: Đã cấu hình API key");
+      } else {
+        console.log("   ⚪ LucyLab: Chưa cấu hình (LUCYLAB_API_KEY)");
+      }
+
+      console.log("\n=======================================================");
+      console.log("🏁 Hoàn tất kiểm tra môi trường hệ thống.\n");
+      break;
+    }
+
+    case "series:plan": {
+      const scriptInput = getArgValue(subArgs, "--script");
+      if (!scriptInput) {
+        console.error("❌ Lỗi: Cần cung cấp --script <path_or_text> để dự toán chi phí.");
+        process.exit(2);
+      }
+
+      let rawContent = scriptInput;
+      if (existsSync(scriptInput)) {
+        rawContent = await readFile(scriptInput, "utf8");
+      }
+
+      let script: any;
+      try {
+        script = await normalizeScript(rawContent, bible, { skipAudit: true });
+      } catch (err: any) {
+        console.error(`❌ Lỗi chuẩn hóa kịch bản: ${err.message}`);
+        process.exit(1);
+      }
+
+      const rateManager = new RateCardManager(bible);
+      rateManager.seedDefaultRatesIfEmpty();
+
+      const totalScenes = script.scenes.length;
+      const totalShots = script.scenes.reduce((acc: number, s: any) => acc + s.shots.length, 0);
+      const totalDurationSec = script.scenes.reduce(
+        (acc: number, s: any) =>
+          acc + s.shots.reduce((a: number, sh: any) => a + (sh.durationSec || 4.0), 0),
+        0
+      );
+      const totalDialogueCount = script.scenes.reduce(
+        (acc: number, s: any) => acc + s.shots.reduce((a: number, sh: any) => a + (sh.dialogues?.length || 0), 0),
+        0
+      );
+
+      const targetSeriesId = seriesId || script.seriesId || "default-series";
+      const sBudget = bible.getSeriesBudgetLedger(targetSeriesId);
+      const budgetCapArg = getArgValue(subArgs, "--budget") || getArgValue(subArgs, "--budget-cap");
+      const budgetCap = budgetCapArg ? parseFloat(budgetCapArg) : sBudget.maxBudgetUsd;
+
+      console.log("\n=======================================================");
+      console.log(`📋 BẢNG DỰ TOÁN KỊCH BẢN & CHI PHÍ SẢN XUẤT`);
+      console.log(`   Tập ${script.episodeNumber}: "${script.title}" (Series: ${targetSeriesId})`);
+      console.log("=======================================================");
+      console.log(`🎞️ Tổng số cảnh (Scenes):     ${totalScenes}`);
+      console.log(`🎬 Tổng số shot cú máy:       ${totalShots}`);
+      console.log(`⏱️ Tổng thời lượng video:     ${totalDurationSec.toFixed(1)} giây (~${(totalDurationSec / 60).toFixed(2)} phút)`);
+      console.log(`💬 Tổng số câu thoại TTS:     ${totalDialogueCount}`);
+      console.log(`💰 Ngân sách khả dụng/trần:   $${budgetCap.toFixed(2)} USD\n`);
+
+      const providersToCompare = [
+        { id: "local_comfyui", name: "Local ComfyUI (Wan 2.1/2.2)", model: "wan2.2_local" },
+        { id: "api_kling", name: "Kling AI Standard (1080p)", model: "kling-v2" },
+        { id: "api_runway", name: "Runway Gen-3 Alpha Turbo", model: "gen3a_turbo" },
+        { id: "api_veo", name: "Google Veo 3.1 Cinematic", model: "veo-3.1" },
+        { id: "api_wan", name: "Wan 2.2 Cloud API", model: "wan-2.2" },
+        { id: "api_seedance", name: "Seedance 2.0 Fast Tier", model: "seedance-2.0" },
+        { id: "mock", name: "Simulator / Mock Test", model: "simulator" },
+      ];
+
+      console.log("┌─────────────────────────────┬───────────┬──────────────┬──────────────┬─────────────┐");
+      console.log("│ Provider / Model            │ Đơn giá/s │ Chi phí pass │ +30% Rerolls │ Khả thi     │");
+      console.log("├─────────────────────────────┼───────────┼──────────────┼──────────────┼─────────────┤");
+
+      for (const p of providersToCompare) {
+        const rate = rateManager.resolveRate(p.id, p.model);
+        const baseCost = rate.ratePerSecUsd * totalDurationSec;
+        const rerollCost = baseCost * 1.3;
+        const isFeasible = budgetCap >= rerollCost;
+        const statusStr = rate.ratePerSecUsd === 0 ? "MIỄN PHÍ" : isFeasible ? "✅ ĐỦ TIỀN" : "❌ VƯỢT TRẦN";
+
+        const namePad = p.name.padEnd(27, " ");
+        const ratePad = `$${rate.ratePerSecUsd.toFixed(2)}/s`.padStart(9, " ");
+        const basePad = `$${baseCost.toFixed(2)}`.padStart(12, " ");
+        const rerollPad = `$${rerollCost.toFixed(2)}`.padStart(12, " ");
+        const statusPad = statusStr.padEnd(11, " ");
+
+        console.log(`│ ${namePad} │ ${ratePad} │ ${basePad} │ ${rerollPad} │ ${statusPad} │`);
+      }
+      console.log("└─────────────────────────────┴───────────┴──────────────┴──────────────┴─────────────┘");
+      console.log("\n💡 Gợi ý chiến lược sản xuất:");
+      console.log("   1. Dùng `local_comfyui` để sinh toàn bộ shot ban đầu (chi phí $0).");
+      console.log("   2. Chỉ reroll bằng `api_kling` hoặc `api_runway` cho những shot nhân vật chính thất bại Visual QA.");
+      console.log("=======================================================\n");
+      break;
+    }
+
+    case "series:studio": {
+      const port = parseInt(getArgValue(subArgs, "--port") || "3456", 10);
+      const host = getArgValue(subArgs, "--host") || "127.0.0.1";
+      const noOpen = hasFlag(subArgs, "--no-open");
+
+      const { StudioServer } = await import("../server/studio-server.js");
+      const studio = new StudioServer({ port, host });
+      const url = await studio.start();
+
+      console.log("\n=======================================================");
+      console.log("🎬 AUTO-CREATE-VIDEO: FULL-FLOW WEB STUDIO SẴN SÀNG");
+      console.log(`   URL Studio:    ${url}`);
+      console.log(`   Port:          ${port}`);
+      console.log("   Trạng thái:    Đang lắng nghe (Nhấn Ctrl+C để dừng)");
+      console.log("=======================================================\n");
+
+      if (!noOpen) {
+        const cmd = process.platform === "win32" ? `start ${url}` : process.platform === "darwin" ? `open ${url}` : `xdg-open ${url}`;
+        exec(cmd, () => {});
       }
       break;
     }

@@ -294,7 +294,18 @@ export function buildCrossfadeStitchFilter(
   }
 
   const opts: StitchOptions = options;
-  const crossfadeSec = opts.crossfadeSec ?? 0.3;
+  const rawCrossfade = opts.crossfadeSec ?? 0.3;
+  const minClipDur = clipDurations.length > 0 ? Math.min(...clipDurations) : 0;
+  // Guard: clamp crossfadeSec so it never exhausts any clip during xfade
+  // For sequences with > 2 clips, interior clips participate in two transitions
+  const maxAllowedCrossfade =
+    clipPaths.length > 2
+      ? Math.max(0, (minClipDur / 2) - 0.05)
+      : Math.max(0, minClipDur - 0.05);
+  const crossfadeSec =
+    rawCrossfade > 0 && minClipDur > 0 && rawCrossfade > maxAllowedCrossfade
+      ? Math.max(0, Math.round(maxAllowedCrossfade * 1000) / 1000)
+      : rawCrossfade;
   const fps = opts.fps ?? 30;
   const targetDurationSec = opts.targetDurationSec;
 
@@ -319,10 +330,12 @@ export function buildCrossfadeStitchFilter(
   const filterSteps: string[] = [];
 
   // 1. Normalization Stage for every input stream
-  // Scales, pads, enforces fps, sets yuv420p, and resets PTS to start from 0
+  // Scales, pads, enforces fps, sets yuv420p, trims to materialized shot duration, and resets PTS to start from 0
   for (let i = 0; i < clipPaths.length; i++) {
+    const dur = clipDurations[i];
+    const trim = dur !== undefined && dur > 0 ? `,trim=duration=${dur.toFixed(3)},setpts=PTS-STARTPTS` : `,setpts=PTS-STARTPTS`;
     filterSteps.push(
-      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps},format=yuv420p,setpts=PTS-STARTPTS[v${i}_norm]`
+      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps},format=yuv420p${trim}[v${i}_norm]`
     );
   }
 

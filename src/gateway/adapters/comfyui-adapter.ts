@@ -73,8 +73,30 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
    */
   public buildPromptWorkflow(spec: ShotExecutionSpec, inputImageName?: string): Record<string, unknown> {
     if (this.workflowTemplate) {
-      // Clone custom template and inject prompt
+      // Clone custom template and dynamically inject prompt and input image
       const graph = JSON.parse(JSON.stringify(this.workflowTemplate));
+      for (const nodeKey of Object.keys(graph)) {
+        const node = graph[nodeKey];
+        if (node && typeof node === "object" && node.inputs) {
+          if (node.class_type === "CLIPTextEncode" || (node.inputs.text !== undefined && typeof node.inputs.text === "string")) {
+            const title = String(node._meta?.title || node.title || "").toLowerCase();
+            const isNegative = title.includes("negative") || node.inputs.text.includes("{{negative_prompt}}");
+            if (isNegative) {
+              node.inputs.text = spec.negativePrompt || "";
+            } else if (
+              node.inputs.text.includes("{{prompt}}") ||
+              node.inputs.text === "prompt" ||
+              title.includes("positive") ||
+              (node.inputs.text === "" && !title.includes("negative"))
+            ) {
+              node.inputs.text = spec.prompt;
+            }
+          }
+          if (inputImageName && node.class_type === "LoadImage" && node.inputs.image !== undefined) {
+            node.inputs.image = inputImageName;
+          }
+        }
+      }
       return graph;
     }
 
@@ -95,13 +117,13 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
           model: ["4", 0],
           positive: ["6", 0],
           negative: ["7", 0],
-          latent_image: ["5", 0],
+          latent_image: inputImageName ? ["11", 0] : ["5", 0],
         },
         class_type: "KSampler",
       },
       "4": {
         inputs: {
-          ckpt_name: "wan2.1_i2v_720p_14B.safetensors",
+          ckpt_name: inputImageName ? "wan2.1_i2v_720p_14B.safetensors" : "wan2.1_t2v_720p_14B.safetensors",
         },
         class_type: "CheckpointLoaderSimple",
       },
@@ -152,6 +174,13 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
               },
               class_type: "LoadImage",
             },
+            "11": {
+              inputs: {
+                pixels: ["10", 0],
+                vae: ["4", 2],
+              },
+              class_type: "VAEEncode",
+            },
           }
         : {}),
     };
@@ -161,11 +190,22 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
     try {
       let uploadedImage: string | undefined = undefined;
       const refImg = spec.referenceImage || spec.firstFrameCondition;
-      if (refImg && existsSync(refImg)) {
-        try {
-          uploadedImage = await this.uploadInputImage(refImg);
-        } catch {
-          // If upload fails, continue with text prompt
+      if (refImg) {
+        if (!existsSync(refImg)) {
+          throw new Error(
+            `[COMFYUI ERROR] File ảnh tham chiếu không tồn tại trên đĩa cho shot [${spec.shotId}]: '${refImg}'`
+          );
+        } else {
+          try {
+            uploadedImage = await this.uploadInputImage(refImg);
+          } catch (uploadErr: any) {
+            // If explicit reference image is required, fail fast instead of silently producing degraded t2v
+            if (spec.referenceImage) {
+              throw new Error(
+                `[COMFYUI UPLOAD ERROR] Không thể upload ảnh tham chiếu nhân vật cho shot [${spec.shotId}]: ${uploadErr.message}`
+              );
+            }
+          }
         }
       }
 
@@ -177,7 +217,7 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
 
       const response = await axios.post(`${this.baseUrl}/prompt`, payload, {
         headers: { "Content-Type": "application/json" },
-        timeout: 10000,
+        timeout: Number(process.env.COMFYUI_TIMEOUT_MS) || 4000,
       });
 
       const promptId = response.data?.prompt_id;
@@ -187,7 +227,13 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
 
       return { jobId: promptId };
     } catch (err: any) {
-      if (err.code === "ECONNREFUSED" || err.message?.includes("ECONNREFUSED")) {
+      if (
+        err.code === "ECONNREFUSED" ||
+        err.code === "ETIMEDOUT" ||
+        err.code === "ECONNABORTED" ||
+        err.message?.includes("ECONNREFUSED") ||
+        err.message?.includes("timeout")
+      ) {
         throw new Error(
           `Cannot connect to ComfyUI server at ${this.baseUrl}. Ensure ComfyUI is running locally on your GPU.`
         );

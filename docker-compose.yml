@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auto-video-studio
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3456
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./assets:/app/assets
+      - ./scripts:/app/scripts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3456/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

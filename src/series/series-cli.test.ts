@@ -178,4 +178,44 @@ MINH: Chúng ta không còn nhiều thời gian.
     history = bible.getCanonHistory();
     expect(history.length).toBe(0);
   });
+
+  it("runs series:doctor and reports system status without throwing", async () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runSeriesCli(["series:doctor", "--bible", testDbPath]);
+    expect(consoleSpy).toHaveBeenCalled();
+    const output = consoleSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("KIỂM TRA MÔI TRƯỜNG HỆ THỐNG");
+    expect(output).toContain("SQLite Database");
+    consoleSpy.mockRestore();
+  });
+
+  it("runs series:plan to estimate production costs from screenplay", async () => {
+    const rawScript = `
+TẬP 1: BẢN HỢP ĐỒNG
+Logline: Tập thử nghiệm qua CLI
+
+CẢNH 1: ĐƯỜNG PHỐ - ĐÊM
+CÚ MÁY 1 (establishing, 4s): Đường phố Sài Gòn vắng lặng dưới mưa.
+MINH: Chúng ta không còn nhiều thời gian.
+    `.trim();
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runSeriesCli([
+      "series:plan",
+      "--bible",
+      testDbPath,
+      "--series",
+      "test-cli-ep",
+      "--script",
+      rawScript,
+      "--budget",
+      "10.0",
+    ]);
+    expect(consoleSpy).toHaveBeenCalled();
+    const output = consoleSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("BẢNG DỰ TOÁN KỊCH BẢN & CHI PHÍ SẢN XUẤT");
+    expect(output).toContain("Local ComfyUI");
+    expect(output).toContain("Kling AI Standard");
+    consoleSpy.mockRestore();
+  });
 });

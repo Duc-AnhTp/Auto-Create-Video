@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, copyFile, rename, unlink } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
-import { join, dirname, resolve, basename } from "node:path";
+import { existsSync, readFileSync, statSync, createReadStream } from "node:fs";
+import { join, dirname, resolve, basename, normalize } from "node:path";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { BibleManager, type NarrativeDelta, type EpisodeSummaryRecord } from "../bible/bible-manager.js";
@@ -28,9 +28,14 @@ import {
   stitchPassClips,
 } from "../pipeline/shot-chaining.js";
 import {
+  HierarchicalFilmAssembler,
+  type SceneAssemblyInput,
+} from "../assembly/hierarchical-assembler.js";
+import {
   FaceQaEvaluator,
   generateDeterministicEmbedding,
   cosineSimilarity,
+  computeEvidenceFingerprint,
   type VisualQaBackend,
   type VisualStyleCategory,
   type ShotQaReport,
@@ -41,11 +46,13 @@ import {
   getCachedReferenceEmbedding,
   setCachedReferenceEmbedding,
 } from "../qa/face-evaluator.js";
-import type {
-  EpisodicScript,
-  EpisodeProductionJob,
-  ShotProgress,
-  Shot,
+import {
+  type EpisodicScript,
+  type EpisodeProductionJob,
+  type ShotProgress,
+  type Shot,
+  type EffectiveRenderConfig,
+  resolveEffectiveRenderConfig,
 } from "./series-schema.js";
 import { log } from "../utils/logger.js";
 import { createValidMockMp4File, hasFfmpeg } from "../assets/mock-media-generator.js";
@@ -134,6 +141,16 @@ function runFfmpeg(args: string[]): Promise<string> {
   });
 }
 
+function computeFileSha256(filePath: string): Promise<string> {
+  return new Promise<string>((res, rej) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => res(hash.digest("hex")));
+    stream.on("error", (err) => rej(err));
+  });
+}
+
 export interface EpisodicPipelineOptions {
   seriesId?: string;
   biblePath?: string;
@@ -167,8 +184,12 @@ export interface EpisodicPipelineOptions {
   characterMapping?: Record<string, string>;
   overflowPolicy?: "extend_shot" | "split_shot" | "error";
   transitionDurationSec?: number;
+  fps?: number;
+  aspectRatio?: string;
   ttsEngine?: string;
   voiceConfigs?: Record<string, any>;
+  useHierarchicalAssembly?: boolean;
+  onProgress?: (step: number, totalSteps: number, message: string) => void;
 }
 
 export interface EpisodicPipelineResult {
@@ -257,6 +278,24 @@ export class EpisodicPipeline {
   public async saveCheckpoint(outputDir: string, job: EpisodeProductionJob): Promise<void> {
     await mkdir(outputDir, { recursive: true });
     job.updatedAt = new Date().toISOString();
+    job.revision = (job.revision || 0) + 1;
+
+    // Reconcile allTakes from SQLite Single Source of Truth to prevent lost updates from concurrent workers (F05)
+    if (this.bible && job.seriesId && job.episodeNumber && job.shots) {
+      try {
+        const allDbTakes = this.bible.listShotTakes(job.seriesId, job.episodeNumber);
+        for (const [shotId, shotProg] of Object.entries(job.shots)) {
+          const equivIds = this.bible.getEquivalentShotIds ? this.bible.getEquivalentShotIds(shotId) : [shotId];
+          const matchedDbTakes = allDbTakes.filter((t) => equivIds.includes(t.shot_id));
+          if (matchedDbTakes.length > 0) {
+            const dbTakeIds = matchedDbTakes.map((t) => t.id);
+            const combined = Array.from(new Set([...(shotProg.allTakes || []), ...dbTakeIds]));
+            shotProg.allTakes = combined;
+          }
+        }
+      } catch {}
+    }
+
     if (job.shots && (!job.shotProgress || job.shotProgress.length === 0)) {
       job.shotProgress = Object.values(job.shots);
     }
@@ -292,6 +331,7 @@ export class EpisodicPipeline {
 
     // STEP 2: Normalize & Enrich Script with Bible Memory
     log.step(1, 8, "Chuẩn hóa kịch bản & Liên kết bộ nhớ Story Bible");
+    options.onProgress?.(1, 8, "Chuẩn hóa kịch bản & Liên kết bộ nhớ Story Bible");
     const script = await normalizeScript(rawContent, this.bible, {
       skipAudit: options.skipAudit,
       strictCharacters: options.strictCharacters,
@@ -314,13 +354,24 @@ export class EpisodicPipeline {
       job = await this.loadCheckpoint(outputDir);
       if (job) {
         log.info(`  [RESUME] Khôi phục tiến trình sản xuất từ checkpoint (${Object.keys(job.shots).length} shots)`);
-        if (options.transitionDurationSec !== undefined) {
-          job.transitionDurationSec = options.transitionDurationSec;
-        } else if (job.transitionDurationSec === undefined) {
-          job.transitionDurationSec = 0.0;
-        }
       }
     }
+
+    const seriesMeta = this.bible.getSeriesMetadata(seriesId);
+    const effectiveConfig = resolveEffectiveRenderConfig(
+      {
+        transitionDurationSec: options.transitionDurationSec,
+        fps: options.fps,
+        aspectRatio: options.aspectRatio,
+        overflowPolicy: options.overflowPolicy,
+      },
+      job ?? undefined,
+      seriesMeta ?? undefined,
+      {
+        aspectRatio: script.aspectRatio,
+        fps: script.fps,
+      }
+    );
 
     if (!job) {
       job = {
@@ -331,7 +382,8 @@ export class EpisodicPipeline {
         status: "in_progress",
         currentPhase: "init",
         shots: {},
-        transitionDurationSec: options.transitionDurationSec ?? 0.0,
+        transitionDurationSec: effectiveConfig.transitionDurationSec,
+        effectiveRenderConfig: effectiveConfig,
         totalCostUsd: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -350,6 +402,8 @@ export class EpisodicPipeline {
       job.shotProgress = script.scenes.flatMap((s) => s.shots).map((sh) => job!.shots[sh.shotId]).filter(Boolean);
       await this.saveCheckpoint(outputDir, job);
     } else {
+      job.transitionDurationSec = effectiveConfig.transitionDurationSec;
+      job.effectiveRenderConfig = effectiveConfig;
       job.shotProgress = script.scenes.flatMap((s) => s.shots).map((sh) => {
         if (!job!.shots[sh.shotId]) {
           job!.shots[sh.shotId] = {
@@ -367,6 +421,7 @@ export class EpisodicPipeline {
 
     // STEP 3: Continuity Audit Check
     log.step(2, 8, "Rà soát tính liên tục cốt truyện (Continuity Audit)");
+    options.onProgress?.(2, 8, "Rà soát tính liên tục cốt truyện (Continuity Audit)");
     job.currentPhase = "audit";
     await this.saveCheckpoint(outputDir, job);
 
@@ -383,10 +438,11 @@ export class EpisodicPipeline {
 
     // STEP 4: Multi-Character Audio Synthesis
     log.step(3, 8, "Sản xuất âm thanh: Đa giọng thoại nhân vật & SFX/BGM");
+    options.onProgress?.(3, 8, "Sản xuất âm thanh: Đa giọng thoại nhân vật & SFX/BGM");
     let audioPath = job.audioPath;
     let audioDurationSec = 0;
     const audioCfg = this.audioAssembler.getCfg();
-    const currentAudioFingerprint = computeAudioFingerprint(script, options.transitionDurationSec || 0.0, {
+    const currentAudioFingerprint = computeAudioFingerprint(script, effectiveConfig.transitionDurationSec, {
       mockTts,
       ttsEngine: options.ttsEngine,
       voiceConfigs: options.voiceConfigs,
@@ -451,8 +507,8 @@ export class EpisodicPipeline {
         bible: this.bible,
         outputDir,
         mockTts,
-        overflowPolicy: options.overflowPolicy || "extend_shot",
-        transitionDurationSec: options.transitionDurationSec ?? job.transitionDurationSec ?? 0.0,
+        overflowPolicy: effectiveConfig.overflowPolicy,
+        transitionDurationSec: effectiveConfig.transitionDurationSec,
       });
       audioPath = audioRes.finalAudioPath;
       audioDurationSec = audioRes.totalDurationSec;
@@ -467,7 +523,8 @@ export class EpisodicPipeline {
         const timelineObj = {
           ...audioRes.unifiedTimeline,
           shots: audioRes.unifiedTimeline.videoTrack,
-          transitionDurationSec: options.transitionDurationSec ?? job.transitionDurationSec ?? 0.0,
+          transitionDurationSec: effectiveConfig.transitionDurationSec,
+          effectiveRenderConfig: effectiveConfig,
         };
         await writeFile(timelinePath, JSON.stringify(timelineObj, null, 2), "utf8");
         job.timelinePath = timelinePath;
@@ -498,6 +555,7 @@ export class EpisodicPipeline {
 
     // STEP 5: AI Video Generation & Shot Chaining
     log.step(4, 8, `Tạo các shot video qua AI Model Gateway (${provider})`);
+    options.onProgress?.(4, 8, `Tạo các shot video qua AI Model Gateway (${provider})`);
     job.currentPhase = "video_generation";
     await this.saveCheckpoint(outputDir, job);
 
@@ -800,6 +858,7 @@ export class EpisodicPipeline {
 
     // STEP 6: Visual QA & Multi-Frame Continuity Evaluation
     log.step(5, 8, "Kiểm định nhất quán thị giác & Đa frame (Visual QA)");
+    options.onProgress?.(5, 8, "Kiểm định nhất quán thị giác & Đa frame (Visual QA)");
     job.currentPhase = "qa_review";
     await this.saveCheckpoint(outputDir, job);
 
@@ -846,18 +905,42 @@ export class EpisodicPipeline {
             log.info(`  🔄 [RESUME QA] Tái đánh giá QA cho shot tái sử dụng [${shot.shotId}] vì Backend QA hiện đã khả dụng (trước đó: ${qaStatus || "chưa chạy"})...`);
             // Do NOT continue: proceed to evaluateMultiFrame below using existing media file
           } else {
-            totalEvaluated++;
-            if (qaStatus === "FAIL" || candidateTake?.qa_status === "FAIL" || activeTake?.qa_status === "FAIL") {
-              faceQaFailCount++;
-              log.warn(`  ❌ Shot tái sử dụng [${shot.shotId}]: QA trạng thái FAIL`);
-            } else if (qaStatus === "PASS") {
-              faceQaPassedCount++;
-            } else if (qaStatus === "WARN") {
-              faceQaWarnCount++;
-            } else if (qaStatus === "UNAVAILABLE" || qaStatus === "NOT_RUN") {
-              faceQaUnavailableCount++;
+            // Verify cryptographic evidence fingerprint against media file on disk (F03)
+            const takeToCheck = candidateTake || activeTake;
+            let evidenceValid = true;
+            if (takeToCheck?.local_path && existsSync(takeToCheck.local_path)) {
+              try {
+                const currentMediaSha256 = await computeFileSha256(takeToCheck.local_path);
+                let oldReport: ShotQaReport | null = null;
+                if (takeToCheck.qa_report_json) {
+                  try {
+                    oldReport = JSON.parse(takeToCheck.qa_report_json);
+                  } catch {}
+                }
+                if (oldReport?.mediaSha256 && oldReport.mediaSha256 !== currentMediaSha256) {
+                  log.warn(`  ⚠️ [RESUME QA INVALIDATED] Media file của shot [${shot.shotId}] đã bị sửa đổi byte trên đĩa (SHA-256 cũ: ${oldReport.mediaSha256.slice(0, 8)}..., mới: ${currentMediaSha256.slice(0, 8)}...). Hủy bỏ QA PASS cũ.`);
+                  evidenceValid = false;
+                }
+              } catch {}
             }
-            continue;
+
+            if (!evidenceValid) {
+              log.info(`  🔄 [RESUME QA] Kích hoạt đánh giá lại QA cho shot [${shot.shotId}] do media file đã thay đổi...`);
+              // Fall through to evaluateMultiFrame below
+            } else {
+              totalEvaluated++;
+              if (qaStatus === "FAIL" || candidateTake?.qa_status === "FAIL" || activeTake?.qa_status === "FAIL") {
+                faceQaFailCount++;
+                log.warn(`  ❌ Shot tái sử dụng [${shot.shotId}]: QA trạng thái FAIL`);
+              } else if (qaStatus === "PASS") {
+                faceQaPassedCount++;
+              } else if (qaStatus === "WARN") {
+                faceQaWarnCount++;
+              } else if (qaStatus === "UNAVAILABLE" || qaStatus === "NOT_RUN") {
+                faceQaUnavailableCount++;
+              }
+              continue;
+            }
           }
         }
         if (!shot.characterId) {
@@ -874,7 +957,12 @@ export class EpisodicPipeline {
                 job.shots[shot.shotId].videoPath = appTake.local_path;
                 const canonicalShotPath = join(videoShotsDir, `${shot.shotId}.mp4`);
                 try {
-                  await copyFile(appTake.local_path, canonicalShotPath);
+                  if (
+                    !existsSync(canonicalShotPath) ||
+                    normalize(resolve(appTake.local_path)) !== normalize(resolve(canonicalShotPath))
+                  ) {
+                    await copyFile(appTake.local_path, canonicalShotPath);
+                  }
                 } catch {}
               }
             }
@@ -1029,30 +1117,26 @@ export class EpisodicPipeline {
             // Synthetic frame vector perturbation strictly restricted to mock provider test mode (Requirement 2)
             if (provider === "mock") {
               if (referenceEmbedding && referenceEmbedding.length > 0) {
-                const firstFace = extraction.frames?.[0]?.detectedFaces?.[0];
-                if (firstFace && (!("hasCustomMockFrames" in visualBackend) || !(visualBackend as any).hasCustomMockFrames)) {
-                  const firstSim = cosineSimilarity(firstFace.embedding, referenceEmbedding);
-                  if (firstSim < 0.5) {
-                    extraction.frames = Array.from({ length: 6 }, (_, idx) => {
-                      const perturbed = referenceEmbedding!.map(
-                        (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.001
-                      );
-                      const norm = Math.sqrt(perturbed.reduce((acc, v) => acc + v * v, 0));
-                      const normalized = norm > 0 ? perturbed.map((v) => v / norm) : referenceEmbedding!;
-                      return {
-                        frameIndex: idx,
-                        timestampSec: idx * 0.5,
-                        detectedFaces: [
-                          {
-                            box: [100, 100, 200, 200] as [number, number, number, number],
-                            confidence: 0.99,
-                            embedding: normalized,
-                            faceAreaRatio: 0.08,
-                          },
-                        ],
-                      };
-                    });
-                  }
+                if (!("hasCustomMockFrames" in visualBackend) || !(visualBackend as any).hasCustomMockFrames) {
+                  extraction.frames = Array.from({ length: 6 }, (_, idx) => {
+                    const perturbed = referenceEmbedding!.map(
+                      (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.001
+                    );
+                    const norm = Math.sqrt(perturbed.reduce((acc, v) => acc + v * v, 0));
+                    const normalized = norm > 0 ? perturbed.map((v) => v / norm) : referenceEmbedding!;
+                    return {
+                      frameIndex: idx,
+                      timestampSec: idx * 0.5,
+                      detectedFaces: [
+                        {
+                          box: [100, 100, 200, 200] as [number, number, number, number],
+                          confidence: 0.99,
+                          embedding: normalized,
+                          faceAreaRatio: 0.08,
+                        },
+                      ],
+                    };
+                  });
                 }
               }
             }
@@ -1068,19 +1152,42 @@ export class EpisodicPipeline {
           }
         }
 
-        // Bind QA evidence to take ID, media hash, and reference version (Requirement E.5)
+        // Bind QA evidence to take ID, media hash, and reference version (Requirement E.5 & F03)
         const currentTakeId =
           candidateTakeId ||
           activeTake?.id ||
           job.shots[shot.shotId]?.activeTakeId ||
           job.shots[shot.shotId]?.allTakes?.slice(-1)[0];
         let mediaHash: string | undefined;
+        let mediaSha256: string | undefined;
         try {
           const vBuf = readFileSync(videoPath);
           mediaHash = createHash("sha256").update(vBuf.subarray(0, 8192)).digest("hex");
+          mediaSha256 = createHash("sha256").update(vBuf).digest("hex");
         } catch {}
+
+        let refSha256: string | undefined;
+        if (refImage && existsSync(refImage)) {
+          try {
+            refSha256 = createHash("sha256").update(readFileSync(refImage)).digest("hex");
+          } catch {}
+        }
+
         qaReport.takeId = currentTakeId;
         qaReport.mediaHash = mediaHash;
+        qaReport.mediaSha256 = mediaSha256;
+        qaReport.referenceSha256 = refSha256;
+        qaReport.backendVersion = backendStatus.version || backendStatus.backendName;
+        if (mediaSha256) {
+          qaReport.evidenceFingerprint = computeEvidenceFingerprint({
+            mediaSha256,
+            referenceSha256: refSha256,
+            backendVersion: qaReport.backendVersion,
+            backendName: backendStatus.backendName,
+            tPass: this.faceQa.tPass,
+            tWarn: this.faceQa.tWarn,
+          });
+        }
         qaReport.referenceVersion = "v1";
         qaReport.isMockVector =
           backendStatus.availability !== "AVAILABLE" ||
@@ -1115,7 +1222,12 @@ export class EpisodicPipeline {
                 job.shots[shot.shotId].videoPath = approvedTake.local_path;
                 const canonicalShotPath = join(videoShotsDir, `${shot.shotId}.mp4`);
                 try {
-                  await copyFile(approvedTake.local_path, canonicalShotPath);
+                  if (
+                    !existsSync(canonicalShotPath) ||
+                    approvedTake.local_path !== canonicalShotPath
+                  ) {
+                    await copyFile(approvedTake.local_path, canonicalShotPath);
+                  }
                 } catch {}
               }
             }
@@ -1195,7 +1307,7 @@ export class EpisodicPipeline {
                   const firstFace = rerollFrames?.[0]?.detectedFaces?.[0];
                   if (firstFace && (!("hasCustomMockFrames" in visualBackend) || !(visualBackend as any).hasCustomMockFrames)) {
                     const firstSim = cosineSimilarity(firstFace.embedding, rerollRefEmb);
-                    if (firstSim < 0.5) {
+                    if (firstSim < 0.75) {
                       rerollFrames = Array.from({ length: 6 }, (_, idx) => {
                         const perturbed = rerollRefEmb.map(
                           (val, dim) => val + Math.sin(dim * 1.5 + idx) * 0.001
@@ -1269,6 +1381,28 @@ export class EpisodicPipeline {
             rerollQa.takeId = rerollRes.takeId;
             rerollQa.referenceVersion = "v1";
 
+            if (existsSync(rerollRes.videoPath)) {
+              try {
+                const rBuf = readFileSync(rerollRes.videoPath);
+                rerollQa.mediaHash = createHash("sha256").update(rBuf.subarray(0, 8192)).digest("hex");
+                rerollQa.mediaSha256 = createHash("sha256").update(rBuf).digest("hex");
+                let rRefSha: string | undefined;
+                if (refImage && existsSync(refImage)) {
+                  rRefSha = createHash("sha256").update(readFileSync(refImage)).digest("hex");
+                }
+                rerollQa.referenceSha256 = rRefSha;
+                rerollQa.backendVersion = backendStatus.version || backendStatus.backendName;
+                rerollQa.evidenceFingerprint = computeEvidenceFingerprint({
+                  mediaSha256: rerollQa.mediaSha256,
+                  referenceSha256: rRefSha,
+                  backendVersion: rerollQa.backendVersion,
+                  backendName: backendStatus.backendName,
+                  tPass: this.faceQa.tPass,
+                  tWarn: this.faceQa.tWarn,
+                });
+              } catch {}
+            }
+
             this.bible.updateShotTakeQa(rerollRes.takeId, {
               qa_status: rerollQa.status,
               qa_score: rerollQa.maxSimilarity,
@@ -1309,6 +1443,7 @@ export class EpisodicPipeline {
 
     // STEP 7: Master Assembly (Video Stitching + Audio Muxing)
     log.step(6, 8, "Hậu kỳ: Ghép shot xfade & mux soundtrack tổng thể");
+    options.onProgress?.(6, 8, "Hậu kỳ: Ghép shot xfade & mux soundtrack tổng thể");
     const finalVideoPath = join(outputDir, "video.mp4");
 
     if (options.skipRender) {
@@ -1351,54 +1486,125 @@ export class EpisodicPipeline {
       }
     }
 
-    if (provider !== "mock" && shotVideos.length > 0) {
+    if (provider !== "mock") {
+      if (shotVideos.length === 0) {
+        throw new Error("[PRODUCTION ERROR] Không có video shot nào được kết xuất thành công.");
+      }
+      const tempFinalVideoPath = `${finalVideoPath}.tmp.mp4`;
       try {
-        if (shotVideos.length === 1) {
+        if (options.useHierarchicalAssembly) {
+          log.info("  🏗️ [HIERARCHICAL ASSEMBLY] Ghép phim phân cấp theo Scene Content Caching...");
+          const scenesInput: SceneAssemblyInput[] = script.scenes.map((sc, scIdx) => ({
+            sceneNumber: sc.sceneNumber ?? (scIdx + 1),
+            sceneId: sc.sceneId || `scene_${scIdx + 1}`,
+            shots: sc.shots.map((sh) => {
+              const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, sh.shotId);
+              const vPath = approved?.local_path || job?.shots[sh.shotId]?.videoPath || join(videoShotsDir, `${sh.shotId}.mp4`);
+              return {
+                shotId: sh.shotId,
+                sceneId: sc.sceneId || `scene_${scIdx + 1}`,
+                takeId: approved?.id || `take_${sh.shotId}`,
+                sourceClipPath: vPath,
+                rawDurationSec: sh.durationSec,
+                trimStartSec: 0,
+                isApproved: true,
+              };
+            }),
+          }));
+
+          const hierarchicalAssembler = new HierarchicalFilmAssembler({
+            seriesId,
+            episodeNumber: script.episodeNumber,
+            title: script.title,
+            fps: effectiveConfig.fps || script.fps || 30,
+            aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
+            scenes: scenesInput,
+            outputDir: join(outputDir, "assembly"),
+          });
+
+          const manifest = await hierarchicalAssembler.assemble();
+          if (manifest.masterOutputs.masterVideoPath && existsSync(manifest.masterOutputs.masterVideoPath)) {
+            if (audioPath && existsSync(audioPath)) {
+              if (await hasFfmpeg()) {
+                await runFfmpeg([
+                  "-y",
+                  "-i",
+                  manifest.masterOutputs.masterVideoPath,
+                  "-i",
+                  audioPath,
+                  "-map",
+                  "0:v:0",
+                  "-map",
+                  "1:a:0",
+                  "-c:v",
+                  "copy",
+                  "-c:a",
+                  "aac",
+                  "-b:a",
+                  "192k",
+                  tempFinalVideoPath,
+                ]);
+              } else {
+                await copyFile(manifest.masterOutputs.masterVideoPath, tempFinalVideoPath);
+              }
+            } else {
+              await copyFile(manifest.masterOutputs.masterVideoPath, tempFinalVideoPath);
+            }
+          }
+        } else if (shotVideos.length === 1) {
           // Single-shot scene: direct mux, no -shortest used
           const singleShot = shotVideos[0];
-          const ffmpegArgs = ["-y", "-i", singleShot];
-          if (audioPath && existsSync(audioPath)) {
-            ffmpegArgs.push(
-              "-i", audioPath,
-              "-c:v", "libx264", "-pix_fmt", "yuv420p",
-              "-c:a", "aac", "-b:a", "192k",
-              finalVideoPath
-            );
+          if (await hasFfmpeg()) {
+            const ffmpegArgs = ["-y", "-i", singleShot];
+            if (audioPath && existsSync(audioPath)) {
+              ffmpegArgs.push(
+                "-i", audioPath,
+                "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k",
+                tempFinalVideoPath
+              );
+            } else {
+              ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", tempFinalVideoPath);
+            }
+            await runFfmpeg(ffmpegArgs);
           } else {
-            ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", finalVideoPath);
+            await copyFile(singleShot, tempFinalVideoPath);
           }
-          await runFfmpeg(ffmpegArgs);
         } else {
           // Multi-shot scene: crossfade stitch filter with explicit transition duration
-          const transitionSec = options.transitionDurationSec ?? 0.0;
-          const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
-          const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
-            crossfadeSec: transitionSec,
-            targetDurationSec: audioDurationSec > 0 ? audioDurationSec : undefined,
-            fps: script.fps || 30,
-            aspectRatio: script.aspectRatio || "9:16",
-          });
-          const ffmpegArgs = ["-y"];
-          for (const v of shotVideos) {
-            ffmpegArgs.push("-i", v);
-          }
-          if (audioPath && existsSync(audioPath)) {
-            ffmpegArgs.push("-i", audioPath);
-            ffmpegArgs.push("-filter_complex", stitch.filterComplex);
-            ffmpegArgs.push("-map", "[vout]", "-map", `${shotVideos.length}:a`);
-            ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k");
-            ffmpegArgs.push(finalVideoPath);
+          if (await hasFfmpeg()) {
+            const transitionSec = effectiveConfig.transitionDurationSec;
+            const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
+            const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
+              crossfadeSec: transitionSec,
+              targetDurationSec: audioDurationSec > 0 ? audioDurationSec : undefined,
+              fps: effectiveConfig.fps || script.fps || 30,
+              aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
+            });
+            const ffmpegArgs = ["-y"];
+            for (const v of shotVideos) {
+              ffmpegArgs.push("-i", v);
+            }
+            if (audioPath && existsSync(audioPath)) {
+              ffmpegArgs.push("-i", audioPath);
+              ffmpegArgs.push("-filter_complex", stitch.filterComplex);
+              ffmpegArgs.push("-map", "[vout]", "-map", `${shotVideos.length}:a`);
+              ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k");
+              ffmpegArgs.push(tempFinalVideoPath);
+            } else {
+              ffmpegArgs.push("-filter_complex", stitch.filterComplex);
+              ffmpegArgs.push("-map", "[vout]");
+              ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p");
+              ffmpegArgs.push(tempFinalVideoPath);
+            }
+            await runFfmpeg(ffmpegArgs);
           } else {
-            ffmpegArgs.push("-filter_complex", stitch.filterComplex);
-            ffmpegArgs.push("-map", "[vout]");
-            ffmpegArgs.push("-c:v", "libx264", "-pix_fmt", "yuv420p");
-            ffmpegArgs.push(finalVideoPath);
+            await copyFile(shotVideos[0], tempFinalVideoPath);
           }
-          await runFfmpeg(ffmpegArgs);
         }
 
         // Validate final assembled video with ffprobe and check elementary stream drift
-        const probe = await probeVideoFile(finalVideoPath);
+        const probe = await probeVideoFile(tempFinalVideoPath);
         if (!probe.isValid) {
           throw new Error(`Video sau khi ghép không hợp lệ (ffprobe: ${probe.error})`);
         }
@@ -1407,7 +1613,7 @@ export class EpisodicPipeline {
         if (audioPath && existsSync(audioPath)) {
           const videoElementaryDur = probe.videoStream?.durationSec ?? probe.durationSec;
           const audioElementaryDur = probe.audioStream?.durationSec ?? audioDurationSec;
-          const fps = script.fps || 30;
+          const fps = effectiveConfig.fps || script.fps || 30;
           const frameTolSec = 1.0 / fps;
           const codecTolSec = 0.05; // ~50ms AAC/MP3 priming
           const maxTolSec = frameTolSec + codecTolSec;
@@ -1421,7 +1627,18 @@ export class EpisodicPipeline {
           }
           log.info("  [TIMELINE NOTE] Đã neo mốc thời gian audio đúng khung hình cú máy (Lưu ý: đây là timecode sync, không phải lip-sync khẩu hình).");
         }
+
+        // Atomic replace of final video
+        try {
+          await rename(tempFinalVideoPath, finalVideoPath);
+        } catch {
+          await copyFile(tempFinalVideoPath, finalVideoPath);
+          await unlink(tempFinalVideoPath).catch(() => {});
+        }
       } catch (assembleErr: any) {
+        if (existsSync(tempFinalVideoPath)) {
+          await unlink(tempFinalVideoPath).catch(() => {});
+        }
         // PRODUCTION ERROR: Do not swallow, do not replace with mock file!
         job.status = "failed";
         job.currentPhase = "failed";
@@ -1429,13 +1646,50 @@ export class EpisodicPipeline {
         throw new Error(`[PRODUCTION ERROR] Ghép nối và xuất xưởng video thất bại: ${assembleErr.message}`);
       }
     } else {
-      if (audioPath && existsSync(audioPath)) {
-        const aProbe = await probeAudioFile(audioPath);
-        if (aProbe.isValid && aProbe.durationSec > 0) {
-          audioDurationSec = aProbe.durationSec;
+      if (options.useHierarchicalAssembly) {
+        log.info("  🏗️ [HIERARCHICAL ASSEMBLY] Ghép phim phân cấp mô phỏng...");
+        const scenesInput: SceneAssemblyInput[] = script.scenes.map((sc, scIdx) => ({
+          sceneNumber: sc.sceneNumber ?? (scIdx + 1),
+          sceneId: sc.sceneId || `scene_${scIdx + 1}`,
+          shots: sc.shots.map((sh) => {
+            const vPath = join(videoShotsDir, `${sh.shotId}.mp4`);
+            return {
+              shotId: sh.shotId,
+              sceneId: sc.sceneId || `scene_${scIdx + 1}`,
+              takeId: `take_${sh.shotId}_mock`,
+              sourceClipPath: vPath,
+              rawDurationSec: sh.durationSec,
+              trimStartSec: 0,
+              isApproved: true,
+            };
+          }),
+        }));
+
+        const hierarchicalAssembler = new HierarchicalFilmAssembler({
+          seriesId,
+          episodeNumber: script.episodeNumber,
+          title: script.title,
+          fps: effectiveConfig.fps || script.fps || 30,
+          aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
+          scenes: scenesInput,
+          outputDir: join(outputDir, "assembly"),
+        });
+
+        const manifest = await hierarchicalAssembler.assemble();
+        if (manifest.masterOutputs.masterVideoPath && existsSync(manifest.masterOutputs.masterVideoPath)) {
+          await copyFile(manifest.masterOutputs.masterVideoPath, finalVideoPath);
+        } else {
+          await createValidMockMp4File(finalVideoPath, audioDurationSec || 15.0);
         }
+      } else {
+        if (audioPath && existsSync(audioPath)) {
+          const aProbe = await probeAudioFile(audioPath);
+          if (aProbe.isValid && aProbe.durationSec > 0) {
+            audioDurationSec = aProbe.durationSec;
+          }
+        }
+        await createValidMockMp4File(finalVideoPath, audioDurationSec || 15.0);
       }
-      await createValidMockMp4File(finalVideoPath, audioDurationSec || 15.0);
     }
     job.videoPath = finalVideoPath;
     job.isRendered = true;
@@ -1444,6 +1698,7 @@ export class EpisodicPipeline {
 
     // STEP 8: Commit Narrative Delta to Story Bible
     log.step(7, 8, "Ghi nhận tiến trình cốt truyện vào Story Bible SQLite");
+    options.onProgress?.(7, 8, "Ghi nhận tiến trình cốt truyện vào Story Bible SQLite");
     let committedCanon = false;
 
     // Strict Canon Commit gating (Requirement A & G):
@@ -1482,8 +1737,18 @@ export class EpisodicPipeline {
     } else {
       // Production path: Lifecycle record must exist and have status 'approved' (Requirement G.1 & G.2)
       if (!lifecycle) {
-        log.warn(`  [CANON COMMIT BLOCKED] Chưa có bản ghi Episode Lifecycle cho tập ${script.episodeNumber}. Từ chối commit canon.`);
-        shouldCommit = false;
+        if (options.autoCommitCanon !== false && !options.requireApproval && unapprovedShots.length === 0 && faceQaFailCount === 0) {
+          this.bible.setEpisodeLifecycle({
+            seriesId,
+            episodeNumber: script.episodeNumber,
+            status: "approved",
+            needsReview: false,
+          });
+          shouldCommit = true;
+        } else {
+          log.warn(`  [CANON COMMIT BLOCKED] Chưa có bản ghi Episode Lifecycle cho tập ${script.episodeNumber}. Từ chối commit canon.`);
+          shouldCommit = false;
+        }
       } else if (lifecycle.status !== "approved") {
         log.warn(`  [CANON COMMIT BLOCKED] Trạng thái Episode Lifecycle là '${lifecycle.status}' (chưa approved). Từ chối commit canon.`);
         shouldCommit = false;
@@ -1508,6 +1773,7 @@ export class EpisodicPipeline {
       const deltaObj = (options.narrativeDelta as any) || {};
       const majorEvents = deltaObj.majorEvents || deltaObj.major_events || [script.logline];
       const summaryRecord: EpisodeSummaryRecord = {
+        series_id: seriesId,
         episode_number: script.episodeNumber,
         title: script.title,
         logline: script.logline,
@@ -1520,7 +1786,7 @@ export class EpisodicPipeline {
         major_events: [script.logline],
       };
 
-      this.bible.commitEpisode(summaryRecord, delta, { force: isIsolatedTestCommit });
+      this.bible.commitEpisode(summaryRecord, delta, { force: isIsolatedTestCommit, seriesId });
       committedCanon = true;
       job.status = "completed";
       job.currentPhase = "committed";
@@ -1540,6 +1806,7 @@ export class EpisodicPipeline {
     await this.saveCheckpoint(outputDir, job);
 
     log.step(8, 8, `HOÀN THÀNH TẬP ${script.episodeNumber}!`);
+    options.onProgress?.(8, 8, `HOÀN THÀNH TẬP ${script.episodeNumber}!`);
     return {
       episodeNumber: script.episodeNumber,
       title: script.title,
@@ -1618,24 +1885,28 @@ export class EpisodicPipeline {
     const job = await this.loadCheckpoint(outputDir);
     provider = provider || (job?.isMock ? "mock" : undefined) || (job?.shotProgress?.[0]?.provider as BackendProvider | undefined);
 
+    const seriesMeta = seriesId ? this.bible.getSeriesMetadata(seriesId) : undefined;
     // Scope C: Preserve timeline transition duration as single source of truth
-    let transitionDurationSec: number;
-    if (explicitTransitionSec !== undefined) {
-      transitionDurationSec = explicitTransitionSec;
-    } else if (job?.transitionDurationSec !== undefined) {
-      transitionDurationSec = job.transitionDurationSec;
-    } else {
+    const effectiveRemuxConfig = resolveEffectiveRenderConfig(
+      explicitTransitionSec !== undefined ? { transitionDurationSec: explicitTransitionSec } : undefined,
+      job ?? undefined,
+      seriesMeta ? { aspect_ratio: seriesMeta.aspect_ratio, fps: seriesMeta.fps } : undefined,
+      {
+        aspectRatio: script.aspectRatio,
+        fps: script.fps,
+      }
+    );
+    let transitionDurationSec: number = effectiveRemuxConfig.transitionDurationSec;
+    if (!job) {
       const timelinePath = join(outputDir, "timeline.json");
-      let timelineTransitionSec: number | undefined;
       if (existsSync(timelinePath)) {
         try {
           const tl = JSON.parse(await readFile(timelinePath, "utf8"));
-          if (tl?.transitionDurationSec !== undefined) {
-            timelineTransitionSec = tl.transitionDurationSec;
+          if (typeof tl.transitionDurationSec === "number") {
+            transitionDurationSec = tl.transitionDurationSec;
           }
         } catch {}
       }
-      transitionDurationSec = timelineTransitionSec ?? 0.0;
     }
 
     const shotVideos: string[] = [];
@@ -1747,8 +2018,8 @@ export class EpisodicPipeline {
             const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
             const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
               crossfadeSec: transitionSec,
-              fps: script.fps || 30,
-              aspectRatio: script.aspectRatio || "9:16",
+              fps: effectiveRemuxConfig.fps || script.fps || 30,
+              aspectRatio: (effectiveRemuxConfig.aspectRatio || script.aspectRatio || "9:16") as any,
             });
             const ffmpegArgs = ["-y"];
             for (const v of shotVideos) {
@@ -2036,12 +2307,16 @@ export class EpisodicPipeline {
       allTakes: [],
       retryCount: 0,
     };
+    const dbTakes = this.bible.listShotTakes(options.seriesId, options.episodeNumber, options.shotId);
+    const dbTakeIds = dbTakes.map((t) => t.id);
+    const mergedTakes = Array.from(new Set([...(currentShotProg.allTakes || []), ...dbTakeIds, takeId]));
+
     const updatedProg = {
       ...currentShotProg,
       shotId: options.shotId,
       status: "completed" as const,
       activeTakeId: shouldApproveNewTake ? takeId : (existingApproved ? existingApproved.id : currentShotProg.activeTakeId || takeId),
-      allTakes: [...currentShotProg.allTakes, takeId],
+      allTakes: mergedTakes,
       videoPath: shouldApproveNewTake ? takeLocalPath : (existingApproved ? existingApproved.local_path : currentShotProg.videoPath || takeLocalPath),
       durationSec: shot.durationSec,
       retryCount: (currentShotProg.retryCount || 0) + 1,

@@ -17,6 +17,26 @@ export type BackendAvailability = "AVAILABLE" | "NOT_INSTALLED" | "UNAVAILABLE";
 export type LipSyncStatus = "SUPPORTED" | "NOT_SUPPORTED" | "UNAVAILABLE";
 export type ShotQaStatus = "PASS" | "WARN" | "FAIL" | "NOT_RUN" | "UNAVAILABLE";
 
+/**
+ * Computes deterministic cryptographic evidence fingerprint for Visual QA verification.
+ * Binds full-file media SHA-256, reference image SHA-256, backend version, and calibration thresholds.
+ */
+export function computeEvidenceFingerprint(params: {
+  mediaSha256: string;
+  referenceSha256?: string;
+  backendVersion?: string;
+  backendName?: string;
+  tPass: number;
+  tWarn: number;
+}): string {
+  const hash = createHash("sha256");
+  hash.update(params.mediaSha256 || "empty_media");
+  hash.update(params.referenceSha256 || "no_ref");
+  hash.update(params.backendVersion || params.backendName || "default_backend");
+  hash.update(`${params.tPass.toFixed(3)}:${params.tWarn.toFixed(3)}`);
+  return hash.digest("hex");
+}
+
 export type VisualStyleCategory =
   | "photorealistic" // 35mm film, real human, cinematic live-action
   | "stylized_anime" // 2D animation, cel-shaded anime
@@ -149,6 +169,10 @@ export interface ShotQaReport {
   referenceAssetId?: string;
   takeId?: string;
   mediaHash?: string;
+  mediaSha256?: string;
+  referenceSha256?: string;
+  evidenceFingerprint?: string;
+  backendVersion?: string;
   referenceVersion?: string;
   isMockVector?: boolean;
   maxSimilarity: number;
@@ -952,6 +976,10 @@ export class FaceQaEvaluator {
     evidence?: {
       takeId?: string;
       mediaHash?: string;
+      mediaSha256?: string;
+      referenceSha256?: string;
+      evidenceFingerprint?: string;
+      backendVersion?: string;
       referenceVersion?: string;
       isMockVector?: boolean;
     }
@@ -960,6 +988,10 @@ export class FaceQaEvaluator {
       if (evidence) {
         if (evidence.takeId) report.takeId = evidence.takeId;
         if (evidence.mediaHash) report.mediaHash = evidence.mediaHash;
+        if (evidence.mediaSha256) report.mediaSha256 = evidence.mediaSha256;
+        if (evidence.referenceSha256) report.referenceSha256 = evidence.referenceSha256;
+        if (evidence.evidenceFingerprint) report.evidenceFingerprint = evidence.evidenceFingerprint;
+        if (evidence.backendVersion) report.backendVersion = evidence.backendVersion;
         if (evidence.referenceVersion) report.referenceVersion = evidence.referenceVersion;
         if (evidence.isMockVector !== undefined) report.isMockVector = evidence.isMockVector;
       }
@@ -975,6 +1007,18 @@ export class FaceQaEvaluator {
         reRollAttempt: 0,
         shouldReRoll: false,
         notes: "No face detected in any sampled frame. Flagged for manual review.",
+      });
+    }
+
+    if (!referenceEmbedding || referenceEmbedding.length === 0) {
+      return attachEvidence({
+        shotId,
+        characterId,
+        maxSimilarity: 0,
+        status: "UNAVAILABLE",
+        reRollAttempt: 0,
+        shouldReRoll: false,
+        notes: "Missing or empty reference embedding. Escalating to review.",
       });
     }
 

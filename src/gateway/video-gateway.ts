@@ -51,6 +51,7 @@ export interface ShotExecutionSpec {
   priority: "hero" | "standard";
   durationSec: number;
   prompt: string;
+  negativePrompt?: string;
   aspectRatio?: "9:16" | "16:9";
   loras?: Array<{ path: string; weight: number }>;
   referenceImage?: string;

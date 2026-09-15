@@ -1,7 +1,9 @@
 import axios from "axios";
-import { BibleManager } from "../bible/bible-manager.js";
+import { BibleManager, type PlannedEpisodeRecord } from "../bible/bible-manager.js";
 import { normalizeScript, parseRawScreenplay } from "./script-normalizer.js";
 import type { EpisodicScript } from "./series-schema.js";
+import { ContextBuilder, type EpisodeGenerationContext } from "../novel/context-builder.js";
+import { CoverageLedgerManager } from "./coverage-ledger.js";
 
 export interface StoryToScreenplayOptions {
   seriesId: string;
@@ -15,6 +17,17 @@ export interface StoryToScreenplayOptions {
   llmProvider?: "anthropic" | "openai" | "gemini" | "custom";
   customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
   skipAudit?: boolean;
+}
+
+export interface PlanToScreenplayOptions {
+  seriesId: string;
+  planId: string;
+  episodeNumber: number;
+  skipAudit?: boolean;
+  llmApiKey?: string;
+  llmProvider?: "anthropic" | "openai" | "gemini" | "custom";
+  customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
+  tone?: string;
 }
 
 export interface GeneratedScreenplayResult {
@@ -143,6 +156,213 @@ export class StoryToScreenplayGenerator {
       canonContextSummary: canonSummary,
       generatorUsed,
     };
+  }
+
+  /**
+   * Generates a cinema-ready EpisodicScript anchored directly to a planned episode
+   * from the SeriesPlan, integrating ContextBuilder and CoverageLedger.
+   */
+  public async generateEpisodeFromPlan(
+    options: PlanToScreenplayOptions
+  ): Promise<GeneratedScreenplayResult> {
+    const { seriesId, planId, episodeNumber } = options;
+
+    const plannedEp = this.bible.getPlannedEpisode(planId, episodeNumber);
+    if (!plannedEp) {
+      throw new Error(`Planned episode ${episodeNumber} not found in plan '${planId}'.`);
+    }
+
+    const ledgers = CoverageLedgerManager.getEntriesForEpisode(
+      this.bible,
+      seriesId,
+      planId,
+      episodeNumber
+    );
+    const sourceUnitIds = Array.from(
+      new Set(ledgers.map((l) => l.source_unit_id).filter(Boolean))
+    );
+
+    const epContext = ContextBuilder.buildEpisodeContext(this.bible, {
+      seriesId,
+      episodeNumber,
+      planId,
+      sourceUnitIds: sourceUnitIds.length > 0 ? sourceUnitIds : undefined,
+    });
+
+    let rawScreenplay = "";
+    let generatorUsed: "llm" | "rule_based" = "rule_based";
+
+    if (options.customLlmInvoker) {
+      try {
+        rawScreenplay = await options.customLlmInvoker(
+          epContext.formattedPrompt,
+          this.buildSystemPrompt()
+        );
+        generatorUsed = "llm";
+      } catch {
+        rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
+      }
+    } else if (
+      options.llmApiKey ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.GEMINI_API_KEY
+    ) {
+      try {
+        rawScreenplay = await this.generateViaLlmApi(
+          {
+            seriesId,
+            prompt: epContext.formattedPrompt,
+            episodeNumber,
+            llmApiKey: options.llmApiKey,
+            llmProvider: options.llmProvider,
+          },
+          epContext.formattedPrompt,
+          episodeNumber
+        );
+        generatorUsed = "llm";
+      } catch {
+        rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
+      }
+    } else {
+      rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
+    }
+
+    rawScreenplay = this.stripMarkdownFences(rawScreenplay);
+
+    const script = await normalizeScript(rawScreenplay, this.bible, {
+      seriesId,
+      skipAudit: options.skipAudit ?? false,
+    });
+
+    // Compute stats
+    let shotCount = 0;
+    let estimatedDurationSec = 0;
+    const charactersSet = new Set<string>();
+    const propsSet = new Set<string>();
+
+    for (const scene of script.scenes) {
+      if (Array.isArray(scene.charactersPresent)) {
+        for (const cp of scene.charactersPresent) {
+          const charId = typeof cp === "string" ? cp : (cp as any)?.characterId;
+          if (charId) charactersSet.add(charId);
+        }
+      }
+      if (Array.isArray(scene.propsPresent)) {
+        for (const prop of scene.propsPresent) {
+          if (prop) propsSet.add(prop);
+        }
+      }
+      for (const shot of scene.shots) {
+        shotCount++;
+        estimatedDurationSec += shot.durationSec ?? (shot as any).targetDurationSec ?? 0;
+      }
+    }
+
+    return {
+      rawScreenplay,
+      script,
+      charactersUsed: Array.from(charactersSet),
+      propsUsed: Array.from(propsSet),
+      sceneCount: script.scenes.length,
+      shotCount,
+      estimatedDurationSec,
+      canonContextSummary: epContext.formattedPrompt,
+      generatorUsed,
+    };
+  }
+
+  /**
+   * Deterministic rule-based screenplay generator specifically tailored
+   * for a PlannedEpisodeRecord from an adaptation plan.
+   */
+  public generateRuleBasedScreenplayFromPlan(
+    plannedEp: PlannedEpisodeRecord,
+    epContext: EpisodeGenerationContext,
+    tone?: string
+  ): string {
+    const existingChars = this.bible.listCharacters(plannedEp.series_id);
+    const existingProps = this.bible.listKeyProps(plannedEp.series_id);
+
+    const leadChar = existingChars[0]?.name || "Minh";
+    const secondChar = existingChars[1]?.name || "An";
+    const propName = existingProps[0]?.name || "Vật Chứng";
+
+    // Extract quote from source spans if available
+    let sourceQuote: string | null = null;
+    for (const span of epContext.sourceSpans) {
+      const match = span.excerpt.match(/["“]([^"”]+)["”]/);
+      if (match && match[1].length > 3) {
+        sourceQuote = match[1];
+        break;
+      }
+    }
+
+    const titleUpper = (plannedEp.title || `TẬP ${plannedEp.episode_number}`).toUpperCase();
+    const logline = plannedEp.logline || "Hành trình tiếp tục với nhiều biến cố.";
+
+    const lines: string[] = [];
+    lines.push(`TẬP ${plannedEp.episode_number}: ${titleUpper.replace(/^TẬP\s*\d+:\s*/i, "")}`);
+    lines.push(`Logline: ${logline}\n`);
+
+    // Scene 1: Opening & Goal
+    lines.push(`CẢNH 1: KHÔNG GIAN KHỞI ĐẦU - NGÀY`);
+    lines.push(`Nhân vật: ${leadChar}, ${secondChar}`);
+    lines.push(`Đạo cụ: ${propName}`);
+    lines.push(
+      `CÚ MÁY 1 (establishing, 4s): Toàn cảnh không gian mở đầu. ${
+        plannedEp.opening || "Khung cảnh tĩnh mịch chuẩn bị cho một chuỗi biến cố."
+      }`
+    );
+    lines.push(
+      `CÚ MÁY 2 (medium, 4s): ${leadChar} xuất hiện, tập trung vào mục tiêu: ${
+        plannedEp.goal || "Khám phá chân tướng sự việc."
+      }`
+    );
+    lines.push(
+      `${leadChar.toUpperCase()}: ${
+        sourceQuote || "Chúng ta phải bắt đầu ngay trước khi dấu vết bị xóa bỏ."
+      }`
+    );
+    lines.push(`CÚ MÁY 3 (close_up, 4s): Cận cảnh biểu cảm kiên quyết của ${secondChar}.`);
+    lines.push(`${secondChar.toUpperCase()}: Mọi sự chú ý đang đổ dồn về phía chúng ta.`);
+    lines.push("");
+
+    // Scene 2: Development & Confrontation
+    lines.push(`CẢNH 2: NƠI XẢY RA XUNG ĐỘT - ĐÊM`);
+    lines.push(`Nhân vật: ${leadChar}, ${secondChar}`);
+    lines.push(
+      `CÚ MÁY 1 (medium, 4s): ${
+        plannedEp.development || "Tình thế xoay chuyển nhanh chóng khi xung đột bùng phát."
+      }`
+    );
+    lines.push(
+      `CÚ MÁY 2 (action, 4s): ${leadChar} phản ứng mau lẹ trước nguy cơ rình rập, giữ vững vị trí.`
+    );
+    lines.push(`${leadChar.toUpperCase()}: Cẩn thận, đây là bẫy của kẻ thù!`);
+    lines.push(`CÚ MÁY 3 (close_up, 4s): ${secondChar} phát hiện thêm manh mối bất ngờ.`);
+    lines.push("");
+
+    // Scene 3: Climax & Cliffhanger
+    lines.push(`CẢNH 3: ĐỈNH ĐIỂM TRANH ĐẤU - ĐÊM`);
+    lines.push(`Nhân vật: ${leadChar}, ${secondChar}`);
+    lines.push(
+      `CÚ MÁY 1 (action, 4s): ${
+        plannedEp.climax || "Cao trào kịch tính đẩy mọi mâu thuẫn lên đỉnh điểm."
+      }`
+    );
+    lines.push(`${leadChar.toUpperCase()}: Kết thúc mọi chuyện tại đây!`);
+    lines.push(
+      `CÚ MÁY 2 (close_up, 4s): Khoảnh khắc quyết định, gương mặt các nhân vật căng như dây đàn.`
+    );
+    lines.push(
+      `CÚ MÁY 3 (wide, 4s): ${
+        plannedEp.ending || "Một cái kết mở đầy kịch tính báo hiệu chặng đường chông gai phía trước."
+      }`
+    );
+    lines.push("");
+
+    return lines.join("\n").trim();
   }
 
   /**

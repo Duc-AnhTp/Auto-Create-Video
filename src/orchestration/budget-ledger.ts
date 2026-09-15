@@ -34,7 +34,11 @@ export class BudgetLedger {
    * Zero-cost / mock jobs strictly retain $0.00 cost without substituting default rates.
    */
   public atomicReserveForJob(
-    job: Omit<ProviderJobRecord, "created_at" | "updated_at" | "status" | "cost_category">,
+    job: Partial<ProviderJobRecord> &
+      Pick<
+        ProviderJobRecord,
+        "id" | "series_id" | "episode_number" | "shot_id" | "provider" | "spec_hash"
+      >,
     options?: { budgetCapUsd?: number; workerLeaseSec?: number }
   ): {
     allowed: boolean;

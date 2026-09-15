@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS series_metadata (
 
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
+  series_id TEXT,
   name TEXT NOT NULL,
   role TEXT NOT NULL, -- protagonist, antagonist, supporting
   visual_summary TEXT NOT NULL, -- persistent physical appearance description
@@ -24,8 +25,12 @@ CREATE TABLE IF NOT EXISTS characters (
   face_reference_image TEXT, -- path to canonical reference portrait
   character_sheet_path TEXT, -- multi-angle turnaround sheet
   current_wardrobe_id TEXT, -- active costume identifier
-  distinguishing_marks TEXT -- scars, tattoos, physical marks that must persist
+  distinguishing_marks TEXT, -- scars, tattoos, physical marks that must persist
+  aliases_json TEXT,
+  relationship_graph_json TEXT,
+  face_embedding_json TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_characters_series ON characters (series_id);
 
 CREATE TABLE IF NOT EXISTS character_wardrobes (
   id TEXT PRIMARY KEY,
@@ -322,4 +327,190 @@ CREATE TABLE IF NOT EXISTS provider_rate_cards (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rate_cards_lookup ON provider_rate_cards (provider, model_name, effective_date);
+
+-- ============================================================================
+-- NOVEL INGESTION, STORY ANALYSIS & SERIES PLANNING (MIGRATION V6)
+-- ============================================================================
+
+-- Versioned master source works (novels, books, long screenplays)
+CREATE TABLE IF NOT EXISTS source_works (
+  id TEXT PRIMARY KEY, -- e.g. "src_cyber_saigon_novel"
+  series_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  author TEXT,
+  source_type TEXT NOT NULL DEFAULT 'prose', -- 'prose' | 'screenplay'
+  current_revision INTEGER NOT NULL DEFAULT 1,
+  content_hash TEXT NOT NULL, -- SHA-256 of raw_text
+  raw_text TEXT NOT NULL,
+  normalized_text TEXT NOT NULL,
+  normalization_rules_json TEXT NOT NULL DEFAULT '{}',
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_works_series ON source_works (series_id);
+
+-- Structural units in source (chapters, acts, scenes, sections)
+CREATE TABLE IF NOT EXISTS source_units (
+  id TEXT PRIMARY KEY, -- e.g. "unit_src_cyber_ch01"
+  source_id TEXT NOT NULL,
+  series_id TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  unit_type TEXT NOT NULL DEFAULT 'chapter', -- 'chapter', 'scene', 'act', 'prologue', 'epilogue'
+  unit_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  order_index INTEGER NOT NULL,
+  char_start INTEGER NOT NULL,
+  char_end INTEGER NOT NULL,
+  raw_text TEXT NOT NULL,
+  summary TEXT,
+  token_count_estimate INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES source_works (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_units_lookup ON source_units (source_id, revision, order_index);
+CREATE INDEX IF NOT EXISTS idx_source_units_series ON source_units (series_id, source_id);
+
+-- Fine-grained paragraphs and chunks within units
+CREATE TABLE IF NOT EXISTS source_blocks (
+  id TEXT PRIMARY KEY, -- e.g. "blk_src_cyber_ch01_001"
+  source_id TEXT NOT NULL,
+  unit_id TEXT NOT NULL,
+  series_id TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  block_index INTEGER NOT NULL,
+  char_start INTEGER NOT NULL,
+  char_end INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  is_dialogue INTEGER NOT NULL DEFAULT 0,
+  speaker_candidate TEXT,
+  chunk_group_id TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (unit_id) REFERENCES source_units (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_blocks_lookup ON source_blocks (unit_id, block_index);
+CREATE INDEX IF NOT EXISTS idx_source_blocks_series ON source_blocks (series_id, source_id);
+
+-- Stateful narrative beat and event records
+CREATE TABLE IF NOT EXISTS story_beats (
+  id TEXT PRIMARY KEY, -- e.g. "beat_src_cyber_b001"
+  source_id TEXT NOT NULL,
+  source_unit_id TEXT,
+  series_id TEXT NOT NULL,
+  beat_order INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  participating_characters_json TEXT NOT NULL DEFAULT '[]', -- array of char ids/names
+  location_id TEXT,
+  story_time TEXT, -- In-story chronological anchor (distinct from narrative order)
+  is_flashback INTEGER NOT NULL DEFAULT 0,
+  preconditions_json TEXT NOT NULL DEFAULT '{}',
+  post_state_changes_json TEXT NOT NULL DEFAULT '{}',
+  source_citations_json TEXT NOT NULL DEFAULT '[]', -- [{ charStart, charEnd, excerpt }]
+  is_mandatory INTEGER NOT NULL DEFAULT 1, -- 1 = mandatory beat, must be adapted
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_story_beats_lookup ON story_beats (series_id, source_id, beat_order);
+CREATE INDEX IF NOT EXISTS idx_story_beats_unit ON story_beats (source_unit_id, beat_order);
+
+-- Plot threads, setups, and payoffs
+CREATE TABLE IF NOT EXISTS story_threads (
+  id TEXT PRIMARY KEY, -- e.g. "thread_chip_conspiracy"
+  series_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  thread_type TEXT NOT NULL DEFAULT 'main', -- 'main', 'subplot', 'character_arc'
+  description TEXT NOT NULL,
+  setup_beat_id TEXT,
+  payoff_beat_id TEXT,
+  status TEXT NOT NULL DEFAULT 'open', -- 'open', 'resolved', 'dropped'
+  dependencies_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_story_threads_lookup ON story_threads (series_id, status);
+
+-- Knowledge state graph: distinguishes original facts, adaptation decisions, character vs audience knowledge
+CREATE TABLE IF NOT EXISTS knowledge_states (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  series_id TEXT NOT NULL,
+  fact_key TEXT NOT NULL,
+  fact_type TEXT NOT NULL, -- 'source_fact', 'adaptation_decision', 'character_knowledge', 'audience_knowledge'
+  entity_id TEXT, -- character_id, 'audience', or 'source'
+  revealed_at_episode INTEGER,
+  revealed_at_beat_id TEXT,
+  is_flashback INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_states_lookup ON knowledge_states (series_id, fact_type, entity_id);
+
+-- Multi-episode series adaptation plans
+CREATE TABLE IF NOT EXISTS series_plans (
+  id TEXT PRIMARY KEY, -- e.g. "plan_cyber_saigon_v1"
+  series_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  revision INTEGER NOT NULL DEFAULT 1,
+  target_episodes INTEGER NOT NULL,
+  target_duration_per_episode_sec REAL NOT NULL,
+  pacing_preset TEXT NOT NULL DEFAULT 'standard', -- 'fast', 'standard', 'contemplative'
+  status TEXT NOT NULL DEFAULT 'draft', -- 'draft', 'approved', 'active', 'stale'
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  summary_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_series_plans_lookup ON series_plans (series_id, source_id, status);
+
+-- Planned episodes within an adaptation plan
+CREATE TABLE IF NOT EXISTS planned_episodes (
+  id TEXT PRIMARY KEY, -- e.g. "plan_ep_01"
+  plan_id TEXT NOT NULL,
+  series_id TEXT NOT NULL,
+  episode_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  logline TEXT NOT NULL,
+  goal TEXT,
+  opening TEXT,
+  development TEXT,
+  climax TEXT,
+  ending TEXT,
+  target_duration_sec REAL NOT NULL,
+  state_in_json TEXT NOT NULL DEFAULT '{}',
+  planned_state_out_json TEXT NOT NULL DEFAULT '{}',
+  dependencies_json TEXT NOT NULL DEFAULT '[]',
+  estimated_scenes INTEGER NOT NULL DEFAULT 0,
+  estimated_shots INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_planned_episodes_lookup ON planned_episodes (plan_id, episode_number);
+CREATE INDEX IF NOT EXISTS idx_planned_episodes_series ON planned_episodes (series_id, episode_number);
+
+-- Coverage ledger mapping source chapters/blocks to planned episodes and adaptation decisions
+CREATE TABLE IF NOT EXISTS coverage_ledgers (
+  id TEXT PRIMARY KEY, -- e.g. "cov_ch01_ep01"
+  plan_id TEXT NOT NULL,
+  series_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  source_unit_id TEXT NOT NULL,
+  source_block_id TEXT,
+  episode_number INTEGER,
+  scene_number INTEGER,
+  adaptation_decision TEXT NOT NULL DEFAULT 'kept', -- 'kept', 'compressed', 'moved', 'omitted', 'expanded'
+  rationale TEXT,
+  mandatory_beat_id TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_lookup ON coverage_ledgers (plan_id, source_unit_id, episode_number);
+CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_series ON coverage_ledgers (series_id, source_id);
+
 

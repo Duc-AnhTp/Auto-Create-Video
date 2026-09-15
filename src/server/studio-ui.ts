@@ -2,12 +2,14 @@
  * studio-ui.ts
  *
  * Hollywood-grade Cinema Production Studio UI for Auto-Create-Video.
- * Built strictly according to the Anti-Slop Frontend Guidelines (taste-skill):
- *  - Zero em-dashes (hyphen '-' and clean punctuation only)
- *  - Strict single-theme lock: Obsidian & Slate Ground Surfaces
- *  - Real Vietnamese Typography Engine ('Be Vietnam Pro' + 'Inter' + 'JetBrains Mono')
- *  - Tactile physical materiality with subtle inner specular reflections
- *  - Non-generic bento layouts, director take review console, and audio stems mixer
+ * Upgraded with the Redesign Skill & Anti-Slop Guidelines (taste-skill):
+ *  - Zero em-dashes (only standard '-' and clean typography)
+ *  - 35mm Cinematic Film Grain Texture & Atmospheric Lighting
+ *  - Interactive Mouse Spotlight Engine on Acrylic Cards
+ *  - Character 512-D ArcFace Lightbox Inspection Modal
+ *  - Real-time Animated Multi-Band Audio Stems Equalizer
+ *  - Dual-View Screenplay Studio with Lens & Camera Metadata Chips
+ *  - Shimmer Loading States & Spring Physics Micro-Interactions
  */
 
 export function renderStudioHtml(): string {
@@ -19,12 +21,12 @@ export function renderStudioHtml(): string {
   <title>AUTO-CREATE-VIDEO ★ CINEMA PRODUCTION STUDIO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      /* Typography Families */
-      --font-sans: 'Be Vietnam Pro', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      --font-ui: 'Inter', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+      /* Typography Families — Standardized on JetBrains Mono */
+      --font-sans: 'JetBrains Mono', 'SFMono-Regular', Consolas, -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+      --font-ui: 'JetBrains Mono', 'SFMono-Regular', Consolas, -apple-system, BlinkMacSystemFont, monospace;
       --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 
       /* Typographic Scale Tokens */
@@ -68,7 +70,7 @@ export function renderStudioHtml(): string {
       --border-subtle: rgba(255, 255, 255, 0.05);
       --border-default: rgba(255, 255, 255, 0.08);
       --border-active: rgba(255, 255, 255, 0.14);
-      --border-highlight: rgba(255, 255, 255, 0.22);
+      --border-highlight: rgba(255, 255, 255, 0.24);
 
       /* Neutral Typography Colors */
       --text-primary: #f8fafc;
@@ -80,35 +82,35 @@ export function renderStudioHtml(): string {
       --accent-cyan: #06b6d4;
       --accent-cyan-hover: #22d3ee;
       --accent-cyan-subtle: rgba(6, 182, 212, 0.10);
-      --accent-cyan-border: rgba(6, 182, 212, 0.30);
-      --accent-cyan-glow: rgba(6, 182, 212, 0.25);
+      --accent-cyan-border: rgba(6, 182, 212, 0.32);
+      --accent-cyan-glow: rgba(6, 182, 212, 0.28);
 
       --accent-indigo: #6366f1;
       --accent-indigo-hover: #818cf8;
       --accent-indigo-subtle: rgba(99, 102, 241, 0.10);
-      --accent-indigo-border: rgba(99, 102, 241, 0.30);
-      --accent-indigo-glow: rgba(99, 102, 241, 0.25);
+      --accent-indigo-border: rgba(99, 102, 241, 0.32);
+      --accent-indigo-glow: rgba(99, 102, 241, 0.28);
 
       --accent-amber: #f59e0b;
       --accent-amber-hover: #fbbf24;
       --accent-amber-subtle: rgba(245, 158, 11, 0.10);
-      --accent-amber-border: rgba(245, 158, 11, 0.30);
+      --accent-amber-border: rgba(245, 158, 11, 0.32);
 
       --accent-emerald: #10b981;
       --accent-emerald-hover: #34d399;
       --accent-emerald-subtle: rgba(16, 185, 129, 0.10);
-      --accent-emerald-border: rgba(16, 185, 129, 0.30);
-      --accent-emerald-glow: rgba(16, 185, 129, 0.25);
+      --accent-emerald-border: rgba(16, 185, 129, 0.32);
+      --accent-emerald-glow: rgba(16, 185, 129, 0.28);
 
       --accent-rose: #f43f5e;
       --accent-rose-hover: #fb7185;
       --accent-rose-subtle: rgba(244, 63, 94, 0.10);
-      --accent-rose-border: rgba(244, 63, 94, 0.30);
+      --accent-rose-border: rgba(244, 63, 94, 0.32);
 
       /* Optical Glassmorphism Shadows & Highlights */
-      --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-      --shadow-card-hover: 0 8px 30px -4px rgba(0, 0, 0, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
-      --shadow-modal: 0 24px 64px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+      --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+      --shadow-card-hover: 0 12px 36px -4px rgba(0, 0, 0, 0.7), inset 0 1px 0 0 rgba(255, 255, 255, 0.10);
+      --shadow-modal: 0 24px 64px -12px rgba(0, 0, 0, 0.88), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 0.10);
 
       /* Radii & Transitions */
       --radius-sm: 6px;
@@ -134,10 +136,11 @@ export function renderStudioHtml(): string {
     body {
       background: var(--bg-canvas);
       background-image:
-        radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.035) 0%, transparent 60%),
-        linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-      background-size: 100% 100%, 32px 32px, 32px 32px;
+        radial-gradient(circle at 15% 10%, rgba(6, 182, 212, 0.035) 0%, transparent 45%),
+        radial-gradient(circle at 85% 85%, rgba(99, 102, 241, 0.035) 0%, transparent 45%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
       color: var(--text-primary);
       font-family: var(--font-sans);
       font-size: var(--text-body);
@@ -146,6 +149,19 @@ export function renderStudioHtml(): string {
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
+      position: relative;
+    }
+
+    /* 35mm Film Grain Overlay */
+    .film-grain-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 99999;
+      opacity: 0.022;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
     }
 
     /* Topbar Navigation */
@@ -155,9 +171,9 @@ export function renderStudioHtml(): string {
       z-index: 100;
       height: 64px;
       padding: 0 28px;
-      background: rgba(10, 14, 23, 0.90);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
+      background: rgba(10, 14, 23, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border-bottom: 1px solid var(--border-default);
       display: flex;
       align-items: center;
@@ -178,18 +194,18 @@ export function renderStudioHtml(): string {
     }
 
     .brand-logo-icon {
-      width: 32px;
-      height: 32px;
+      width: 34px;
+      height: 34px;
       border-radius: var(--radius-md);
-      background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(99, 102, 241, 0.2));
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.25), rgba(99, 102, 241, 0.25));
       border: 1px solid var(--accent-cyan-border);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
+      font-size: 15px;
       font-weight: 900;
       color: var(--accent-cyan);
-      box-shadow: 0 0 12px var(--accent-cyan-subtle);
+      box-shadow: 0 0 16px var(--accent-cyan-subtle);
     }
 
     .brand-name {
@@ -269,8 +285,8 @@ export function renderStudioHtml(): string {
     /* Subheader & Navigation Tabs */
     .subheader {
       background: var(--bg-surface);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border-default);
       padding: 0 28px;
       display: flex;
@@ -317,7 +333,7 @@ export function renderStudioHtml(): string {
       right: 0;
       height: 2px;
       background: linear-gradient(90deg, var(--accent-cyan), var(--accent-indigo));
-      box-shadow: 0 0 10px var(--accent-cyan-border);
+      box-shadow: 0 0 12px var(--accent-cyan-border);
     }
 
     /* Typography Scale Classes */
@@ -366,7 +382,7 @@ export function renderStudioHtml(): string {
       text-transform: uppercase;
     }
 
-    /* Buttons Hierarchy */
+    /* Buttons Hierarchy with Spring Physics */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -383,10 +399,12 @@ export function renderStudioHtml(): string {
       user-select: none;
       text-decoration: none;
       transition: var(--transition-fast);
+      position: relative;
+      overflow: hidden;
     }
 
     .btn:active {
-      transform: scale(0.98);
+      transform: scale(0.98) translateY(1px);
     }
 
     .btn-primary, .btn-cyan {
@@ -394,12 +412,12 @@ export function renderStudioHtml(): string {
       color: #090a0f;
       border: 1px solid rgba(255, 255, 255, 0.25);
       padding: 9px 18px;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.35);
     }
 
     .btn-primary:hover, .btn-cyan:hover {
       background: var(--accent-cyan-hover);
-      box-shadow: 0 4px 14px -2px var(--accent-cyan-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+      box-shadow: 0 4px 16px -2px var(--accent-cyan-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
     }
 
     .btn-secondary, .btn-outline {
@@ -427,7 +445,7 @@ export function renderStudioHtml(): string {
 
     .btn-purple:hover, .btn-indigo:hover {
       background: var(--accent-indigo-hover);
-      box-shadow: 0 4px 14px -2px var(--accent-indigo-glow);
+      box-shadow: 0 4px 16px -2px var(--accent-indigo-glow);
     }
 
     .btn-emerald {
@@ -508,16 +526,32 @@ export function renderStudioHtml(): string {
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* Optical Glassmorphic Card */
+    /* Interactive Spotlight Acrylic Card */
     .card {
       background: var(--bg-card);
-      backdrop-filter: blur(20px) saturate(180%);
-      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(24px) saturate(190%);
+      -webkit-backdrop-filter: blur(24px) saturate(190%);
       border: 1px solid var(--border-default);
       border-radius: var(--radius-lg);
       padding: 22px;
       box-shadow: var(--shadow-card);
+      position: relative;
+      overflow: hidden;
       transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(400px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.04), transparent 60%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .card:hover::before {
+      opacity: 1;
     }
 
     .card:hover {
@@ -574,7 +608,7 @@ export function renderStudioHtml(): string {
     .character-card:hover {
       transform: translateY(-4px);
       border-color: var(--accent-cyan-border);
-      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5), 0 0 20px var(--accent-cyan-subtle);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), 0 0 24px var(--accent-cyan-subtle);
     }
 
     .portrait-box {
@@ -599,7 +633,7 @@ export function renderStudioHtml(): string {
     }
 
     .character-card:hover .portrait-img {
-      transform: scale(1.05);
+      transform: scale(1.06);
     }
 
     .portrait-placeholder {
@@ -607,6 +641,27 @@ export function renderStudioHtml(): string {
       color: var(--text-muted);
       text-align: center;
       padding: 20px;
+    }
+
+    .portrait-inspect-hint {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      background: rgba(9, 13, 22, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-size: 10.5px;
+      color: var(--text-secondary);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: var(--transition-fast);
+    }
+
+    .character-card:hover .portrait-inspect-hint {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     /* Tab 2: Dual Screenplay */
@@ -672,7 +727,7 @@ export function renderStudioHtml(): string {
 
     .shot-card {
       display: grid;
-      grid-template-columns: 160px 1fr;
+      grid-template-columns: 170px 1fr;
       gap: 16px;
       align-items: start;
       background: rgba(16, 23, 38, 0.85);
@@ -680,6 +735,12 @@ export function renderStudioHtml(): string {
       border-radius: var(--radius-md);
       padding: 14px;
       margin-top: 10px;
+      transition: var(--transition-base);
+    }
+
+    .shot-card:hover {
+      border-color: var(--border-active);
+      background: rgba(22, 32, 52, 0.95);
     }
 
     .shot-badge-type {
@@ -692,6 +753,17 @@ export function renderStudioHtml(): string {
       border: 1px solid var(--accent-indigo-border);
       color: var(--accent-indigo);
       width: fit-content;
+    }
+
+    .lens-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.05);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-muted);
     }
 
     .dialogue-bubble {
@@ -862,6 +934,7 @@ export function renderStudioHtml(): string {
     .take-review-card:hover {
       border-color: var(--border-active);
       background: rgba(19, 28, 46, 0.95);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
     }
 
     .take-thumb-box {
@@ -876,6 +949,7 @@ export function renderStudioHtml(): string {
       justify-content: center;
       font-size: 11px;
       color: var(--text-muted);
+      cursor: pointer;
     }
 
     .qa-gauge-meter {
@@ -898,6 +972,7 @@ export function renderStudioHtml(): string {
       height: 100%;
       background: var(--accent-emerald);
       border-radius: 3px;
+      box-shadow: 0 0 8px var(--accent-emerald-subtle);
     }
 
     /* Tab 4: Cinema Player & Audio Mixer */
@@ -909,10 +984,10 @@ export function renderStudioHtml(): string {
     }
 
     .cinema-bezel {
-      padding: 10px;
-      background: linear-gradient(145deg, #334155, #0f172a, #1e293b);
-      border-radius: 28px;
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15), 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 35px var(--accent-cyan-subtle);
+      padding: 12px;
+      background: linear-gradient(145deg, #334155, #0b1120, #1e293b);
+      border-radius: 32px;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 28px 70px rgba(0, 0, 0, 0.85), 0 0 40px var(--accent-cyan-subtle);
       width: 100%;
       max-width: 440px;
       aspect-ratio: 9 / 16;
@@ -921,7 +996,7 @@ export function renderStudioHtml(): string {
     }
 
     .cinema-inner-viewport {
-      border-radius: 18px;
+      border-radius: 20px;
       overflow: hidden;
       background: #000;
       width: 100%;
@@ -936,7 +1011,7 @@ export function renderStudioHtml(): string {
     }
 
     .timeline-track {
-      height: 44px;
+      height: 48px;
       background: rgba(9, 13, 22, 0.95);
       border: 1px solid var(--border-default);
       border-radius: var(--radius-md);
@@ -969,7 +1044,7 @@ export function renderStudioHtml(): string {
     .timeline-shot-block:nth-child(even) { background: rgba(99, 102, 241, 0.08); }
     .timeline-shot-block:nth-child(odd) { background: rgba(6, 182, 212, 0.08); }
 
-    /* Audio Stems Mixer Console */
+    /* Animated Audio Stems Mixer Console */
     .audio-stems-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -985,6 +1060,28 @@ export function renderStudioHtml(): string {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      transition: var(--transition-base);
+    }
+
+    .stem-channel-box:hover {
+      border-color: var(--border-active);
+      background: rgba(14, 20, 32, 0.85);
+    }
+
+    /* Animated Multi-Band VU Bars */
+    .vu-bars-container {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 18px;
+      padding: 2px 0;
+    }
+
+    .vu-bar {
+      flex: 1;
+      border-radius: 1px;
+      min-height: 3px;
+      transition: height 0.08s ease;
     }
 
     .stem-meter-bar {
@@ -1004,9 +1101,9 @@ export function renderStudioHtml(): string {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(3, 5, 10, 0.82);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      background: rgba(3, 5, 10, 0.84);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       z-index: 1000;
       align-items: center;
       justify-content: center;
@@ -1014,11 +1111,11 @@ export function renderStudioHtml(): string {
 
     .modal-backdrop.active {
       display: flex;
-      animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: modalFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     @keyframes modalFadeIn {
-      from { opacity: 0; transform: scale(0.98); }
+      from { opacity: 0; transform: scale(0.97); }
       to { opacity: 1; transform: scale(1); }
     }
 
@@ -1080,7 +1177,7 @@ export function renderStudioHtml(): string {
 
     .provider-card:hover {
       border-color: var(--border-active);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
     }
 
     /* Password Input Mask Wrap */
@@ -1174,13 +1271,13 @@ export function renderStudioHtml(): string {
       background: rgba(18, 24, 38, 0.95);
       border: 1px solid var(--border-default);
       border-radius: 10px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.55);
       display: flex;
       align-items: center;
       gap: 12px;
       font-size: 13px;
       font-weight: 600;
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(14px);
       animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
@@ -1195,6 +1292,9 @@ export function renderStudioHtml(): string {
   </style>
 </head>
 <body>
+
+  <!-- 35mm Film Grain Atmosphere Overlay -->
+  <div class="film-grain-overlay"></div>
 
   <!-- Topbar -->
   <header>
@@ -1419,39 +1519,42 @@ export function renderStudioHtml(): string {
             </div>
           </div>
 
-          <!-- Audio Stems Mixer -->
+          <!-- Audio Stems Mixer with Live Animated Equalizer -->
           <div>
             <div class="caption" style="font-weight: 700;">BÀN TRỘN ÂM THANH ĐA KÊNH (AUDIO STEMS MIXER)</div>
             <div class="audio-stems-grid">
+              <!-- Channel 1: Voice -->
               <div class="stem-channel-box">
                 <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700;">
                   <span>🎙️ VOICE TTS</span>
-                  <span style="color: var(--accent-cyan);">0 dB</span>
+                  <span style="color: var(--accent-cyan);" id="voiceDbLabel">0 dB</span>
                 </div>
-                <div class="stem-meter-bar">
-                  <div class="stem-meter-fill" style="width: 85%; background: var(--accent-cyan);"></div>
+                <div class="vu-bars-container" id="vuVoiceBars">
+                  <!-- Dynamic Equalizer Bars -->
                 </div>
                 <div class="caption" style="font-size: 11px;">LucyLab / ElevenLabs</div>
               </div>
 
+              <!-- Channel 2: SFX -->
               <div class="stem-channel-box">
                 <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700;">
                   <span>💥 SFX & FOLEY</span>
-                  <span style="color: var(--accent-indigo);">-6 dB</span>
+                  <span style="color: var(--accent-indigo);" id="sfxDbLabel">-6 dB</span>
                 </div>
-                <div class="stem-meter-bar">
-                  <div class="stem-meter-fill" style="width: 60%; background: var(--accent-indigo);"></div>
+                <div class="vu-bars-container" id="vuSfxBars">
+                  <!-- Dynamic Equalizer Bars -->
                 </div>
                 <div class="caption" style="font-size: 11px;">Hiệu ứng môi trường</div>
               </div>
 
+              <!-- Channel 3: BGM -->
               <div class="stem-channel-box">
                 <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 700;">
                   <span>🎵 BGM SCORE</span>
-                  <span style="color: var(--accent-amber);">-18 dB</span>
+                  <span style="color: var(--accent-amber);" id="bgmDbLabel">-18 dB</span>
                 </div>
-                <div class="stem-meter-bar">
-                  <div class="stem-meter-fill" style="width: 45%; background: var(--accent-amber);"></div>
+                <div class="vu-bars-container" id="vuBgmBars">
+                  <!-- Dynamic Equalizer Bars -->
                 </div>
                 <div class="caption" style="font-size: 11px;">Tự động né lời thoại</div>
               </div>
@@ -1526,6 +1629,48 @@ export function renderStudioHtml(): string {
     </div>
   </div>
 
+  <!-- MODAL: CHARACTER ARCFACE 512-D LIGHTBOX INSPECTION -->
+  <div class="modal-backdrop" id="charLightboxModal">
+    <div class="modal-window" style="max-width: 780px;">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span style="color: var(--accent-cyan); font-size: 18px;">🔍</span>
+          <span id="lightboxCharName">CHI TIẾT MỎ NEO NHÂN VẬT (512-D ARCFACE)</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="closeCharLightboxModal()">✕ Đóng</button>
+      </div>
+      <div class="modal-body" style="display: grid; grid-template-columns: 280px 1fr; gap: 24px;">
+        <div style="aspect-ratio: 3/4; border-radius: var(--radius-md); overflow: hidden; background: #000; border: 1px solid var(--border-default);">
+          <img id="lightboxImg" src="" style="width: 100%; height: 100%; object-fit: cover;">
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <div class="caption">MÃ ĐỊNH DANH (CANON ID)</div>
+            <div id="lightboxCharId" style="font-family: var(--font-mono); font-size: 13.5px; color: var(--accent-cyan); font-weight: 700;">-</div>
+          </div>
+          <div>
+            <div class="caption">TỔNG QUAN NGOẠI HÌNH</div>
+            <div id="lightboxVisual" style="font-size: 13px; line-height: 1.55; color: var(--text-primary);">-</div>
+          </div>
+          <div>
+            <div class="caption">DẤU HIỆU NHẬN DẠNG ĐẶC TRƯNG</div>
+            <div id="lightboxMarks" style="font-size: 13px; color: var(--accent-amber);">-</div>
+          </div>
+          <div>
+            <div class="caption">TRẠNG THÁI VECTOR ARCFACE</div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+              <span class="card-badge badge-arcface">LOCKED 512-D</span>
+              <span class="caption" style="font-family: var(--font-mono); font-size: 11px;">Norm: 1.000 | Euclidean Drift &lt; 0.12</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeCharLightboxModal()">Đóng</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toastContainer"></div>
 
@@ -1533,6 +1678,49 @@ export function renderStudioHtml(): string {
   <script>
     let currentSeriesId = "";
     let activeProviders = [];
+    let currentBibleData = null;
+
+    // Interactive Spotlight Engine on Acrylic Cards
+    function attachSpotlightEngine() {
+      document.querySelectorAll(".card, .character-card, .provider-card, .take-review-card").forEach(card => {
+        card.addEventListener("mousemove", e => {
+          const rect = card.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          card.style.setProperty("--mouse-x", \`\${x}px\`);
+          card.style.setProperty("--mouse-y", \`\${y}px\`);
+        });
+      });
+    }
+
+    // Animated Multi-Band VU Bars Engine
+    function initVuBars() {
+      ['vuVoiceBars', 'vuSfxBars', 'vuBgmBars'].forEach((id, idx) => {
+        const container = document.getElementById(id);
+        if (!container) return;
+        container.innerHTML = "";
+        const barCount = 12;
+        const color = idx === 0 ? 'var(--accent-cyan)' : idx === 1 ? 'var(--accent-indigo)' : 'var(--accent-amber)';
+        for (let i = 0; i < barCount; i++) {
+          const bar = document.createElement("div");
+          bar.className = "vu-bar";
+          bar.style.background = color;
+          bar.style.height = \`\${Math.floor(Math.random() * 12 + 4)}px\`;
+          container.appendChild(bar);
+        }
+      });
+
+      // Fluctuate VU bars smoothly
+      setInterval(() => {
+        ['vuVoiceBars', 'vuSfxBars', 'vuBgmBars'].forEach(id => {
+          const container = document.getElementById(id);
+          if (!container) return;
+          container.querySelectorAll(".vu-bar").forEach(bar => {
+            bar.style.height = \`\${Math.floor(Math.random() * 14 + 3)}px\`;
+          });
+        });
+      }, 180);
+    }
 
     // Toast Notification Engine
     function showToast(message, type = "info") {
@@ -1566,6 +1754,24 @@ export function renderStudioHtml(): string {
       document.getElementById("preAuditModal").classList.remove("active");
     }
 
+    function openCharLightbox(charId) {
+      if (!currentBibleData || !currentBibleData.characters) return;
+      const char = currentBibleData.characters.find(c => c.id === charId);
+      if (!char) return;
+
+      document.getElementById("lightboxCharName").textContent = \`MỎ NEO: \${char.name.toUpperCase()}\`;
+      document.getElementById("lightboxCharId").textContent = char.id;
+      document.getElementById("lightboxVisual").textContent = char.visual_summary || 'Chưa cập nhật mô tả ngoại hình.';
+      document.getElementById("lightboxMarks").textContent = char.distinguishing_marks || 'Không có dấu hiệu đặc biệt.';
+      const imgSrc = char.face_reference_image ? \`/api/media/stream?path=\${encodeURIComponent(char.face_reference_image)}\` : '';
+      document.getElementById("lightboxImg").src = imgSrc;
+
+      document.getElementById("charLightboxModal").classList.add("active");
+    }
+    function closeCharLightboxModal() {
+      document.getElementById("charLightboxModal").classList.remove("active");
+    }
+
     // Tab Navigation
     function switchTab(tabId) {
       document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));
@@ -1574,6 +1780,7 @@ export function renderStudioHtml(): string {
       if (event && event.currentTarget) {
         event.currentTarget.classList.add("active");
       }
+      setTimeout(attachSpotlightEngine, 100);
     }
 
     // Password Mask Toggle Helper
@@ -1619,7 +1826,7 @@ export function renderStudioHtml(): string {
       container.innerHTML = "";
 
       if (!text || text.trim().length === 0) {
-        container.innerHTML = '<div class=\"caption\" style=\"text-align: center; padding: 40px;\">Chưa có kịch bản để phân tách thành thẻ.</div>';
+        container.innerHTML = '<div class="caption" style="text-align: center; padding: 40px;">Chưa có kịch bản để phân tách thành thẻ.</div>';
         return;
       }
 
@@ -1644,10 +1851,11 @@ export function renderStudioHtml(): string {
           shotEl.innerHTML = \`
             <div style="display: flex; flex-direction: column; gap: 6px;">
               <span class="shot-badge-type">CINEMA SHOT</span>
-              <span class="caption" style="font-family: var(--font-mono);">4.0 giây</span>
+              <span class="lens-chip">50mm T1.5 Anamorphic</span>
+              <span class="caption" style="font-family: var(--font-mono); margin-top: 2px;">4.0s (24fps)</span>
             </div>
             <div>
-              <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.5;">\${trimmed}</div>
+              <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.55;">\${trimmed}</div>
             </div>
           \`;
           currentSceneCard.appendChild(shotEl);
@@ -1662,6 +1870,7 @@ export function renderStudioHtml(): string {
       });
 
       showToast("Đã đồng bộ sang Thẻ Storyboard trực quan!", "success");
+      setTimeout(attachSpotlightEngine, 100);
     }
 
     // Settings & Model Hub
@@ -1736,6 +1945,7 @@ export function renderStudioHtml(): string {
         \`;
         grid.appendChild(card);
       });
+      setTimeout(attachSpotlightEngine, 100);
     }
 
     async function testConnection(providerId) {
@@ -1806,6 +2016,8 @@ export function renderStudioHtml(): string {
     // Series & Character Management
     async function init() {
       await fetchSeriesList();
+      initVuBars();
+      attachSpotlightEngine();
     }
 
     async function fetchSeriesList() {
@@ -1837,10 +2049,11 @@ export function renderStudioHtml(): string {
 
       const res = await fetch(\`/api/series/\${currentSeriesId}/bible\`);
       const data = await res.json();
+      currentBibleData = data;
       document.getElementById("activeSeriesTitle").textContent = data.metadata?.title || currentSeriesId;
       document.getElementById("seriesGenreVisual").textContent = \`Thể loại: \${data.metadata?.genre || 'Điện ảnh'} | Visual Style: \${data.metadata?.visual_style || ''}\`;
 
-      // Render Casting Cards
+      // Render Casting Cards with Inspect Lightbox trigger
       const grid = document.getElementById("charCardsGrid");
       grid.innerHTML = "";
       (data.characters || []).forEach(c => {
@@ -1848,8 +2061,9 @@ export function renderStudioHtml(): string {
         card.className = "character-card";
         const imgSrc = c.face_reference_image ? \`/api/media/stream?path=\${encodeURIComponent(c.face_reference_image)}\` : '';
         card.innerHTML = \`
-          <div class="portrait-box">
+          <div class="portrait-box" onclick="openCharLightbox('\${c.id}')" title="Bấm để xem chi tiết mỏ neo 512-D">
             \${imgSrc ? \`<img src="\${imgSrc}" class="portrait-img">\` : '<div class="portrait-placeholder">Chưa có ảnh mẫu mỏ neo</div>'}
+            <div class="portrait-inspect-hint">🔍 Xem mỏ neo</div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="font-weight: 700; font-size: 15px;">\${c.name}</div>
@@ -1865,6 +2079,7 @@ export function renderStudioHtml(): string {
         \`;
         grid.appendChild(card);
       });
+      setTimeout(attachSpotlightEngine, 100);
     }
 
     async function generateCharArt(charId) {
@@ -1921,7 +2136,7 @@ export function renderStudioHtml(): string {
           <div class="take-thumb-box">▶ Take 1</div>
           <div>
             <div style="font-weight: 700; font-size: 13.5px;">Cảnh 1 • Cú máy 1: Góc cận Minh</div>
-            <div class="caption" style="margin-top: 2px;">Thời lượng: 4.0s | Camera: Medium Close-up</div>
+            <div class="caption" style="margin-top: 2px;">Thời lượng: 4.0s | Camera: Medium Close-up | Anamorphic 50mm</div>
             <div class="qa-gauge-meter" style="margin-top: 4px;">
               <span>Face QA: 0.89</span>
               <div class="qa-gauge-bar"><div class="qa-gauge-fill" style="width: 89%;"></div></div>
@@ -1938,7 +2153,7 @@ export function renderStudioHtml(): string {
           <div class="take-thumb-box">▶ Take 2</div>
           <div>
             <div style="font-weight: 700; font-size: 13.5px;">Cảnh 1 • Cú máy 2: Toàn cảnh hành lang Skyline</div>
-            <div class="caption" style="margin-top: 2px;">Thời lượng: 3.5s | Camera: Wide Cinematic Tracking</div>
+            <div class="caption" style="margin-top: 2px;">Thời lượng: 3.5s | Camera: Wide Cinematic Tracking | 24mm T1.8</div>
             <div class="qa-gauge-meter" style="margin-top: 4px;">
               <span>Face QA: 0.92</span>
               <div class="qa-gauge-bar"><div class="qa-gauge-fill" style="width: 92%;"></div></div>
@@ -1952,6 +2167,7 @@ export function renderStudioHtml(): string {
         </div>
       \`;
       showToast("Đã nạp danh sách take mẫu cho đạo diễn!", "success");
+      setTimeout(attachSpotlightEngine, 100);
     }
 
     function startProduction() {

@@ -2,747 +2,448 @@
 
 <div align="center">
 
-<img src="./assets/logo.svg" alt="Auto News Video" width="120" />
+<img src="./assets/logo.svg" alt="Auto-Create-Video Logo" width="130" />
 
-# 🎬 Auto News Video
+# 🎬 Auto-Create-Video: Cinema Production Studio
 
-### Turn any Vietnamese tech article into a TikTok-ready video in 60 seconds
+### The Autonomous AI Video Platform — From Long Novels & Screenplays to Episodic Cinematic Series & Viral Short-Form Motion Graphics
 
-**One command. Zero editing. Studio-quality 9:16 motion graphics.**
+**One repository. Zero manual editing. Hollywood-grade episodic assembly + viral 9:16 motion graphics.**
 
-[![Stars](https://img.shields.io/github/stars/hoquanghai/Auto-Create-Video?style=for-the-badge&logo=github&color=yellow)](https://github.com/hoquanghai/Auto-Create-Video/stargazers)
-[![Forks](https://img.shields.io/github/forks/hoquanghai/Auto-Create-Video?style=for-the-badge&logo=github&color=blue)](https://github.com/hoquanghai/Auto-Create-Video/network/members)
-[![License](https://img.shields.io/github/license/hoquanghai/Auto-Create-Video?style=for-the-badge&color=green)](LICENSE)
-[![Node](https://img.shields.io/badge/node-22%2B-brightgreen?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
-[![TypeScript](https://img.shields.io/badge/typescript-5%2B-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests](https://github.com/hoquanghai/Auto-Create-Video/actions/workflows/test.yml/badge.svg?style=for-the-badge)](https://github.com/hoquanghai/Auto-Create-Video/actions/workflows/test.yml)
-[![Typecheck](https://github.com/hoquanghai/Auto-Create-Video/actions/workflows/typecheck.yml/badge.svg?style=for-the-badge)](https://github.com/hoquanghai/Auto-Create-Video/actions/workflows/typecheck.yml)
+[![GitHub Stars](https://img.shields.io/github/stars/Duc-AnhTp/Auto-Create-Video?style=for-the-badge&logo=github&color=yellow)](https://github.com/Duc-AnhTp/Auto-Create-Video/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/Duc-AnhTp/Auto-Create-Video?style=for-the-badge&logo=github&color=blue)](https://github.com/Duc-AnhTp/Auto-Create-Video/network/members)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
+[![Node: 22+](https://img.shields.io/badge/Node.js-22%2B-brightgreen?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript: 5+](https://img.shields.io/badge/TypeScript-5%2B-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tests: 392 Passed](https://img.shields.io/badge/Tests-392%20Passed%20(100%25)-success?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
+[![Database: SQLite v6](https://img.shields.io/badge/Story%20Bible-SQLite%20v6-cyan?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
-[**🇬🇧 English**](README.md) · [**🇻🇳 Tiếng Việt**](README.vi.md) · [**📺 Watch Demo**](https://youtube.com/shorts/S24JfKxV4bo) · [**🚀 Quick Start**](#-quick-start) · [**❓ FAQ**](#-faq)
-
-</div>
-
----
-
-<div align="center">
-
-## 🎥 Live Demo
-
-### 👉 [**▶️ Watch on YouTube Shorts**](https://youtube.com/shorts/S24JfKxV4bo) 👈
-
-[![Watch Demo](https://img.youtube.com/vi/S24JfKxV4bo/maxresdefault.jpg)](https://youtube.com/shorts/S24JfKxV4bo)
-
-[![Watch on YouTube](https://img.shields.io/badge/▶️_Watch_on_YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtube.com/shorts/S24JfKxV4bo)
-
-*This video was generated **entirely** by this pipeline — Vietnamese TTS + HyperFrames + GSAP animations, no manual editing.*
+[**🇬🇧 English**](README.md) · [**🇻🇳 Tiếng Việt**](README.vi.md) · [**🖥️ Web Studio UI**](#-cinema-production-studio-web-ui) · [**🎯 Dual-Engine**](#-dual-engine-overview) · [**🚀 Quick Start**](#-quick-start) · [**📚 Deep Dive**](#-deep-dive-novel-to-series-production-engine) · [**💻 CLI Reference**](#-complete-cli-reference)
 
 </div>
 
 ---
 
-## 🤔 Why does this exist?
+## 🌟 Highlights & Breakthroughs
 
-Creating short-form news videos is **time-consuming and repetitive**:
-
-- ⏰ Manually scripting → 30 min per video
-- 🎨 Picking visuals + animations → 1 hour per video
-- 🎙️ Recording or sourcing voiceover → 30 min
-- ✂️ Editing in CapCut / Premiere → 1 hour
-- 📱 **Total: ~3 hours per 60-second video**
-
-**Auto News Video does it in 5 minutes. Just paste a URL.**
-
-| | Manual workflow | Auto News Video |
-|---|---|---|
-| ⏱️ Time per video | ~3 hours | **~5 minutes** |
-| 🎓 Skill required | Video editor | **None** |
-| 🎯 Consistency | Varies | **Studio-grade every time** |
-| 💰 Cost per video | $50–200 (freelancer) | **~$0.10 (API costs)** |
-| 🇻🇳 Vietnamese voice | Hard to source | **Built-in (LucyLab cloning)** |
+- 🎬 **Episodic Cinema Series Engine (v2.0):** Ingest entire novels (100+ chapters), maintain character canon across episodes with **Story Bible SQLite v6**, and assemble multi-episode seasons with **100% mandatory beat coverage**.
+- 🖥️ **Full-Flow Cinema Studio Web UI:** Real-time production control console running at `http://localhost:3000` / `http://localhost:3456`, featuring ArcFace 512-D face lightbox inspection, screenplay dual-view, dynamic audio stems VU equalizer, and dark obsidian aesthetics styled with JetBrains Mono.
+- 💰 **4-State Budget & Financial Ledger:** Multi-worker atomic reservations preventing overspending (`estimated` → `reserved` → `confirmed` / `uncertain`) with hard budget caps.
+- 🎞️ **Hierarchical Film Assembler:** Two-tier rendering pipeline (`Shot Takes` → `Scene Stitching` → `Episode Master`) outputting 1080p video, 4 isolated audio stems (Dialogue, SFX, Ambience, Ducked BGM), SRT/VTT subtitles, and standard NLE interchange timelines (FCP7 XML & OTIO).
+- ⚡ **Autonomous Short-Form News Pipeline:** Turn any URL, text file, or markdown article into a polished 9:16 TikTok/Shorts video in under 5 minutes with 12 motion graphic templates, GSAP animations, HyperFrames, and dual-engine TTS (LucyLab Vietnamese voice cloning & ElevenLabs multilingual).
+- 🛡️ **Resilient Fault Recovery:** Deterministic SHA-256 asset caching, cross-series data isolation, and crash-resilient checkpoint resumption (`--resume`) that skips already rendered episodes.
 
 ---
 
-## 🎬 Episodic AI Film Series Engine (Làm Phim Dài Tập Bằng AI)
+## 🖥️ Cinema Production Studio Web UI
 
-Turn raw text screenplays into structured multi-episode film series with **permanent SQLite Canon Memory** and **Hierarchical Film Assembly**.
-
-### 📊 Capability Classification & Verification Matrix
-
-To ensure transparency and engineering rigor, all capabilities are strictly classified into three maturity tiers:
-
-#### ✅ 1. Operational & Validated (Production Ready)
-- **Hierarchical Scene-to-Episode Assembly**: Two-level rendering architecture (Scene stitching → Episode Master assembly). Solves command line length limits and RAM spikes by bounding concurrent video decodes.
-- **Scene Content Hash Caching**: Deterministic SHA-256 caching of scene inputs (approved take IDs, trim ranges, transitions). Skips re-rendering unchanged scenes on subsequent runs.
-- **Explicit Cut vs. Transition Engine**: Defaults to frame-accurate direct cuts (zero frame loss); applies crossfade (`xfade`) and `trimStartSec`/`trimEndSec` only when explicitly specified.
-- **Full Delivery Package**:
-  - Master Video (`master.mp4`) with synchronized audio.
-  - Subtitles in standard SubRip (`subtitles.srt`) and WebVTT (`subtitles.vtt`).
-  - 4 Isolated Audio Stems: Dialogue (`stem-dialogue.wav`), SFX (`stem-sfx.wav`), Ambience (`stem-ambience.wav`), Ducked BGM (`stem-bgm.wav`) + Mix (`master-audio.wav`).
-  - 1:1 Assembly Manifest (`assembly-manifest.json`).
-- **NLE Timeline Interchange (FCP7 XML & OTIO)**: Exports standard `timeline.xml` (xmeml v4 for DaVinci Resolve & Premiere Pro) and `timeline.otio` (OpenTimelineIO JSON). *Note: XML schema and OTIO structures have been programmatically validated; direct GUI import has not been verified on headless CI.*
-- **Automated Assembly QA Verifier**: Scans for missing files, corrupt containers (`ffprobe`), black frame anomalies (`blackdetect`), and audio/video duration drift (`driftSec <= 0.1s`).
-- **Resilient Job Orchestration & 4-State Budget Ledger**: SQLite persistence (`provider_jobs`), automatic polling resumption without duplicate submits on restart, `uncertain_timeout` handling, and multi-worker atomic budget reservations (`Budget Cap`).
-- **Permanent Story Bible Canon**: Versioned SQLite memory tracking character status, wardrobe, key prop possession transfers, and automated script continuity auditing (`ContinuityAuditor`).
-
-#### 🧪 2. Experimental (Beta / Under Active Iteration)
-- **Visual Face QA Multi-frame Embedding**: ArcFace Cosine Similarity checks across multiple video sample frames against visual anchors with automated bounded re-roll loops.
-- **Autoregressive Shot Extension (Chaining)**: Multi-pass frame continuation using real FFmpeg last-frame extraction (`extractLastFrame`) for shots exceeding provider duration limits.
-- **Provider Circuit Breaker FSM**: 3-state circuit breaker (`CLOSED`, `OPEN`, `HALF_OPEN`) with exponential backoff and jitter.
-
-#### ⚠️ 3. Unsupported / Known Limitations (Roadmap)
-- **Phonetic Lip-Sync Movement**: Audio dialogue cues are frame-accurately anchored to shot timecodes (`startSec`), but acoustic lip-motion generation (e.g., Wav2Lip / SadTalker) is **not yet supported**. Characters' lips do not morph to match spoken phonemes.
-- **"100% Absolute Visual Consistency"**: Generative video diffusion models inherently exhibit stochastic variance. Consistency is managed through Story Bible conditioning, reference anchors, and QA rejection gates — not through deterministic guarantees.
-- **Headless GUI Import Testing**: NLE XML/OTIO interchange files are verified for schema and well-formedness, but have not been tested via GUI automation inside DaVinci Resolve Studio or Adobe Premiere Pro.
+Launch the in-browser interactive production environment with a single command:
 
 ```bash
-# Initialize series & register assets
-npm run series -- series:init --series "cyber-saigon" --title "Sài Gòn 2088" --style "Cinematic 35mm, cyberpunk"
-
-# Produce episode from raw screenplay text (Offline simulation or real provider)
-npm run series -- series:episode --series "cyber-saigon" --script "scripts/example-series/cyber-saigon-pilot-2min.txt" --dry-run
-
-# Resume from interruption or reroll a single shot
-npm run series -- series:resume --series "cyber-saigon" --episode 1
-npm run series -- series:reroll --series "cyber-saigon" --episode 1 --shot "sc1_sh2"
-
-# Inspect 4-state budget ledger and active jobs
-npm run series -- series:budget --series "cyber-saigon"
-npm run series -- series:jobs --series "cyber-saigon"
+npm run studio
+# Opens http://localhost:3456 (or custom port via --port 3000)
 ```
-👉 See complete guide: [**docs/EPISODIC_SERIES_GUIDE.md**](docs/EPISODIC_SERIES_GUIDE.md)
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🎬 AUTO-CREATE-VIDEO ★ CINEMA PRODUCTION STUDIO                  [LIVE PROD] [0.00$]    │
+├───────────────┬────────────────────────────────────────────────────────┬───────────────┤
+│ 📚 STORY BIBLE│ 🎞️ DUAL-VIEW SCREENPLAY STUDIO                         │ 🎛️ TAKE REVIEW│
+│  - Minh (MC)  │  SCENE 1: MÀN ĐÊM LẠC DƯƠNG [EXT. NIGHT]               │ Take #01 PASS │
+│  - Tiểu Lan   │  Camera: 35mm Anamorphic, Low-key Lighting             │ Take #02 REJ  │
+│  - Lý Quầy    │  Action: Minh khoác áo choàng cũ bước vào quán trọ... │ Take #03 CAND │
+├───────────────┼────────────────────────────────────────────────────────┼───────────────┤
+│ 🎚️ STEMS VU   │ ⏱️ UNIFIED TIMELINE (00:04:12.00)                      │ 👤 ARCFACE QA │
+│  Dialogue ▃▅█ │  [=== Shot 1 ===][===== Shot 2 =====][== Shot 3 =]     │  512-D Cosine │
+│  SFX      ▂▄▆ │  [--- Voice Cue ---] [---- SFX Rain ----]              │  Drift: 0.08  │
+│  BGM Duck █▃▂ │  [================ Subtitles SRT ===============]      │  Status: PASS │
+└───────────────┴────────────────────────────────────────────────────────┴───────────────┘
+```
+
+- **Dual-View Screenplay Console:** Read director action notes, camera lens specifications, atmospheric lighting cues, and AI generation prompts side-by-side.
+- **ArcFace 512-D Face Lightbox:** Inspect facial vector cosine similarity against character anchors across multi-episode takes to eliminate character drift.
+- **Dynamic Audio Stems Equalizer:** Real-time 4-channel VU meter animating Dialogue, SFX, Ambience, and Ducked BGM tracks.
+- **In-Browser Configuration:** Securely update API keys (Kling, Runway, Gemini, LucyLab, ElevenLabs) without touching terminal files or restarting the server.
+
+---
+
+## 🎯 Dual-Engine Overview
+
+Auto-Create-Video integrates two specialized production engines in one repository:
+
+| Capability / Requirement | 🎬 Episodic Cinema Series Engine | ⚡ Viral Short-Form News Pipeline |
+|---|---|---|
+| **Primary Input** | Full novels, book chapters, long screenplays (`.txt`, `.md`) | News article URLs (VnExpress, TechCrunch, blogs, etc.) |
+| **Target Output** | Multi-episode film series (9:16 Shorts/Reels or 16:9 Cinema) | 60–90 second viral social video (9:16 vertical) |
+| **Memory & Canon** | SQLite Story Bible v6 (Characters, wardrobe, injuries, props) | Stateless `script.json` schema validation via Zod |
+| **Visual Generation** | AI Video Diffusion (Runway Gen-3, Kling, Hunyuan, ComfyUI) | HyperFrames + Puppeteer + GSAP (12 motion templates) |
+| **Assembly Architecture** | Hierarchical 2-tier (Shot Takes → Scenes → Master Episode) | Frame-accurate timeline synchronization per spoken word |
+| **Audio Architecture** | 4 Isolated Stems (Dialogue, SFX, Ambience, Ducked BGM) | Contextual 3-tier SFX mixing + dynamic BGM ducking |
+| **NLE Timeline Export** | FCP7 XML (`timeline.xml`) & OTIO (`timeline.otio`) | Direct MP4 render ready for social upload |
+| **Execution Trigger** | `npm run series -- <command>` or `npm run studio` | `/create-news-video <url>` or `npm run pipeline` |
 
 ---
 
 ## 🚀 Quick Start
 
+### 1. Installation & Environment Check
+
 ```bash
-# 1. Clone & install
-git clone https://github.com/hoquanghai/Auto-Create-Video.git
+# Clone the repository
+git clone https://github.com/Duc-AnhTp/Auto-Create-Video.git
 cd Auto-Create-Video
+
+# Install dependencies
 npm install
 
-# 2. Configure TTS API key
-cp .env.example .env.local
-# → edit .env.local, set TTS_PROVIDER + key (LucyLab or ElevenLabs)
+# Run automated system diagnostic doctor
+npm run setup
 ```
 
-Then choose your path:
+The setup doctor validates your Node.js runtime (≥ 22), SQLite database engine, FFmpeg/ffprobe binaries, Puppeteer Chrome browser, and API configurations.
 
-**Path A — With Claude Code (recommended, 30 seconds setup):**
+---
 
-1. Install Claude Code: `npm install -g @anthropic-ai/claude-code`
-2. Inside the project directory, run `claude`, then type:
-   ```
-   /create-news-video https://vnexpress.net/some-article
-   ```
-
-**Path B — Without Claude Code (hand-write the script):**
+### 2. Workflow A: Interactive Web Studio
 
 ```bash
-# Edit script.json manually based on src/render/script-schema.ts
-npm run pipeline -- output/my-video/script.json
+npm run studio
+# Open http://localhost:3456 in your browser to manage stories, cast, and episodes visually
 ```
 
-Either way, after ~3–5 minutes you'll have `output/<slug>/video.mp4` — a 1080×1920 MP4 ready for TikTok / Shorts / Reels.
+---
 
-> 💡 **Need details?** Jump to [Full Setup](#-full-setup) · [Configuration](#-configuration) · [Usage](#-usage)
+### 3. Workflow B: Novel-to-Series Production (CLI)
+
+Transform a multi-chapter novel into an episodic cinematic series in 4 deterministic steps:
+
+```bash
+# Step 1: Ingest novel with SHA-256 hashing and zero-loss chunking
+npm run series -- series:ingest --series "thien-long" --input "novel.txt" --title "Thiên Long Bát Bộ"
+
+# Step 2: Extract characters, beats, flashbacks, and 4D epistemic knowledge
+npm run series -- series:analyze --series "thien-long"
+
+# Step 3: Plan season structure, episodes, and 100% mandatory beat coverage
+npm run series -- series:plan-series --series "thien-long" --episodes 3 --pacing standard
+
+# Step 4: Batch produce entire season with budget cap & checkpointing
+npm run series -- series:season --series "thien-long" --dry-run --budget-cap 50
+```
 
 ---
 
-## ✨ Features
+### 4. Workflow C: 60-Second Short-Form News Video
 
-<table>
-<tr>
-<td width="33%" align="center">
-<h3>🎨 12 Smart Templates</h3>
-<sub>hook · comparison · stat-hero · feature-list · callout · outro · quote-card · icon-grid · timeline · big-text · chart-bars · kinetic-quote</sub>
-</td>
-<td width="33%" align="center">
-<h3>🎤 Multi-TTS</h3>
-<sub>LucyLab (Vietnamese cloning + free SRT) or ElevenLabs (30+ languages)</sub>
-</td>
-<td width="33%" align="center">
-<h3>🤖 Claude Code Skill</h3>
-<sub>One slash command:<br/><code>/create-news-video &lt;url&gt;</code><br/>(URL / .txt / .md input)</sub>
-</td>
-</tr>
-<tr>
-<td width="33%" align="center">
-<h3>🎬 HeyGen-Quality Look</h3>
-<sub>Studio shell + grain texture + GSAP animations + 6 theme palettes (tech-blue, growth-green, finance-gold, warning-red, creator-purple, news-mono)</sub>
-</td>
-<td width="33%" align="center">
-<h3>🔊 Auto SFX Mixing</h3>
-<sub>3-tier smart picker (override → semantic match → template default) with anti-repetition + anti-overlap guards</sub>
-</td>
-<td width="33%" align="center">
-<h3>🧪 Production Ready</h3>
-<sub>44 unit tests, Zod schema validation, full TypeScript ESM, GitHub Actions CI</sub>
-</td>
-</tr>
-<tr>
-<td width="33%" align="center">
-<h3>📱 9:16 Native</h3>
-<sub>1080×1920 @ 30fps, ready for TikTok / Shorts / Reels</sub>
-</td>
-<td width="33%" align="center">
-<h3>♻️ Idempotent TTS</h3>
-<sub>Skips re-synthesis if voice files exist — saves API quota across re-renders</sub>
-</td>
-<td width="33%" align="center">
-<h3>🖼️ Auto Thumbnail</h3>
-<sub>Gemini 2.5 Flash Image generates a 9:16 cover, embedded into MP4 (no re-encode)</sub>
-</td>
-</tr>
-<tr>
-<td width="33%" align="center">
-<h3>🎯 Voice-Text Sync</h3>
-<sub><code>voiceChunks</code> per scene → beats fire EXACTLY when voice mentions each element</sub>
-</td>
-<td width="33%" align="center">
-<h3>✅ Quality Gates</h3>
-<sub>Pre-render <code>lint</code> + <code>validate</code> (WCAG contrast) + <code>inspect</code> (text overflow / off-canvas)</sub>
-</td>
-<td width="33%" align="center">
-<h3>📝 CapCut-Friendly</h3>
-<sub>Exports <code>script.txt</code> + <code>voice.mp3</code> + <code>sns_post.txt</code> for auto-caption + social caption</sub>
-</td>
-</tr>
-</table>
+Generate a viral 9:16 TikTok/Shorts video directly from any news article:
+
+```bash
+# Configure API keys
+cp .env.example .env.local
+# Edit .env.local with your LucyLab or ElevenLabs credentials
+
+# Inside Claude Code CLI:
+claude
+> /create-news-video https://vnexpress.net/cong-nghe-ai-moi-nhat
+
+# Or run headless from a pre-authored script:
+npm run pipeline -- output/my-news-video/script.json
+```
 
 ---
 
-## 🧠 How It Works
+## 🎬 Deep-Dive: Novel-to-Series Production Engine
+
+```
+[Raw Novel / Screenplay (.txt, .md)]
+                │
+                ▼
+  Phase P2: Source Ingestion Engine
+  (SHA-256 Content Hash, Zero-Loss Coordinate Mapping, Chapter & Block Units)
+                │
+                ▼
+  Phase P2: Stateful Story Analysis
+  (Anti-Merging Entity Registry, Flashback Detector, 4D Epistemic Knowledge)
+                │
+                ▼
+  Phase P3: Series Planner & Coverage Ledger
+  (Pacing Presets, 100% Mandatory Beat Coverage, Omission Rationales)
+                │
+                ▼
+  Phase P3: Story-to-Screenplay Generator
+  (Cinematic Scene & Shot Prompts, Audio Cues, Continuity Rules)
+                │
+                ▼
+  Phase P4: Season Orchestrator & Budget Ledger
+  (Batch Processing, Multi-Worker Leases, 4-State Financial Ledger)
+                │
+                ▼
+  Phase P4: Hierarchical Film Assembler
+  (Shot Takes -> Scene Stitching -> Master Video, 4 Audio Stems Muxing)
+                │
+                ▼
+  Phase P5: Delivery Package & Studio Review UI
+  (master.mp4, 4 Stems WAV, subtitles.srt/vtt, FCP7 XML / OTIO)
+```
+
+### Phase 1: Source Ingestion & Zero-Loss Chunking
+- **SHA-256 Immutability:** Full content hashing ensures source texts are versioned with immutable revisions. Re-running the same text is strictly idempotent; editing text creates a tracked revision.
+- **Zero-Loss Coordinate Mapping:** Raw texts are split into chapters (`source_units`) and paragraph blocks (`source_blocks`) with exact `char_start` and `char_end` byte offsets. Eliminates truncation of prologue, climax, and epilogue content.
+- **Dialogue & Speaker Identification:** Automatically distinguishes narrative prose from dialogue cues and extracts candidate speakers for audio casting.
+
+### Phase 2: Stateful Story Analysis & Story Bible v6
+- **Anti-Merging Entity Registry:** Characters, titles, and aliases are cross-indexed with bidirectional alias mapping. Prevents unrelated characters from being erroneously merged.
+- **Story Time vs. Presentation Order:** Distinguishes chronological timeline events from non-linear storytelling devices (flashbacks and flash-forwards marked with `is_flashback: 1`).
+- **4D Epistemic Knowledge States:** Tracks knowledge boundaries across 4 dimensions:
+  1. *Source Fact* (Ground truth in the original novel).
+  2. *Adaptation Decision* (Creative adjustments made for film pacing).
+  3. *Character Knowledge* (What a character actually knows at a given scene).
+  4. *Audience Knowledge* (What the audience has been shown so far).
+
+### Phase 3: Series Planning & Coverage Ledger
+- **Pacing Presets:** Choose from `fast` (action/thriller), `standard` (balanced drama), `dense` (high-context mystery), or `epic` (world-building saga).
+- **100% Mandatory Beat Coverage:** The `CoverageLedgerManager` verifies that all pivotal story beats (`mandatory_beats`) are allocated to episodes. No endings are dropped, and all omitted secondary beats require explicit rationale logging.
+- **Target Duration Optimization:** Specify total episode count (`--episodes 5`) or target episode duration (`--duration 120`) for automatic scene and shot distribution.
+
+### Phase 4: Season Orchestrator & 4-State Budget Ledger
+- **Batch Range Orchestration:** Produce an entire season, a specific episode window (`--from 2 --to 4`), or remaining unfinished episodes (`--remaining`).
+- **4-State Financial Control:**
+  - `estimated`: Pre-execution cost calculation based on provider rate cards.
+  - `reserved`: Atomic credit reservation preventing concurrent workers from exceeding budget limits.
+  - `confirmed`: Reconciled final charges returned by provider APIs upon task completion.
+  - `uncertain`: Isolated jobs experiencing network timeouts awaiting verification before retry.
+- **Checkpoint Resumption:** If power fails or a process is interrupted, re-running with `--resume` inspects existing takes and final video artifacts on disk, bypassing already completed episodes with zero redundant API calls.
+
+### Phase 5: Hierarchical Film Assembler & Delivery Package
+- **Two-Tier Assembly:** Assembles individual shot takes into scene masters (`scene-XX.mp4`), then joins scenes into the final episode master (`master.mp4`). Eliminates OS command-line length limits and decodes video within bounded RAM.
+- **4 Isolated Audio Stems:**
+  - `stem-dialogue.wav`: Clean spoken character dialogue.
+  - `stem-sfx.wav`: Foley and action sound effects.
+  - `stem-ambience.wav`: Environmental background room tone.
+  - `stem-bgm.wav`: Ducked soundtrack (automatically lowered during speech).
+  - `master-audio.wav`: Mixed composite audio master.
+- **Industry Standard NLE Interchange:** Exports `timeline.xml` (Apple FCP7 XML xmeml v4) and `timeline.otio` (OpenTimelineIO) for one-click import into DaVinci Resolve Studio and Adobe Premiere Pro.
+
+---
+
+## ⚡ Deep-Dive: Short-Form News Video Pipeline
 
 ```mermaid
 flowchart LR
-    A[📰 URL / .txt / .md] -->|/create-news-video| B[Claude Code]
-    B -->|fetch + analyze| C[Generate script.json]
-    C -->|Zod validate| D{Template Picker}
-    D -->|12 variants| E[Scene Types]
-    E -->|TTS per scene<br/>or per chunk| F[LucyLab / ElevenLabs]
-    F -->|voice.mp3<br/>+ SFX mix<br/>+ beat SFX| G[HyperFrames]
-    G -.->|lint<br/>validate<br/>inspect| G
-    G -->|Puppeteer + GSAP| H[1800 frames @ 30fps]
-    H -->|FFmpeg encode| I[video.mp4 1080×1920]
-    I -->|attach cover| J[Gemini Thumbnail]
-    J -->|🎬 video.mp4 + thumbnail.png| K[Done]
+    A[📰 News URL / .md] -->|/create-news-video| B[Claude Code]
+    B -->|Synthesize Script| C[script.json (Zod)]
+    C -->|12 Template Variants| D[Template Selector]
+    D -->|Per-scene / Per-chunk| E[LucyLab / ElevenLabs TTS]
+    E -->|voice.mp3 + SFX Mix| F[HyperFrames Engine]
+    F -.->|lint / validate / inspect| F
+    F -->|Puppeteer + GSAP| G[1800 Frames @ 30fps]
+    G -->|FFmpeg 1080x1920| H[video.mp4]
+    H -->|Gemini 2.5 Flash Cover| I[Final MP4 + Cover]
 
     style A fill:#0f172a,color:#fff
-    style K fill:#10b981,color:#fff
     style B fill:#6366f1,color:#fff
-    style F fill:#f59e0b,color:#fff
-    style G fill:#ec4899,color:#fff
-    style J fill:#8b5cf6,color:#fff
+    style E fill:#f59e0b,color:#fff
+    style F fill:#ec4899,color:#fff
+    style I fill:#10b981,color:#fff
 ```
 
-The pipeline is **AI for content** (Claude writes the script) and **deterministic code for production** (Node/TS/FFmpeg renders the pixels) — same input → identical frames every time.
+### 12 Specialized Motion Templates
 
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **Runtime** | Node.js ≥ 22, TypeScript 6+, ESM |
-| **Render engine** | [HyperFrames](https://hyperframes.heygen.com) ^0.4.34 (Puppeteer + GSAP + FFmpeg) |
-| **Quality gates** | `hyperframes lint` (errors block) → `validate` (WCAG contrast) → `inspect` (text overflow / off-canvas) — all run before render |
-| **TTS providers** | [LucyLab.io](https://lucylab.io) (JSON-RPC async, Vietnamese cloning) or [ElevenLabs](https://elevenlabs.io) (REST sync, multilingual) |
-| **Image generation** | [Gemini 2.5 Flash Image](https://aistudio.google.com) — 9:16 thumbnails, embedded as MP4 cover |
-| **Schema validation** | [Zod](https://zod.dev) ^4 discriminated unions (12 template variants) |
-| **HTTP** | axios ^1.15 + nock (test mocking) |
-| **Concurrency** | [p-limit](https://github.com/sindresorhus/p-limit) ^7 (TTS rate-limiting per provider) |
-| **Testing** | [Vitest](https://vitest.dev) ^4 — ESM-native, with @vitest/coverage-v8 |
-| **Audio processing** | FFmpeg + ffprobe (mix, concat with silence, attach cover image) |
-| **AI orchestration** | [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) skill (`/create-news-video`) |
-| **Visual blocks** | HyperFrames registry: `grain-overlay`, `shimmer-sweep`, `tiktok-follow` |
-| **Brand spec** | See [`design.md`](design.md) — palette, layout density, motion principles |
-| **Fonts** | Manrope (body) + Anton (display) + Lora (italic serif for quotes) — Google Fonts |
-
----
-
-## 📋 Prerequisites
-
-| Item | Version | Notes |
+| Template | Primary Use Case | Visual Behavior |
 |---|---|---|
-| **Node.js** | ≥ 22 | `node --version` |
-| **FFmpeg + ffprobe** | any modern | must be in PATH (`ffmpeg -version`) |
-| **Chrome / Chromium** | any | auto-downloaded by Puppeteer on first render |
-| **Claude Code CLI** | latest | [install here](https://docs.claude.com/en/docs/claude-code/overview) |
-| **TTS account** | one of two | LucyLab.io OR ElevenLabs |
+| `hook` | First 3–5 seconds | Ken Burns zoom over backdrop with shimmering typography |
+| `comparison` | "A vs B" comparisons | Two distinct contrasting cards with animated winner highlight |
+| `stat-hero` | Key metric or percentage | Giant gradient number reveal with contextual label |
+| `feature-list` | Product features / bullets | Staggered card entrance with glowing accent bullet points |
+| `callout` | Important takeaways / warnings | High-contrast neon border with alert icon animation |
+| `quote-card` | Pull quotes & philosophy | Elegant serif typography with author attribution footer |
+| `icon-grid` | 3–6 capability highlights | Grid-based icon reveal with synchronized micro-pops |
+| `timeline` | Chronological roadmap | Cascade progression connecting milestone nodes |
+| `big-text` | Dramatic narrative pivots | Full-bleed typographic impact with dynamic backdrop |
+| `chart-bars` | Quantitative bar data | Animated vertical or horizontal bar fills with SFX dings |
+| `kinetic-quote` | Spoken sentence emphasis | Word-by-word kinetic animation highlighting spoken cadence |
+| `outro` | Call-to-action & follow | Channel branding, handle badge, and subscribe prompt |
+
+### Dual TTS & Synchronized Spoken Cadence
+- **LucyLab.io:** Natural Vietnamese voice cloning with free synchronized SRT subtitles.
+- **ElevenLabs:** Multilingual voice generation supporting 30+ languages.
+- **Voice Chunks (`voiceChunks`):** Audio is segmented into sentence chunks to extract measured timecodes, firing visual motion beats **exactly** when the speaker pronounces the corresponding keyword.
 
 ---
 
-## 🔧 Full Setup
+## 💻 Complete CLI Reference
+
+All platform operations are exposed via `npm run series -- <command>` and standard scripts:
+
+| Domain | Command | Description |
+|---|---|---|
+| **System** | `npm run setup` | Run comprehensive environment diagnostic doctor (FFmpeg, SQLite, APIs). |
+| **Studio** | `npm run studio` | Launch web production console at `http://localhost:3456` (or custom `--port`). |
+| **Tests** | `npm test` | Run complete test suite (392 tests, 54 test files). |
+| **Typecheck** | `npm run typecheck` | Verify zero TypeScript compilation errors. |
+| **Ingestion** | `npm run series -- series:ingest` | Ingest novel text with SHA-256 hash and block coordinates (`--input <path>`). |
+| **Analysis** | `npm run series -- series:analyze` | Analyze entity graph, flashback beats, and 4D epistemic knowledge. |
+| **Planning** | `npm run series -- series:plan-series` | Plan episodes, target durations, and 100% mandatory beat coverage. |
+| **Season Batch**| `npm run series -- series:season` | Batch orchestrate season with checkpointing (`--from`, `--to`, `--budget-cap`). |
+| **Scriptwriting**| `npm run series -- series:write-script`| Generate production screenplay from story beats or source text. |
+| **Single Episode**| `npm run series -- series:episode` | Produce single episode from raw screenplay text (`--script <path>`). |
+| **Resume** | `npm run series -- series:resume` | Resume interrupted episode execution from `checkpoint.json`. |
+| **Shot Reroll** | `npm run series -- series:reroll` | Re-generate an individual rejected shot without touching other scenes. |
+| **Remux** | `npm run series -- series:remux` | Re-stitch video and 4 audio stems from existing takes without AI cost. |
+| **Budget** | `npm run series -- series:budget` | Inspect 4-state financial ledger or update ceiling (`--set-max <usd>`). |
+| **Jobs** | `npm run series -- series:jobs` | View active and historical provider jobs with status and timestamps. |
+| **Reconciliation**| `npm run series -- series:reconcile` | Audit and settle network-uncertain provider jobs (`uncertain_timeout`). |
+| **Status** | `npm run series -- series:status` | Display Story Bible character roster, prop ledger, and episode history. |
+| **Shorts Pipeline**| `npm run pipeline -- <script.json>`| Render 60s 9:16 short-form video via HyperFrames + GSAP. |
+
+---
+
+## ⚙️ Configuration & Environment Guide
+
+Create your local configuration by copying `.env.example` to `.env.local`:
 
 ```bash
-# 1. Clone & enter
-git clone https://github.com/hoquanghai/Auto-Create-Video.git
-cd Auto-Create-Video
-
-# 2. Install
-npm install
-
-# 3. Configure
 cp .env.example .env.local
-# → open .env.local, set TTS_PROVIDER + API key (see Configuration below)
-
-# 4. Verify
-node --version       # ≥ 22
-ffmpeg -version      # any version OK
-ffprobe -version
-npm test             # 44 tests should pass
 ```
 
-### Install FFmpeg
-
-| OS | Command |
-|---|---|
-| **Windows** | `winget install Gyan.FFmpeg` |
-| **macOS** | `brew install ffmpeg` |
-| **Ubuntu/Debian** | `sudo apt install ffmpeg` |
-
----
-
-## ⚙️ Configuration
-
-Open `.env.local` and pick **one of two providers**:
-
-### Option 1 — LucyLab.io (recommended for Vietnamese)
+### 1. TTS Provider Setup
 
 ```env
+# Option A: LucyLab (Best for natural Vietnamese voice cloning + free SRT)
 TTS_PROVIDER=lucylab
-VIETNAMESE_API_KEY=sk_live_xxxxxxxxxxxxxxxxxxxx
-VIETNAMESE_VOICEID=22charvoiceiduuidhere
-```
+VIETNAMESE_API_KEY=sk_live_your_lucylab_api_key
+VIETNAMESE_VOICEID=your_voice_id_here
 
-- ✅ Natural Vietnamese voice (cloning), free SRT subtitle file included
-- ⚠️ Only 1 concurrent export per account (pipeline serialises automatically)
-- 🔗 Sign up: https://lucylab.io
-
-### Option 2 — ElevenLabs
-
-```env
+# Option B: ElevenLabs (Best for multilingual global content)
 TTS_PROVIDER=elevenlabs
-ELEVENLABS_API_KEY=sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ELEVENLABS_API_KEY=sk_your_elevenlabs_api_key
 ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 ```
 
-- ✅ Multilingual (30+ languages), large voice library, high quality
-- ⚠️ Pricier than LucyLab, no SRT included
-- 🔗 Get key: https://elevenlabs.io/app/settings/api-keys · Browse voices: https://elevenlabs.io/app/voice-library
-
-### TikTok follow card (optional, all defaults work)
+### 2. Video Diffusion Providers (Cinema Series)
 
 ```env
-TIKTOK_DISPLAY_NAME=Quẹp Làm IT
-TIKTOK_HANDLE=@haiquep
-TIKTOK_FOLLOWERS=11.5k followers
-TIKTOK_AVATAR_URL=https://example.com/your-avatar.jpg   # optional
+# Kling AI Gateway
+KLING_API_KEY=your_kling_api_key
+KLING_API_SECRET=your_kling_api_secret
+
+# Runway Gen-3 Gateway
+RUNWAY_API_SECRET=your_runway_api_secret
+
+# Local ComfyUI Instance (Default self-hosted backend)
+COMFYUI_HOST=http://127.0.0.1:8188
 ```
 
-To customise the avatar, either replace `assets/avatar.png` with your own square ≥256×256 image, **or** set `TIKTOK_AVATAR_URL` so the pipeline downloads it on every render.
-
-### Option 3 — Gemini thumbnail (optional, gracefully skipped if absent)
-
-If set, the pipeline generates a 9:16 thumbnail per video and embeds it as the MP4 cover image — Windows Explorer / Finder / TikTok / YouTube uploaders show it before any frame plays. Without a key, the step is silently skipped (video still renders).
+### 3. AI Scriptwriting & Thumbnail Imagery
 
 ```env
-GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE
-GEMINI_IMAGE_MODEL=gemini-2.5-flash-image    # default; ~7s per call
-```
+# Google Gemini (for automated 9:16 cover art and concept design)
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
 
-🔗 Get a free key: https://aistudio.google.com/apikey
-
-### Pipeline tuning (optional)
-
-```env
-TTS_CONCURRENCY=1    # 1 for LucyLab (API limit). Increase for ElevenLabs parallelism.
+# Anthropic Claude (used within Claude Code CLI)
+ANTHROPIC_API_KEY=your_claude_api_key
 ```
 
 ---
 
-## 🎬 Usage
+## 📊 Technical Maturity & Verification Matrix
 
-### Method 1 — Inside Claude Code (recommended)
+To uphold engineering integrity, platform capabilities are classified into three maturity tiers:
 
-Open Claude Code in the project directory and type:
-
-```
-/create-news-video https://vnexpress.net/iphone-17-200mp
-```
-
-Or with a local file (`.txt` or `.md`):
-
-```
-/create-news-video news/my-article.md
-```
-
-After ~3–5 minutes:
-
-```
-✓ Video:  output/<slug>-<timestamp>/video.mp4    ← final video
-✓ Audio:  output/<slug>-<timestamp>/voice.mp3    ← for CapCut import
-✓ Script: output/<slug>-<timestamp>/script.txt   ← for CapCut auto-caption
-```
-
-### Method 2 — Run pipeline directly (advanced)
-
-If you already have a `script.json` (debugging or hand-written):
-
-```bash
-npm run pipeline -- output/<slug>-<timestamp>/script.json
-```
-
-### Method 3 — Re-render visuals only (saves TTS quota)
-
-When voice files already exist in `voice/` and you only want to re-render the visuals:
-
-```bash
-npm run rerender -- output/<slug>-<timestamp>
-```
-
----
-
-## 📁 Output Structure
-
-```
-output/<slug>-<timestamp>/
-├── script.json                # Input JSON (Claude-generated or hand-written)
-├── script.txt                 # Plain text for CapCut auto-caption
-├── sns_post.txt               # Vietnamese caption for TikTok / Reels (skill-generated)
-├── images/bg.jpg              # og:image (if URL had one)
-├── voice/
-│   ├── scene-hook.mp3         # TTS per scene (idempotent — skipped if exists)
-│   ├── scene-hook.srt         # SRT subtitles (LucyLab only)
-│   ├── scene-body-1.mp3
-│   ├── scene-body-1-chunk-0.mp3   # voiceChunks: per-element TTS files
-│   └── scene-body-1-chunk-1.mp3   # used to compute sync-accurate beat timings
-├── voice-raw.mp3              # Concatenated voices, no SFX (intermediate)
-├── voice.mp3                  # Final audio with SFX + beat SFX mixed in (for CapCut)
-├── tiktok-avatar.png          # Copy of bundled avatar (or downloaded from URL)
-├── logo.svg                   # Copy of bundled logo
-├── index.html                 # HyperFrames composition
-├── styles.css                 # Template CSS (self-contained)
-├── animations.js              # GSAP timeline (self-contained)
-├── hyperframes.json           # HyperFrames manifest
-├── meta.json                  # HyperFrames metadata
-├── thumbnail.png              # Gemini-generated 9:16 cover (if GEMINI_API_KEY set)
-└── video.mp4                  # 🎉 Final output — 1080×1920 @ 30fps + embedded cover
-```
-
----
-
-## 🎨 Visual System
-
-Every video has a **persistent shell** throughout (header brand icon + channel + tag, footer TikTok handle, grain texture, gradient background) plus 4–18 scenes auto-picked by Claude. The base palette is **cream editorial (light)** for consistent brand identity; the `theme` field on `script.metadata` switches the accent colour:
-
-| Theme | When to use |
-|---|---|
-| `tech-blue` *(default)* | AI, code, dev tools, software |
-| `growth-green` | Marketing, SaaS, customer growth |
-| `finance-gold` | Money, pricing, ROI, fundraising |
-| `warning-red` | Risk, controversy, failure stories |
-| `creator-purple` | Founder stories, design, art, indie |
-| `news-mono` | Serious news, journalism, reports |
-
-### 12 templates (auto-picked by content)
-
-**v1 — core 6:**
-
-| Template | When it's picked | Example |
+| Maturity Tier | Capabilities Included | Technical Evidence |
 |---|---|---|
-| `hook` | First scene (3–5s) | "GPT 5.5" + "AI mạnh nhất!" over og:image with Ken Burns + shimmer |
-| `comparison` | Content has "X vs Y" / "exceeds" / "compared to" | 2 cards: "GPT 5.4 75.1%" cyan vs "GPT 5.5 82.7%" purple (winner) |
-| `stat-hero` | Key number / % | "1M" giant gradient + "Tokens / context window" |
-| `feature-list` | Listing features | Card with up to 4 bullets, accent glow dots |
-| `callout` | Statement / warning / quote | Glow card with "Cảnh báo: AI tự chủ cần cân nhắc" |
-| `outro` | Last scene (3–5s) | "Theo dõi ngay" pill + channel name + gradient underline |
-
-**v3 — composition expansion:**
-
-| Template | When it's picked | Example |
-|---|---|---|
-| `quote-card` | Pull quote / contemplative statement | Italic Lora serif, attribution line below |
-| `icon-grid` | 3–6 features / capabilities | Emoji-style icon + label cells, staggered reveal |
-| `timeline` | Multi-stage progression | When/label rows, slide-right cascade |
-
-**v3.1 — dramatic impact:**
-
-| Template | When it's picked | Example |
-|---|---|---|
-| `big-text` | Single dramatic word/phrase | Massive Anton display, optional `hideShell` for full-bleed |
-| `chart-bars` | 2–5 quantitative bars | Heights normalised to 100%, slide-up reveal with ding |
-| `kinetic-quote` | 3–12-word kinetic typography | Words reveal sequentially, accent on highlighted word |
-
-### Per-scene timing & motion
-
-- **Beats** — up to 12 keyed animations per scene (8 effects: `bounce-in`, `scale-pop`, `slide-up/-left/-right`, `fade-in`, `glow-pulse`, `shake`). Defaults derived from template, override via `scene.beats`, or use `voiceChunks` for sync-accurate timing.
-- **`voiceChunks`** — split voice into 2–8 sentences with `target` element + optional `effect` + `sfx`. Pipeline TTS each chunk separately, measures actual durations, fires beats EXACTLY when voice mentions each element. Eliminates the "visuals leak ahead of voice" problem.
-- **Transitions** — 8 types (`cut`, `fade`, `slide-up/-down/-left/-right`, `scale-out`, `blur`). Defaults per from→to scene-type pair (e.g. `hook→body`=fade 0.4s, `body→outro`=scale-out 0.5s); override via `scene.transition`.
-
-### Sound Effects (auto-mixed by template)
-
-| Template | Default category (fallback) | When you hear it |
-|---|---|---|
-| `hook` | `transition` → `cinematic` | Dramatic intro |
-| `comparison` | `transition` → `emphasis` | When the 2 cards appear |
-| `stat-hero` | `emphasis` → `success` | When the number reveals |
-| `feature-list` | `transition` → `emphasis` | Each bullet appears |
-| `callout` | `alert` → `drumroll` | Important statement / warning |
-| `outro` | `outro` → `success` | Ending signature |
-| `quote-card` | `cinematic` → `drumroll` | Contemplative pull quote |
-| `icon-grid` | `transition` → `emphasis` | Multi-element reveal |
-| `timeline` | `countdown` → `emphasis` | Stage progression |
-| `big-text` | `cinematic` → `success` | Dramatic impact |
-| `chart-bars` | `emphasis` → `success` | Bar reveal cascade |
-| `kinetic-quote` | `cinematic` → `drumroll` | Typographic reveal |
-
-The 3-tier SFX picker (in [`src/assets/sfx-selector.ts`](src/assets/sfx-selector.ts)) chooses in this order:
-
-1. **Explicit `scene.sfx`** override (`"none"` disables SFX for that scene)
-2. **Semantic match** on `voiceText` keywords (Vietnamese + English) — e.g. `cảnh báo|warning|risk` → `alert`, `kỷ lục|record|breakthrough` → `success`, `ra mắt|launch|reveal` → `reveal`, `thất bại|fail|crash` → `fail`
-3. **Template default** category (with fallback chain)
-
-Within a category, files are picked **deterministically** by hashing the scene id (same script → same SFX, but different scenes get different files). Two extra protections run in the mixer:
-
-- **Anti-repetition**: a sliding window of the last 2 scenes prevents the same SFX file twice in a row.
-- **Anti-overlap guard**: per-element beat SFX firing within ±0.4s of a scene's main SFX is suppressed (no "tick + ding clash" at scene boundaries). Repeated beat SFX across consecutive scenes get their volume ducked 35%.
+| **✅ 1. Operational & Validated (Production Ready)** | • SHA-256 Novel Ingestion & Coordinate Mapping<br/>• Story Bible SQLite v6 with Composite Keys<br/>• 100% Mandatory Beat Coverage Ledger<br/>• Season Batch Orchestrator with Checkpoint Resume<br/>• 4-State Budget Ledger (Atomic Reservation)<br/>• 2-Tier Hierarchical Film Assembler<br/>• 4 Isolated Audio Stems (Dialogue, SFX, Ambience, Ducked BGM)<br/>• FCP7 XML & OTIO Timeline Interchange<br/>• Automated QA Verifier (`driftSec <= 0.1s`)<br/>• HyperFrames 12 Motion Templates + GSAP Engine | 100% pass across 54 test files (392/392 tests), zero TypeScript compilation errors, and complete Section I acceptance test verification in `novel-to-series-acceptance.test.ts`. |
+| **🧪 2. Experimental (Beta / Active Iteration)** | • ArcFace 512-D Face Cosine Similarity Auto-Reroll<br/>• Autoregressive Shot Extension via Last-Frame Chaining<br/>• Provider Circuit Breaker FSM (Closed/Open/Half-Open) | Implemented with integration test coverage; live provider API endpoints subject to remote cloud latency and rate limits. |
+| **⚠️ 3. Known Limitations (Roadmap)** | • Phonetic Lip-Sync Morphing (Wav2Lip/SadTalker)<br/>• 100% Deterministic Visual Diffusion Consistency<br/>• Headless NLE GUI Automation Testing | Spoken audio is frame-accurately anchored to shot timecodes, but acoustic lip-mesh morphing is in active R&D. NLE XML/OTIO structures are schema-validated without live DaVinci GUI hooks. |
 
 ---
 
-## 🎥 Showcase
+## 🛡️ Troubleshooting & Resilient Recovery
 
-<table>
-<tr>
-<td width="33%" align="center">
-<a href="https://youtube.com/shorts/S24JfKxV4bo">
-<img src="https://img.youtube.com/vi/S24JfKxV4bo/0.jpg" alt="iPhone 17 - 200MP camera" />
-</a>
-<br/>
-<sub><b>iPhone 17 — 200MP camera</b><br/>Source: VnExpress</sub>
-</td>
-<td width="33%" align="center">
-<i>Your video here?</i><br/><br/>
-<sub>Open an issue with your output and we'll feature it.</sub>
-</td>
-<td width="33%" align="center">
-<i>Your video here?</i><br/><br/>
-<sub>Open an issue with your output and we'll feature it.</sub>
-</td>
-</tr>
-</table>
+### 1. Production Halts Due to Budget Ceiling (`budget_exceeded`)
+- **Symptom:** Orchestrator stops and marks pending episodes as `budget_exceeded`.
+- **Resolution:**
+  1. Inspect committed expenditures: `npm run series -- series:budget --series <seriesId>`
+  2. Increase the series budget cap: `npm run series -- series:budget --series <seriesId> --set-max 100.0`
+  3. Resume remaining unfinished episodes: `npm run series -- series:season --series <seriesId> --remaining`
 
-> 🎬 **Made something cool?** Submit your video via [issue](https://github.com/hoquanghai/Auto-Create-Video/issues/new) and we'll feature it here.
+### 2. Process Interrupted by Crash or Power Loss
+- **Protection:** All generated takes are flushed to disk atomically with SQLite journal integrity.
+- **Resolution:**
+  Re-run the season command with `--resume`:
+  ```bash
+  npm run series -- series:season --series <seriesId> --resume
+  ```
+  The orchestrator reads existing checkpoint manifests, verifies completed video files on disk, and seamlessly resumes only the unfinished shots.
 
----
-
-## ❓ FAQ
-
-<details>
-<summary><b>Can I use this for languages other than Vietnamese?</b></summary>
-
-Yes. Switch `TTS_PROVIDER=elevenlabs` in `.env.local` — ElevenLabs supports 30+ languages including English, Chinese, Japanese.
-
-Note: the Claude Code skill currently optimises script generation for Vietnamese. For other languages you may want to adjust the prompts in `.claude/skills/create-news-video/SKILL.md`.
-</details>
-
-<details>
-<summary><b>How much does it cost per video?</b></summary>
-
-Roughly **$0.05–0.15 per video**, depending on TTS provider:
-
-- LucyLab: ~$0.02 per video (cheapest, Vietnamese only)
-- ElevenLabs: ~$0.10 per video (multilingual)
-- Claude API (script generation): ~$0.03 per video
-</details>
-
-<details>
-<summary><b>Can I run this without Claude Code?</b></summary>
-
-Yes — use **Method 2** (`npm run pipeline -- script.json`) with a hand-written `script.json`. The Claude Code skill is only used for the "creative" step (writing Vietnamese script + picking templates). The pipeline itself is pure Node.js — see [`src/pipeline.ts`](src/pipeline.ts).
-</details>
-
-<details>
-<summary><b>Why HyperFrames instead of Remotion?</b></summary>
-
-HyperFrames is purpose-built for short-form video — 9:16 native, 50+ social media blocks (TikTok cards, kinetic typography, data viz), and AI-agent friendly (Claude can author HTML compositions directly without React boilerplate).
-
-Remotion is a fantastic tool with broader scope — long-form content, complex compositions, full React ecosystem. Different tools for different jobs.
-
-We still borrow good ideas from Remotion's design:
-
-- Frame-deterministic timeline
-- Declarative scene timing ([`src/render/timing.ts`](src/render/timing.ts))
-- Built-in transition system ([`src/render/transition-profiles.ts`](src/render/transition-profiles.ts))
-</details>
-
-<details>
-<summary><b>The video output is silent / has garbled audio. What's wrong?</b></summary>
-
-Most likely FFmpeg is missing or not in PATH. Run `ffmpeg -version` to verify.
-
-- Windows: `winget install Gyan.FFmpeg`
-- macOS: `brew install ffmpeg`
-- Ubuntu: `sudo apt install ffmpeg`
-
-Then restart your terminal and re-run.
-</details>
-
-<details>
-<summary><b>The TTS is mispronouncing numbers. How do I fix it?</b></summary>
-
-Vietnamese TTS reads digits literally. Spell them out in `voiceText` (the on-screen text in `templateData` keeps the digit form):
-
-| In `voiceText` (TTS-friendly) | On screen (`templateData`) |
-|---|---|
-| `năm chấm năm` | `5.5` |
-| `tám mươi hai phẩy bảy phần trăm` | `82.7%` |
-| `một triệu token` | `1M tokens` |
-| `hai trăm megapixel` | `200MP` |
-
-The Claude Code skill handles this automatically when generating scripts. See [`SKILL.md`](.claude/skills/create-news-video/SKILL.md) for the full phonetic ruleset.
-</details>
-
-<details>
-<summary><b>Can I customise the visual style (colors, fonts)?</b></summary>
-
-Yes — edit [`src/render/templates/styles.css`](src/render/templates/styles.css). The template system uses CSS variables (theme accent + base palette) so changes propagate across all 12 scene types and all 6 themes. Animation timing lives in [`src/render/templates/animations.js`](src/render/templates/animations.js). Brand spec rationale is in [`design.md`](design.md).
-</details>
-
-<details>
-<summary><b>How do I force re-TTS for a single scene?</b></summary>
-
-The TTS step is idempotent — it only synthesises scenes whose mp3 doesn't yet exist. To force a single scene, delete its file:
-
-```bash
-rm output/<slug>/voice/scene-hook.mp3
-npm run pipeline -- output/<slug>/script.json
-```
-
-To re-render visuals only (keep all voice files): use `npm run rerender -- output/<slug>` instead.
-</details>
-
-<details>
-<summary><b>How long can the video be?</b></summary>
-
-The pipeline supports **45–180 seconds**. Heuristic in [`SKILL.md`](.claude/skills/create-news-video/SKILL.md):
-
-| Source words | Script words | Scenes | Duration |
-|---|---|---|---|
-| < 500 | ~110 | 4–5 | ~45–55s |
-| 500–1500 | ~150–200 | 5–8 | ~60–80s |
-| 1500–3000 | ~250–350 | 8–12 | ~100–140s |
-| > 3000 | ~400–500 | 12–18 | ~150–180s |
-</details>
+### 3. Missing FFmpeg on Windows / Linux / macOS
+- **Symptom:** `FFmpeg / FFprobe: Không tìm thấy trên PATH hệ thống.`
+- **Resolution:**
+  - **Windows:** `winget install Gyan.FFmpeg`
+  - **macOS:** `brew install ffmpeg`
+  - **Ubuntu / Debian:** `sudo apt update && sudo apt install ffmpeg`
+  - Restart your terminal and verify with `ffmpeg -version`.
 
 ---
 
-## 🧪 Testing
+## 🗺️ Roadmap & Milestones
 
-```bash
-npm test                 # 44 unit tests (~6s)
-npm run test:watch       # watch mode
-npx tsc --noEmit         # type-check without build
-```
-
-Tests cover Zod schema validation (12 templates), TTS clients for both LucyLab + ElevenLabs (with `nock` HTTP mocking — no real API calls), audio tools (with fixture mp3 sine waves), beat profiles + chunk-derived beats, timing computation, transition profiles, SFX selector (3-tier + anti-repetition), Gemini thumbnail prompt builder, and HTML composer snapshots. CI runs on every push (see badges at top).
-
----
-
-## 🐛 Troubleshooting
-
-| Error | Fix |
-|---|---|
-| `Missing VIETNAMESE_API_KEY` / `Missing ELEVENLABS_API_KEY` | Check `.env.local` exists and `TTS_PROVIDER` matches the provider you have keys for |
-| `hyperframes render failed` | Run `npx hyperframes render --help` to verify CLI; ensure Chrome can be downloaded by Puppeteer |
-| `LucyLab polling timeout` | Increase `LUCYLAB_POLL_TIMEOUT_MS` in `.env.local` (default 120000ms) |
-| `ElevenLabs 401 Invalid API key` | Verify the key on the ElevenLabs dashboard, re-paste into `.env.local` |
-| `Total duration outside [45, 180]s` | Pipeline only **warns** — re-trigger the skill or hand-edit `script.json` to lengthen / shorten text. Heuristic in [`SKILL.md`](.claude/skills/create-news-video/SKILL.md). |
-| `ffprobe: command not found` | Install FFmpeg (see [Configuration](#-configuration)) |
-| `Thumbnail skipped: GEMINI_API_KEY not set` | Optional step. Add a key in `.env.local` (free at https://aistudio.google.com/apikey) or ignore — video still renders fine. |
-| `hyperframes lint failed` | Quality gate caught a composition error. Read the message and fix `index.html` / `animations.js` in the output dir, then re-run `rerender`. |
-
----
-
-## 🗺️ Roadmap
-
-- [x] ~~Auto thumbnail generation (cover image)~~ — shipped via Gemini 2.5 Flash Image
-- [x] ~~Voice-text sync per element~~ — shipped via `voiceChunks`
-- [x] ~~Quality gates before render~~ — shipped via hyperframes lint/validate/inspect
-- [ ] Burned-in captions (forced alignment with Whisper)
-- [ ] Auto-select background music by mood
-- [ ] Multi-news compilation mode (`digest`)
-- [ ] AI-generated background images for hook scene (Gemini / Flux when og:image unavailable)
-- [ ] Auto-upload to TikTok / YouTube Shorts / Reels via API
-- [ ] Multi-language script generation (English, Chinese, Japanese)
-- [ ] Standalone web UI (no Claude Code required)
-
-Have a feature request? [Open an issue](https://github.com/hoquanghai/Auto-Create-Video/issues/new).
-
----
-
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=hoquanghai/Auto-Create-Video&type=Date)](https://star-history.com/#hoquanghai/Auto-Create-Video&Date)
+- [x] **v1.0:** Autonomous short-form news video pipeline with 12 GSAP templates & HyperFrames.
+- [x] **v1.5:** LucyLab Vietnamese voice cloning and ElevenLabs multilingual TTS integration.
+- [x] **v2.0 (Current):** Full Novel-to-Series Production Engine:
+  - [x] SHA-256 source ingestion & zero-loss coordinate chunking.
+  - [x] Story Bible SQLite v6 migration with composite series keys.
+  - [x] Series planner with 100% mandatory beat coverage ledger.
+  - [x] Season batch orchestrator with 4-state financial ledger.
+  - [x] Hierarchical film assembly (Shot → Scene → Master) with 4 audio stems.
+  - [x] FCP7 XML and OpenTimelineIO export.
+  - [x] Cinema Production Studio Web UI with ArcFace lightbox and JetBrains Mono typography.
+- [ ] **v2.1:** Deep acoustic lip-sync integration (Wav2Lip / SadTalker) for dialogue shots.
+- [ ] **v2.2:** Multi-modal video upscaling (4K 60FPS) via Topaz / ESRGAN post-processing pipelines.
+- [ ] **v2.3:** Direct social auto-publisher (TikTok, YouTube Shorts, Facebook Reels) via authenticated OAuth2 APIs.
 
 ---
 
 ## 🤝 Contributing
 
-Pull requests welcome! For major changes, please open an issue first to discuss what you'd like to change.
+Contributions are welcome! Please follow standard development practices:
 
-```bash
-# Fork → clone → branch
-git checkout -b feature/my-improvement
-
-# Make changes, ensure tests pass
-npm test
-npx tsc --noEmit
-
-# Commit using Conventional Commits
-git commit -m "feat: add Google TTS provider support"
-
-# Push and open PR
-git push origin feature/my-improvement
-```
-
-Commit prefixes: `feat:` (new feature) · `fix:` (bug) · `docs:` · `refactor:` · `test:` · `chore:`
+1. Fork the repository and create a feature branch (`git checkout -b feature/cinema-enhancement`).
+2. Implement your changes adhering to existing TypeScript idioms and comment styles.
+3. Verify that all 392 tests pass and there are zero TypeScript compiler warnings:
+   ```bash
+   npm test
+   npm run typecheck
+   ```
+4. Commit using Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
+5. Open a Pull Request with a clear description of your architectural enhancements.
 
 ---
 
 ## 📜 License
 
-[MIT](LICENSE) — use freely, fork freely, PRs welcome.
+This project is licensed under the [MIT License](LICENSE) — free for personal, academic, and commercial production use.
 
 ---
 
 ## 🙏 Acknowledgements
 
-This project stands on the shoulders of giants:
+Auto-Create-Video stands on the shoulders of remarkable open-source engineering:
 
-- [HyperFrames by HeyGen](https://hyperframes.heygen.com) — the HTML-to-video framework that makes this possible
-- [LucyLab.io](https://lucylab.io) — Vietnamese voice cloning API
-- [ElevenLabs](https://elevenlabs.io) — multilingual TTS
-- [Anthropic Claude](https://www.anthropic.com/claude) — the LLM that writes scripts via Claude Code skill
-- [Remotion](https://www.remotion.dev) — inspiration for HTML-based video rendering
-
----
-
-## 💖 Support this project
-
-If this project saved you time, please consider:
-
-- ⭐ **[Star this repo](https://github.com/hoquanghai/Auto-Create-Video)** — it really helps with discoverability
-- 🐦 [Share on Twitter / X](https://twitter.com/intent/tweet?text=Check%20out%20Auto%20News%20Video%20%E2%80%94%20one-command%20Vietnamese%20short-form%20video%20generator&url=https://github.com/hoquanghai/Auto-Create-Video)
-- 💬 Tell a friend who creates content
-- 🐛 [Report bugs or request features](https://github.com/hoquanghai/Auto-Create-Video/issues)
+- [HyperFrames by HeyGen](https://hyperframes.heygen.com) — HTML-to-video declarative composition.
+- [LucyLab.io](https://lucylab.io) — Vietnamese voice cloning and synthesis API.
+- [ElevenLabs](https://elevenlabs.io) — Multilingual realistic speech synthesis.
+- [Anthropic Claude](https://anthropic.com/claude) — Story analysis and scriptwriting intelligence.
+- [GSAP (GreenSock)](https://greensock.com) — High-performance motion graphic animations.
+- [SQLite](https://sqlite.org) & `node:sqlite` — Resilient embedded database for Story Bible canon.
+- [FFmpeg](https://ffmpeg.org) — Universal multimedia processing and encoding.
 
 <div align="center">
 
 **[⬆ Back to top](#top)**
 
-Made with ❤️ by [Ho Quang Hai](https://github.com/hoquanghai) in 🇻🇳 Vietnam
+Built with ❤️ for AI Cinema Creators & Content Pioneers.
 
 </div>

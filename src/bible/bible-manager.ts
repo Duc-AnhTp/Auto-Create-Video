@@ -70,18 +70,21 @@ export interface SeriesMetadataRecord {
 export interface CharacterRecord {
   id: string;
   name: string;
-  role: "protagonist" | "antagonist" | "supporting" | "ally" | "mentor" | string;
+  role?: "protagonist" | "antagonist" | "supporting" | "ally" | "mentor" | string;
   series_id?: string;
   archetype?: string;
   visual_summary?: string;
   personality_traits?: string[];
   voice_profile_id?: string;
   voice_embedding_path?: string;
-  status: "alive" | "injured" | "deceased" | "missing";
+  status?: "alive" | "injured" | "deceased" | "missing";
   face_reference_image?: string;
   character_sheet_path?: string;
   current_wardrobe_id?: string;
   distinguishing_marks?: string;
+  aliases_json?: string;
+  relationship_graph_json?: string;
+  face_embedding_json?: string;
   created_at?: string;
 }
 
@@ -283,6 +286,7 @@ export interface ProviderRateCardRecord {
 export interface BudgetLedgerSummary {
   seriesId: string;
   maxBudgetUsd: number;
+  estimatedCostUsd: number;
   confirmedCostUsd: number;
   reservedCostUsd: number;
   uncertainCostUsd: number;
@@ -395,6 +399,153 @@ export interface CanonMigrationRecord {
   applied_at: string;
 }
 
+// ── Migration V6: Novel Ingestion & Series Planning Types ────────────────────
+
+export interface SourceWorkRecord {
+  id: string; // e.g. "src_cyber_saigon_novel"
+  series_id: string;
+  title: string;
+  author?: string | null;
+  source_type: "prose" | "screenplay" | "novel" | "markdown" | "txt";
+  current_revision: number;
+  content_hash: string;
+  raw_text: string;
+  normalized_text: string;
+  normalization_rules_json?: string;
+  metadata_json?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SourceUnitRecord {
+  id: string; // e.g. "unit_src_cyber_ch01"
+  source_id: string;
+  series_id: string;
+  revision: number;
+  unit_type: "chapter" | "scene" | "act" | "prologue" | "epilogue" | string;
+  unit_number: number;
+  title: string;
+  order_index: number;
+  char_start: number;
+  char_end: number;
+  raw_text: string;
+  summary?: string | null;
+  token_count_estimate?: number;
+  created_at?: string;
+}
+
+export interface SourceBlockRecord {
+  id: string; // e.g. "blk_src_cyber_ch01_001"
+  source_id: string;
+  unit_id: string;
+  series_id: string;
+  revision: number;
+  block_index: number;
+  char_start: number;
+  char_end: number;
+  content: string;
+  is_dialogue: boolean | number;
+  speaker_candidate?: string | null;
+  chunk_group_id?: string | null;
+  created_at?: string;
+}
+
+export interface StoryBeatRecord {
+  id: string; // e.g. "beat_src_cyber_b001"
+  source_id: string;
+  source_unit_id?: string | null;
+  series_id: string;
+  beat_order: number;
+  name: string;
+  description: string;
+  participating_characters_json: string; // array of char ids/names
+  location_id?: string | null;
+  story_time?: string | null;
+  is_flashback: boolean | number;
+  preconditions_json?: string;
+  post_state_changes_json?: string;
+  source_citations_json?: string; // [{ charStart, charEnd, excerpt }]
+  is_mandatory: boolean | number;
+  created_at?: string;
+}
+
+export interface StoryThreadRecord {
+  id: string; // e.g. "thread_chip_conspiracy"
+  series_id: string;
+  name: string;
+  thread_type: "main" | "subplot" | "character_arc" | string;
+  description: string;
+  setup_beat_id?: string | null;
+  payoff_beat_id?: string | null;
+  status: "open" | "resolved" | "dropped";
+  dependencies_json?: string;
+  created_at?: string;
+}
+
+export interface KnowledgeStateRecord {
+  id?: number;
+  series_id: string;
+  fact_key: string;
+  fact_type: "source_fact" | "adaptation_decision" | "character_knowledge" | "audience_knowledge";
+  entity_id?: string | null;
+  revealed_at_episode?: number | null;
+  revealed_at_beat_id?: string | null;
+  is_flashback?: boolean | number;
+  notes?: string | null;
+  created_at?: string;
+}
+
+export interface SeriesPlanRecord {
+  id: string; // e.g. "plan_cyber_saigon_v1"
+  series_id: string;
+  source_id: string;
+  revision: number;
+  target_episodes: number;
+  target_duration_per_episode_sec: number;
+  pacing_preset: "fast" | "standard" | "contemplative" | string;
+  status: "draft" | "approved" | "active" | "stale";
+  warnings_json?: string;
+  summary_json: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface PlannedEpisodeRecord {
+  id: string; // e.g. "plan_ep_01"
+  plan_id: string;
+  series_id: string;
+  episode_number: number;
+  title: string;
+  logline: string;
+  goal?: string | null;
+  opening?: string | null;
+  development?: string | null;
+  climax?: string | null;
+  ending?: string | null;
+  target_duration_sec: number;
+  state_in_json?: string;
+  planned_state_out_json?: string;
+  dependencies_json?: string;
+  estimated_scenes?: number;
+  estimated_shots?: number;
+  created_at?: string;
+}
+
+export interface CoverageLedgerRecord {
+  id: string; // e.g. "cov_ch01_ep01"
+  plan_id: string;
+  series_id: string;
+  source_id: string;
+  source_unit_id: string;
+  source_block_id?: string | null;
+  episode_number?: number | null;
+  scene_number?: number | null;
+  adaptation_decision: "kept" | "compressed" | "moved" | "omitted" | "expanded";
+  rationale?: string | null;
+  mandatory_beat_id?: string | null;
+  created_at?: string;
+}
+
 export interface NarrativeDelta {
   characterStatusUpdates?: Array<{
     id: string;
@@ -478,6 +629,16 @@ export class BibleManager {
     provider_jobs: Map<string, ProviderJobRecord>;
     series_budgets: Map<string, SeriesBudgetRecord>;
     provider_rate_cards: Map<string, ProviderRateCardRecord>;
+    // V6 Novel Ingestion & Series Planning
+    source_works: Map<string, SourceWorkRecord>;
+    source_units: Map<string, SourceUnitRecord>;
+    source_blocks: Map<string, SourceBlockRecord>;
+    story_beats: Map<string, StoryBeatRecord>;
+    story_threads: Map<string, StoryThreadRecord>;
+    knowledge_states: KnowledgeStateRecord[];
+    series_plans: Map<string, SeriesPlanRecord>;
+    planned_episodes: Map<string, PlannedEpisodeRecord>;
+    coverage_ledgers: Map<string, CoverageLedgerRecord>;
   };
 
   constructor(dbPath: string = "story_bible.db", options: BibleManagerOptions = {}) {
@@ -507,6 +668,15 @@ export class BibleManager {
       provider_jobs: new Map(),
       series_budgets: new Map(),
       provider_rate_cards: new Map(),
+      source_works: new Map(),
+      source_units: new Map(),
+      source_blocks: new Map(),
+      story_beats: new Map(),
+      story_threads: new Map(),
+      knowledge_states: [],
+      series_plans: new Map(),
+      planned_episodes: new Map(),
+      coverage_ledgers: new Map(),
     };
     this.initDb();
   }
@@ -649,6 +819,13 @@ export class BibleManager {
         this.memoryStore.migrations.push({
           version: 5,
           name: "preflight_dedup_and_unique_take_index",
+          applied_at: now,
+        });
+      }
+      if (!this.memoryStore.migrations.some((m) => m.version === 6)) {
+        this.memoryStore.migrations.push({
+          version: 6,
+          name: "novel_ingestion_and_series_planning",
           applied_at: now,
         });
       }
@@ -842,9 +1019,186 @@ export class BibleManager {
           new Date().toISOString()
         );
       }
+
+      if (!appliedVersions.has(6)) {
+        this.applyV6Migration();
+        this.db.prepare("INSERT INTO canon_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(
+          6,
+          "novel_ingestion_and_series_planning",
+          new Date().toISOString()
+        );
+      }
     } catch {
       // Safe migration ignore
     }
+  }
+
+  private applyV6Migration(): void {
+    if (!this.db) return;
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS source_works (
+        id TEXT PRIMARY KEY,
+        series_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        author TEXT,
+        source_type TEXT NOT NULL DEFAULT 'prose',
+        current_revision INTEGER NOT NULL DEFAULT 1,
+        content_hash TEXT NOT NULL,
+        raw_text TEXT NOT NULL,
+        normalized_text TEXT NOT NULL,
+        normalization_rules_json TEXT NOT NULL DEFAULT '{}',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_source_works_series ON source_works (series_id);
+
+      CREATE TABLE IF NOT EXISTS source_units (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        unit_type TEXT NOT NULL DEFAULT 'chapter',
+        unit_number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        order_index INTEGER NOT NULL,
+        char_start INTEGER NOT NULL,
+        char_end INTEGER NOT NULL,
+        raw_text TEXT NOT NULL,
+        summary TEXT,
+        token_count_estimate INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (source_id) REFERENCES source_works (id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_source_units_lookup ON source_units (source_id, revision, order_index);
+      CREATE INDEX IF NOT EXISTS idx_source_units_series ON source_units (series_id, source_id);
+
+      CREATE TABLE IF NOT EXISTS source_blocks (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        unit_id TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        block_index INTEGER NOT NULL,
+        char_start INTEGER NOT NULL,
+        char_end INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        is_dialogue INTEGER NOT NULL DEFAULT 0,
+        speaker_candidate TEXT,
+        chunk_group_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (unit_id) REFERENCES source_units (id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_source_blocks_lookup ON source_blocks (unit_id, block_index);
+      CREATE INDEX IF NOT EXISTS idx_source_blocks_series ON source_blocks (series_id, source_id);
+
+      CREATE TABLE IF NOT EXISTS story_beats (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        source_unit_id TEXT,
+        series_id TEXT NOT NULL,
+        beat_order INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        participating_characters_json TEXT NOT NULL DEFAULT '[]',
+        location_id TEXT,
+        story_time TEXT,
+        is_flashback INTEGER NOT NULL DEFAULT 0,
+        preconditions_json TEXT NOT NULL DEFAULT '{}',
+        post_state_changes_json TEXT NOT NULL DEFAULT '{}',
+        source_citations_json TEXT NOT NULL DEFAULT '[]',
+        is_mandatory INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_story_beats_lookup ON story_beats (series_id, source_id, beat_order);
+      CREATE INDEX IF NOT EXISTS idx_story_beats_unit ON story_beats (source_unit_id, beat_order);
+
+      CREATE TABLE IF NOT EXISTS story_threads (
+        id TEXT PRIMARY KEY,
+        series_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        thread_type TEXT NOT NULL DEFAULT 'main',
+        description TEXT NOT NULL,
+        setup_beat_id TEXT,
+        payoff_beat_id TEXT,
+        status TEXT NOT NULL DEFAULT 'open',
+        dependencies_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_story_threads_lookup ON story_threads (series_id, status);
+
+      CREATE TABLE IF NOT EXISTS knowledge_states (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        series_id TEXT NOT NULL,
+        fact_key TEXT NOT NULL,
+        fact_type TEXT NOT NULL,
+        entity_id TEXT,
+        revealed_at_episode INTEGER,
+        revealed_at_beat_id TEXT,
+        is_flashback INTEGER NOT NULL DEFAULT 0,
+        notes TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_knowledge_states_lookup ON knowledge_states (series_id, fact_type, entity_id);
+
+      CREATE TABLE IF NOT EXISTS series_plans (
+        id TEXT PRIMARY KEY,
+        series_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        target_episodes INTEGER NOT NULL,
+        target_duration_per_episode_sec REAL NOT NULL,
+        pacing_preset TEXT NOT NULL DEFAULT 'standard',
+        status TEXT NOT NULL DEFAULT 'draft',
+        warnings_json TEXT NOT NULL DEFAULT '[]',
+        summary_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_series_plans_lookup ON series_plans (series_id, source_id, status);
+
+      CREATE TABLE IF NOT EXISTS planned_episodes (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        episode_number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        logline TEXT NOT NULL,
+        goal TEXT,
+        opening TEXT,
+        development TEXT,
+        climax TEXT,
+        ending TEXT,
+        target_duration_sec REAL NOT NULL,
+        state_in_json TEXT NOT NULL DEFAULT '{}',
+        planned_state_out_json TEXT NOT NULL DEFAULT '{}',
+        dependencies_json TEXT NOT NULL DEFAULT '[]',
+        estimated_scenes INTEGER NOT NULL DEFAULT 0,
+        estimated_shots INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_planned_episodes_lookup ON planned_episodes (plan_id, episode_number);
+      CREATE INDEX IF NOT EXISTS idx_planned_episodes_series ON planned_episodes (series_id, episode_number);
+
+      CREATE TABLE IF NOT EXISTS coverage_ledgers (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_unit_id TEXT NOT NULL,
+        source_block_id TEXT,
+        episode_number INTEGER,
+        scene_number INTEGER,
+        adaptation_decision TEXT NOT NULL DEFAULT 'kept',
+        rationale TEXT,
+        mandatory_beat_id TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_lookup ON coverage_ledgers (plan_id, source_unit_id, episode_number);
+      CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_series ON coverage_ledgers (series_id, source_id);
+    `);
   }
 
   private applySchemaSql() {
@@ -1142,6 +1496,10 @@ export class BibleManager {
       { name: "character_sheet_path", type: "TEXT" },
       { name: "current_wardrobe_id", type: "TEXT" },
       { name: "distinguishing_marks", type: "TEXT" },
+      { name: "series_id", type: "TEXT" },
+      { name: "aliases_json", type: "TEXT" },
+      { name: "relationship_graph_json", type: "TEXT" },
+      { name: "face_embedding_json", type: "TEXT" },
     ];
     for (const col of columnsToEnsure) {
       try {
@@ -1213,6 +1571,12 @@ export class BibleManager {
     } catch {
       // Column already exists
     }
+
+    try {
+      this.applyV6Migration();
+    } catch {
+      // Tables already exist
+    }
   }
 
   // ── Series Metadata Operations ────────────────────────────────────────────
@@ -1269,9 +1633,10 @@ export class BibleManager {
         INSERT INTO characters (
           id, name, role, visual_summary, personality_traits,
           voice_profile_id, voice_embedding_path, status,
-          face_reference_image, character_sheet_path, current_wardrobe_id, distinguishing_marks
+          face_reference_image, character_sheet_path, current_wardrobe_id, distinguishing_marks,
+          series_id, aliases_json, relationship_graph_json, face_embedding_json
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           role = excluded.role,
@@ -1283,7 +1648,11 @@ export class BibleManager {
           face_reference_image = excluded.face_reference_image,
           character_sheet_path = excluded.character_sheet_path,
           current_wardrobe_id = excluded.current_wardrobe_id,
-          distinguishing_marks = excluded.distinguishing_marks
+          distinguishing_marks = excluded.distinguishing_marks,
+          series_id = coalesce(excluded.series_id, characters.series_id),
+          aliases_json = coalesce(excluded.aliases_json, characters.aliases_json),
+          relationship_graph_json = coalesce(excluded.relationship_graph_json, characters.relationship_graph_json),
+          face_embedding_json = coalesce(excluded.face_embedding_json, characters.face_embedding_json)
       `);
       stmt.run(
         char.id,
@@ -1297,24 +1666,37 @@ export class BibleManager {
         char.face_reference_image ?? null,
         char.character_sheet_path ?? null,
         char.current_wardrobe_id ?? null,
-        char.distinguishing_marks ?? null
+        char.distinguishing_marks ?? null,
+        char.series_id ?? null,
+        char.aliases_json ?? null,
+        char.relationship_graph_json ?? null,
+        char.face_embedding_json ?? null
       );
     } else {
       this.memoryStore.characters.set(char.id, char);
     }
   }
 
-  public getCharacter(id: string): CharacterRecord | null {
+  public getCharacter(id: string, seriesId?: string): CharacterRecord | null {
     if (this.db && !this.isFallback) {
-      const stmt = this.db.prepare("SELECT * FROM characters WHERE id = ?");
-      const row = stmt.get(id);
+      let query = "SELECT * FROM characters WHERE id = ?";
+      const params: any[] = [id];
+      if (seriesId) {
+        query += " AND (series_id = ? OR series_id IS NULL)";
+        params.push(seriesId);
+      }
+      const stmt = this.db.prepare(query);
+      const row = stmt.get(...params);
       if (!row) return null;
       return {
         ...row,
         personality_traits: JSON.parse(row.personality_traits),
       } as CharacterRecord;
     }
-    return this.memoryStore.characters.get(id) ?? null;
+    const char = this.memoryStore.characters.get(id);
+    if (!char) return null;
+    if (seriesId && char.series_id && char.series_id !== seriesId) return null;
+    return char;
   }
 
   public listCharacters(seriesId?: string): CharacterRecord[] {
@@ -1322,7 +1704,7 @@ export class BibleManager {
       if (seriesId) {
         try {
           const stmt = this.db.prepare(
-            "SELECT * FROM characters WHERE (series_id = ? OR series_id IS NULL) ORDER BY role ASC, name ASC"
+            "SELECT * FROM characters WHERE series_id = ? ORDER BY role ASC, name ASC"
           );
           const rows = stmt.all(seriesId);
           return rows.map((r: any) => ({
@@ -1342,7 +1724,7 @@ export class BibleManager {
     }
     const all = Array.from(this.memoryStore.characters.values());
     if (seriesId) {
-      return all.filter((c) => !c.series_id || c.series_id === seriesId);
+      return all.filter((c) => c.series_id === seriesId);
     }
     return all;
   }
@@ -4223,6 +4605,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
   public getSeriesBudgetLedger(seriesId: string): BudgetLedgerSummary {
     const budget = this.getSeriesBudget(seriesId);
+    let estimatedCost = 0;
     let confirmedCost = 0;
     let reservedCost = 0;
     let uncertainCost = 0;
@@ -4230,6 +4613,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     if (this.db && !this.isFallback) {
       const rows = this.db.prepare(`
         SELECT cost_category, status,
+               SUM(estimated_cost_usd) as sum_estimated,
                SUM(confirmed_cost_usd) as sum_confirmed,
                SUM(reserved_cost_usd) as sum_reserved,
                SUM(uncertain_cost_usd) as sum_uncertain
@@ -4239,6 +4623,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       `).all(seriesId) as any[];
 
       for (const r of rows) {
+        estimatedCost += Number(r.sum_estimated || 0);
         if (r.cost_category === "confirmed" || r.status === "completed") {
           confirmedCost += Number(r.sum_confirmed || 0);
         } else if (r.status === "uncertain_timeout" || r.cost_category === "uncertain") {
@@ -4258,6 +4643,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     } else {
       for (const j of this.memoryStore.provider_jobs.values()) {
         if (j.series_id !== seriesId) continue;
+        estimatedCost += j.estimated_cost_usd || 0;
         if (j.cost_category === "confirmed" || j.status === "completed") {
           confirmedCost += j.confirmed_cost_usd || 0;
         } else if (j.status === "uncertain_timeout" || j.cost_category === "uncertain") {
@@ -4275,6 +4661,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     return {
       seriesId,
       maxBudgetUsd: budget.max_budget_usd,
+      estimatedCostUsd: Math.round(estimatedCost * 10000) / 10000,
       confirmedCostUsd: Math.round(confirmedCost * 10000) / 10000,
       reservedCostUsd: Math.round(reservedCost * 10000) / 10000,
       uncertainCostUsd: Math.round(uncertainCost * 10000) / 10000,
@@ -4389,6 +4776,825 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     return Array.from(this.memoryStore.provider_rate_cards.values()).filter(
       (r) => !provider || r.provider === provider
     );
+  }
+
+  // ── Novel Ingestion & Source Operations (V6) ──────────────────────────────
+
+  public upsertSourceWork(work: SourceWorkRecord): void {
+    const now = new Date().toISOString();
+    const clean: SourceWorkRecord = {
+      ...work,
+      author: work.author ?? null,
+      normalization_rules_json: work.normalization_rules_json ?? "{}",
+      metadata_json: work.metadata_json ?? "{}",
+      created_at: work.created_at || now,
+      updated_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO source_works (
+            id, series_id, title, author, source_type, current_revision,
+            content_hash, raw_text, normalized_text, normalization_rules_json,
+            metadata_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            author = excluded.author,
+            source_type = excluded.source_type,
+            current_revision = excluded.current_revision,
+            content_hash = excluded.content_hash,
+            raw_text = excluded.raw_text,
+            normalized_text = excluded.normalized_text,
+            normalization_rules_json = excluded.normalization_rules_json,
+            metadata_json = excluded.metadata_json,
+            updated_at = excluded.updated_at
+        `)
+        .run(
+          clean.id,
+          clean.series_id,
+          clean.title,
+          clean.author,
+          clean.source_type,
+          clean.current_revision,
+          clean.content_hash,
+          clean.raw_text,
+          clean.normalized_text,
+          clean.normalization_rules_json,
+          clean.metadata_json,
+          clean.created_at,
+          clean.updated_at
+        );
+    } else {
+      this.memoryStore.source_works.set(clean.id, clean);
+    }
+  }
+
+  public getSourceWork(id: string): SourceWorkRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM source_works WHERE id = ?").get(id);
+      return (row as SourceWorkRecord) ?? null;
+    }
+    return this.memoryStore.source_works.get(id) ?? null;
+  }
+
+  public listSourceWorks(seriesId?: string): SourceWorkRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM source_works";
+      const params: any[] = [];
+      if (seriesId) {
+        query += " WHERE series_id = ?";
+        params.push(seriesId);
+      }
+      query += " ORDER BY updated_at DESC";
+      return (this.db.prepare(query).all(...params) as SourceWorkRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.source_works.values()).filter(
+      (w) => !seriesId || w.series_id === seriesId
+    );
+  }
+
+  public deleteSourceWork(id: string): void {
+    if (this.db && !this.isFallback) {
+      this.db.prepare("DELETE FROM source_works WHERE id = ?").run(id);
+    } else {
+      this.memoryStore.source_works.delete(id);
+    }
+  }
+
+  // ── Source Unit Operations (Chapters / Scenes) ────────────────────────────
+
+  public upsertSourceUnit(unit: SourceUnitRecord): void {
+    const now = unit.created_at || new Date().toISOString();
+    const clean: SourceUnitRecord = {
+      ...unit,
+      summary: unit.summary ?? null,
+      token_count_estimate: unit.token_count_estimate ?? 0,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO source_units (
+            id, source_id, series_id, revision, unit_type, unit_number,
+            title, order_index, char_start, char_end, raw_text,
+            summary, token_count_estimate, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            revision = excluded.revision,
+            unit_type = excluded.unit_type,
+            unit_number = excluded.unit_number,
+            title = excluded.title,
+            order_index = excluded.order_index,
+            char_start = excluded.char_start,
+            char_end = excluded.char_end,
+            raw_text = excluded.raw_text,
+            summary = excluded.summary,
+            token_count_estimate = excluded.token_count_estimate
+        `)
+        .run(
+          clean.id,
+          clean.source_id,
+          clean.series_id,
+          clean.revision,
+          clean.unit_type,
+          clean.unit_number,
+          clean.title,
+          clean.order_index,
+          clean.char_start,
+          clean.char_end,
+          clean.raw_text,
+          clean.summary,
+          clean.token_count_estimate,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.source_units.set(clean.id, clean);
+    }
+  }
+
+  public getSourceUnit(id: string): SourceUnitRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM source_units WHERE id = ?").get(id);
+      return (row as SourceUnitRecord) ?? null;
+    }
+    return this.memoryStore.source_units.get(id) ?? null;
+  }
+
+  public listSourceUnits(sourceId: string, revision?: number): SourceUnitRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM source_units WHERE source_id = ?";
+      const params: any[] = [sourceId];
+      if (revision !== undefined) {
+        query += " AND revision = ?";
+        params.push(revision);
+      }
+      query += " ORDER BY order_index ASC";
+      return (this.db.prepare(query).all(...params) as SourceUnitRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.source_units.values())
+      .filter((u) => u.source_id === sourceId && (revision === undefined || u.revision === revision))
+      .sort((a, b) => a.order_index - b.order_index);
+  }
+
+  public batchUpsertSourceUnits(units: SourceUnitRecord[]): void {
+    if (this.db && !this.isFallback) {
+      this.db.exec("BEGIN TRANSACTION;");
+      try {
+        for (const u of units) {
+          this.upsertSourceUnit(u);
+        }
+        this.db.exec("COMMIT;");
+      } catch (err) {
+        this.db.exec("ROLLBACK;");
+        throw err;
+      }
+    } else {
+      for (const u of units) {
+        this.upsertSourceUnit(u);
+      }
+    }
+  }
+
+  // ── Source Block Operations (Paragraphs / Chunks) ──────────────────────────
+
+  public upsertSourceBlock(block: SourceBlockRecord): void {
+    const now = block.created_at || new Date().toISOString();
+    const clean: SourceBlockRecord = {
+      ...block,
+      is_dialogue: block.is_dialogue ? 1 : 0,
+      speaker_candidate: block.speaker_candidate ?? null,
+      chunk_group_id: block.chunk_group_id ?? null,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO source_blocks (
+            id, source_id, unit_id, series_id, revision, block_index,
+            char_start, char_end, content, is_dialogue,
+            speaker_candidate, chunk_group_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            revision = excluded.revision,
+            char_start = excluded.char_start,
+            char_end = excluded.char_end,
+            content = excluded.content,
+            is_dialogue = excluded.is_dialogue,
+            speaker_candidate = excluded.speaker_candidate,
+            chunk_group_id = excluded.chunk_group_id
+        `)
+        .run(
+          clean.id,
+          clean.source_id,
+          clean.unit_id,
+          clean.series_id,
+          clean.revision,
+          clean.block_index,
+          clean.char_start,
+          clean.char_end,
+          clean.content,
+          clean.is_dialogue ? 1 : 0,
+          clean.speaker_candidate,
+          clean.chunk_group_id,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.source_blocks.set(clean.id, clean);
+    }
+  }
+
+  public listSourceBlocks(unitId: string): SourceBlockRecord[] {
+    if (this.db && !this.isFallback) {
+      return (
+        (this.db
+          .prepare("SELECT * FROM source_blocks WHERE unit_id = ? ORDER BY block_index ASC")
+          .all(unitId) as SourceBlockRecord[]) ?? []
+      );
+    }
+    return Array.from(this.memoryStore.source_blocks.values())
+      .filter((b) => b.unit_id === unitId)
+      .sort((a, b) => a.block_index - b.block_index);
+  }
+
+  public batchUpsertSourceBlocks(blocks: SourceBlockRecord[]): void {
+    if (this.db && !this.isFallback) {
+      this.db.exec("BEGIN TRANSACTION;");
+      try {
+        for (const b of blocks) {
+          this.upsertSourceBlock(b);
+        }
+        this.db.exec("COMMIT;");
+      } catch (err) {
+        this.db.exec("ROLLBACK;");
+        throw err;
+      }
+    } else {
+      for (const b of blocks) {
+        this.upsertSourceBlock(b);
+      }
+    }
+  }
+
+  // ── Story Beats Operations ────────────────────────────────────────────────
+
+  public upsertStoryBeat(beat: StoryBeatRecord): void {
+    const now = beat.created_at || new Date().toISOString();
+    const clean: StoryBeatRecord = {
+      ...beat,
+      source_unit_id: beat.source_unit_id ?? null,
+      participating_characters_json: beat.participating_characters_json || "[]",
+      location_id: beat.location_id ?? null,
+      story_time: beat.story_time ?? null,
+      is_flashback: beat.is_flashback ? 1 : 0,
+      preconditions_json: beat.preconditions_json ?? "{}",
+      post_state_changes_json: beat.post_state_changes_json ?? "{}",
+      source_citations_json: beat.source_citations_json ?? "[]",
+      is_mandatory: beat.is_mandatory ? 1 : 0,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO story_beats (
+            id, source_id, source_unit_id, series_id, beat_order,
+            name, description, participating_characters_json, location_id,
+            story_time, is_flashback, preconditions_json, post_state_changes_json,
+            source_citations_json, is_mandatory, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            beat_order = excluded.beat_order,
+            name = excluded.name,
+            description = excluded.description,
+            participating_characters_json = excluded.participating_characters_json,
+            location_id = excluded.location_id,
+            story_time = excluded.story_time,
+            is_flashback = excluded.is_flashback,
+            preconditions_json = excluded.preconditions_json,
+            post_state_changes_json = excluded.post_state_changes_json,
+            source_citations_json = excluded.source_citations_json,
+            is_mandatory = excluded.is_mandatory
+        `)
+        .run(
+          clean.id,
+          clean.source_id,
+          clean.source_unit_id,
+          clean.series_id,
+          clean.beat_order,
+          clean.name,
+          clean.description,
+          clean.participating_characters_json,
+          clean.location_id,
+          clean.story_time,
+          clean.is_flashback ? 1 : 0,
+          clean.preconditions_json,
+          clean.post_state_changes_json,
+          clean.source_citations_json,
+          clean.is_mandatory ? 1 : 0,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.story_beats.set(clean.id, clean);
+    }
+  }
+
+  public getStoryBeat(id: string): StoryBeatRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM story_beats WHERE id = ?").get(id);
+      return (row as StoryBeatRecord) ?? null;
+    }
+    return this.memoryStore.story_beats.get(id) ?? null;
+  }
+
+  public listStoryBeats(seriesId: string, sourceId?: string): StoryBeatRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM story_beats WHERE series_id = ?";
+      const params: any[] = [seriesId];
+      if (sourceId) {
+        query += " AND source_id = ?";
+        params.push(sourceId);
+      }
+      query += " ORDER BY beat_order ASC";
+      return (this.db.prepare(query).all(...params) as StoryBeatRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.story_beats.values())
+      .filter((b) => b.series_id === seriesId && (!sourceId || b.source_id === sourceId))
+      .sort((a, b) => a.beat_order - b.beat_order);
+  }
+
+  public batchUpsertStoryBeats(beats: StoryBeatRecord[]): void {
+    if (this.db && !this.isFallback) {
+      this.db.exec("BEGIN TRANSACTION;");
+      try {
+        for (const b of beats) {
+          this.upsertStoryBeat(b);
+        }
+        this.db.exec("COMMIT;");
+      } catch (err) {
+        this.db.exec("ROLLBACK;");
+        throw err;
+      }
+    } else {
+      for (const b of beats) {
+        this.upsertStoryBeat(b);
+      }
+    }
+  }
+
+  // ── Story Threads Operations ──────────────────────────────────────────────
+
+  public upsertStoryThread(thread: StoryThreadRecord): void {
+    const now = thread.created_at || new Date().toISOString();
+    const clean: StoryThreadRecord = {
+      ...thread,
+      setup_beat_id: thread.setup_beat_id ?? null,
+      payoff_beat_id: thread.payoff_beat_id ?? null,
+      dependencies_json: thread.dependencies_json ?? "[]",
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO story_threads (
+            id, series_id, name, thread_type, description,
+            setup_beat_id, payoff_beat_id, status, dependencies_json, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            thread_type = excluded.thread_type,
+            description = excluded.description,
+            setup_beat_id = excluded.setup_beat_id,
+            payoff_beat_id = excluded.payoff_beat_id,
+            status = excluded.status,
+            dependencies_json = excluded.dependencies_json
+        `)
+        .run(
+          clean.id,
+          clean.series_id,
+          clean.name,
+          clean.thread_type,
+          clean.description,
+          clean.setup_beat_id,
+          clean.payoff_beat_id,
+          clean.status,
+          clean.dependencies_json,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.story_threads.set(clean.id, clean);
+    }
+  }
+
+  public getStoryThread(id: string): StoryThreadRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM story_threads WHERE id = ?").get(id);
+      return (row as StoryThreadRecord) ?? null;
+    }
+    return this.memoryStore.story_threads.get(id) ?? null;
+  }
+
+  public listStoryThreads(seriesId: string, status?: string): StoryThreadRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM story_threads WHERE series_id = ?";
+      const params: any[] = [seriesId];
+      if (status) {
+        query += " AND status = ?";
+        params.push(status);
+      }
+      return (this.db.prepare(query).all(...params) as StoryThreadRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.story_threads.values()).filter(
+      (t) => t.series_id === seriesId && (!status || t.status === status)
+    );
+  }
+
+  // ── Knowledge States Operations ───────────────────────────────────────────
+
+  public recordKnowledgeState(
+    record: Omit<KnowledgeStateRecord, "id" | "created_at">
+  ): KnowledgeStateRecord {
+    const now = new Date().toISOString();
+    const clean: KnowledgeStateRecord = {
+      ...record,
+      entity_id: record.entity_id ?? null,
+      revealed_at_episode: record.revealed_at_episode ?? null,
+      revealed_at_beat_id: record.revealed_at_beat_id ?? null,
+      is_flashback: record.is_flashback ? 1 : 0,
+      notes: record.notes ?? null,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      const res = this.db
+        .prepare(`
+          INSERT INTO knowledge_states (
+            series_id, fact_key, fact_type, entity_id,
+            revealed_at_episode, revealed_at_beat_id, is_flashback, notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          clean.series_id,
+          clean.fact_key,
+          clean.fact_type,
+          clean.entity_id,
+          clean.revealed_at_episode,
+          clean.revealed_at_beat_id,
+          clean.is_flashback ? 1 : 0,
+          clean.notes,
+          clean.created_at
+        );
+      clean.id = Number(res?.lastInsertRowid);
+    } else {
+      clean.id = this.memoryStore.knowledge_states.length + 1;
+      this.memoryStore.knowledge_states.push(clean);
+    }
+    return clean;
+  }
+
+  public listKnowledgeStates(
+    seriesId: string,
+    entityId?: string,
+    factType?: string
+  ): KnowledgeStateRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM knowledge_states WHERE series_id = ?";
+      const params: any[] = [seriesId];
+      if (entityId) {
+        query += " AND entity_id = ?";
+        params.push(entityId);
+      }
+      if (factType) {
+        query += " AND fact_type = ?";
+        params.push(factType);
+      }
+      query += " ORDER BY id ASC";
+      return (this.db.prepare(query).all(...params) as KnowledgeStateRecord[]) ?? [];
+    }
+    return this.memoryStore.knowledge_states.filter(
+      (k) =>
+        k.series_id === seriesId &&
+        (!entityId || k.entity_id === entityId) &&
+        (!factType || k.fact_type === factType)
+    );
+  }
+
+  // ── Series Adaptation Plans Operations ────────────────────────────────────
+
+  public upsertSeriesPlan(plan: SeriesPlanRecord): void {
+    const now = new Date().toISOString();
+    const raw = plan as any;
+    const clean: SeriesPlanRecord = {
+      ...plan,
+      id: raw.id,
+      series_id: raw.series_id ?? raw.seriesId,
+      source_id: raw.source_id ?? raw.sourceId,
+      revision: raw.revision ?? 1,
+      target_episodes: raw.target_episodes ?? raw.targetEpisodes ?? 1,
+      target_duration_per_episode_sec:
+        raw.target_duration_per_episode_sec ?? raw.targetDurationPerEpisodeSec ?? 120,
+      pacing_preset: raw.pacing_preset ?? raw.pacingPreset ?? "standard",
+      status: raw.status ?? "draft",
+      warnings_json: raw.warnings_json ?? raw.warningsJson ?? "[]",
+      summary_json: raw.summary_json ?? raw.summaryJson ?? "{}",
+      created_at: raw.created_at || now,
+      updated_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO series_plans (
+            id, series_id, source_id, revision, target_episodes,
+            target_duration_per_episode_sec, pacing_preset, status,
+            warnings_json, summary_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            revision = excluded.revision,
+            target_episodes = excluded.target_episodes,
+            target_duration_per_episode_sec = excluded.target_duration_per_episode_sec,
+            pacing_preset = excluded.pacing_preset,
+            status = excluded.status,
+            warnings_json = excluded.warnings_json,
+            summary_json = excluded.summary_json,
+            updated_at = excluded.updated_at
+        `)
+        .run(
+          clean.id,
+          clean.series_id,
+          clean.source_id,
+          clean.revision,
+          clean.target_episodes,
+          clean.target_duration_per_episode_sec,
+          clean.pacing_preset,
+          clean.status,
+          clean.warnings_json,
+          clean.summary_json,
+          clean.created_at,
+          clean.updated_at
+        );
+    } else {
+      this.memoryStore.series_plans.set(clean.id, clean);
+    }
+  }
+
+  public getSeriesPlan(id: string): SeriesPlanRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM series_plans WHERE id = ?").get(id);
+      return (row as SeriesPlanRecord) ?? null;
+    }
+    return this.memoryStore.series_plans.get(id) ?? null;
+  }
+
+  public listSeriesPlans(seriesId: string): SeriesPlanRecord[] {
+    if (this.db && !this.isFallback) {
+      return (
+        (this.db
+          .prepare("SELECT * FROM series_plans WHERE series_id = ? ORDER BY revision DESC, updated_at DESC")
+          .all(seriesId) as SeriesPlanRecord[]) ?? []
+      );
+    }
+    return Array.from(this.memoryStore.series_plans.values())
+      .filter((p) => p.series_id === seriesId)
+      .sort((a, b) => b.revision - a.revision);
+  }
+
+  public getActiveSeriesPlan(seriesId: string): SeriesPlanRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db
+        .prepare(
+          "SELECT * FROM series_plans WHERE series_id = ? AND status IN ('active', 'approved') ORDER BY revision DESC LIMIT 1"
+        )
+        .get(seriesId);
+      if (row) return row as SeriesPlanRecord;
+      const latest = this.db
+        .prepare("SELECT * FROM series_plans WHERE series_id = ? ORDER BY revision DESC LIMIT 1")
+        .get(seriesId);
+      return (latest as SeriesPlanRecord) ?? null;
+    }
+    const matching = Array.from(this.memoryStore.series_plans.values())
+      .filter((p) => p.series_id === seriesId && ["active", "approved"].includes(p.status))
+      .sort((a, b) => b.revision - a.revision);
+    if (matching.length > 0) return matching[0];
+    const all = Array.from(this.memoryStore.series_plans.values())
+      .filter((p) => p.series_id === seriesId)
+      .sort((a, b) => b.revision - a.revision);
+    return all[0] ?? null;
+  }
+
+  // ── Planned Episodes Operations ───────────────────────────────────────────
+
+  public upsertPlannedEpisode(ep: PlannedEpisodeRecord): void {
+    const now = ep.created_at || new Date().toISOString();
+    const raw = ep as any;
+    const clean: PlannedEpisodeRecord = {
+      ...ep,
+      id: raw.id,
+      plan_id: raw.plan_id ?? raw.planId,
+      series_id: raw.series_id ?? raw.seriesId,
+      episode_number: raw.episode_number ?? raw.episodeNumber,
+      title: raw.title,
+      logline: raw.logline,
+      goal: ep.goal ?? null,
+      opening: ep.opening ?? null,
+      development: ep.development ?? null,
+      climax: ep.climax ?? null,
+      ending: ep.ending ?? null,
+      target_duration_sec: raw.target_duration_sec ?? raw.targetDurationSec ?? 120,
+      state_in_json: raw.state_in_json ?? raw.stateInJson ?? "{}",
+      planned_state_out_json: raw.planned_state_out_json ?? raw.plannedStateOutJson ?? "{}",
+      dependencies_json: raw.dependencies_json ?? raw.dependenciesJson ?? "[]",
+      estimated_scenes: raw.estimated_scenes ?? raw.estimatedScenes ?? 0,
+      estimated_shots: raw.estimated_shots ?? raw.estimatedShots ?? 0,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO planned_episodes (
+            id, plan_id, series_id, episode_number, title, logline,
+            goal, opening, development, climax, ending, target_duration_sec,
+            state_in_json, planned_state_out_json, dependencies_json,
+            estimated_scenes, estimated_shots, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            title = excluded.title,
+            logline = excluded.logline,
+            goal = excluded.goal,
+            opening = excluded.opening,
+            development = excluded.development,
+            climax = excluded.climax,
+            ending = excluded.ending,
+            target_duration_sec = excluded.target_duration_sec,
+            state_in_json = excluded.state_in_json,
+            planned_state_out_json = excluded.planned_state_out_json,
+            dependencies_json = excluded.dependencies_json,
+            estimated_scenes = excluded.estimated_scenes,
+            estimated_shots = excluded.estimated_shots
+        `)
+        .run(
+          clean.id,
+          clean.plan_id,
+          clean.series_id,
+          clean.episode_number,
+          clean.title,
+          clean.logline,
+          clean.goal,
+          clean.opening,
+          clean.development,
+          clean.climax,
+          clean.ending,
+          clean.target_duration_sec,
+          clean.state_in_json,
+          clean.planned_state_out_json,
+          clean.dependencies_json,
+          clean.estimated_scenes,
+          clean.estimated_shots,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.planned_episodes.set(clean.id, clean);
+    }
+  }
+
+  public getPlannedEpisode(planId: string, episodeNumber: number): PlannedEpisodeRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db
+        .prepare("SELECT * FROM planned_episodes WHERE plan_id = ? AND episode_number = ?")
+        .get(planId, episodeNumber);
+      return (row as PlannedEpisodeRecord) ?? null;
+    }
+    return (
+      Array.from(this.memoryStore.planned_episodes.values()).find(
+        (e) => e.plan_id === planId && e.episode_number === episodeNumber
+      ) ?? null
+    );
+  }
+
+  public listPlannedEpisodes(planId: string): PlannedEpisodeRecord[] {
+    if (this.db && !this.isFallback) {
+      return (
+        (this.db
+          .prepare("SELECT * FROM planned_episodes WHERE plan_id = ? ORDER BY episode_number ASC")
+          .all(planId) as PlannedEpisodeRecord[]) ?? []
+      );
+    }
+    return Array.from(this.memoryStore.planned_episodes.values())
+      .filter((e) => e.plan_id === planId)
+      .sort((a, b) => a.episode_number - b.episode_number);
+  }
+
+  public batchUpsertPlannedEpisodes(episodes: PlannedEpisodeRecord[]): void {
+    if (this.db && !this.isFallback) {
+      this.db.exec("BEGIN TRANSACTION;");
+      try {
+        for (const ep of episodes) {
+          this.upsertPlannedEpisode(ep);
+        }
+        this.db.exec("COMMIT;");
+      } catch (err) {
+        this.db.exec("ROLLBACK;");
+        throw err;
+      }
+    } else {
+      for (const ep of episodes) {
+        this.upsertPlannedEpisode(ep);
+      }
+    }
+  }
+
+  // ── Coverage Ledger Operations ────────────────────────────────────────────
+
+  public upsertCoverageLedger(cov: CoverageLedgerRecord): void {
+    const now = cov.created_at || new Date().toISOString();
+    const raw = cov as any;
+    const clean: CoverageLedgerRecord = {
+      ...cov,
+      id: raw.id,
+      plan_id: raw.plan_id ?? raw.planId,
+      series_id: raw.series_id ?? raw.seriesId,
+      source_id: raw.source_id ?? raw.sourceId,
+      source_unit_id: raw.source_unit_id ?? raw.sourceUnitId,
+      source_block_id: raw.source_block_id ?? raw.sourceBlockId ?? null,
+      episode_number: raw.episode_number ?? raw.episodeNumber ?? null,
+      scene_number: raw.scene_number ?? raw.sceneNumber ?? null,
+      adaptation_decision: raw.adaptation_decision ?? raw.adaptationDecision ?? "kept",
+      rationale: cov.rationale ?? null,
+      mandatory_beat_id: raw.mandatory_beat_id ?? raw.mandatoryBeatId ?? null,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO coverage_ledgers (
+            id, plan_id, series_id, source_id, source_unit_id, source_block_id,
+            episode_number, scene_number, adaptation_decision, rationale,
+            mandatory_beat_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            episode_number = excluded.episode_number,
+            scene_number = excluded.scene_number,
+            adaptation_decision = excluded.adaptation_decision,
+            rationale = excluded.rationale,
+            mandatory_beat_id = excluded.mandatory_beat_id
+        `)
+        .run(
+          clean.id,
+          clean.plan_id,
+          clean.series_id,
+          clean.source_id,
+          clean.source_unit_id,
+          clean.source_block_id,
+          clean.episode_number,
+          clean.scene_number,
+          clean.adaptation_decision,
+          clean.rationale,
+          clean.mandatory_beat_id,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.coverage_ledgers.set(clean.id, clean);
+    }
+  }
+
+  public listCoverageLedgers(planOrSeriesId: string): CoverageLedgerRecord[] {
+    if (this.db && !this.isFallback) {
+      return (
+        (this.db
+          .prepare(
+            "SELECT * FROM coverage_ledgers WHERE plan_id = ? OR series_id = ? ORDER BY source_unit_id ASC, episode_number ASC"
+          )
+          .all(planOrSeriesId, planOrSeriesId) as CoverageLedgerRecord[]) ?? []
+      );
+    }
+    return Array.from(this.memoryStore.coverage_ledgers.values()).filter(
+      (c) => c.plan_id === planOrSeriesId || c.series_id === planOrSeriesId
+    );
+  }
+
+  public batchUpsertCoverageLedgers(ledgers: CoverageLedgerRecord[]): void {
+    if (this.db && !this.isFallback) {
+      this.db.exec("BEGIN TRANSACTION;");
+      try {
+        for (const l of ledgers) {
+          this.upsertCoverageLedger(l);
+        }
+        this.db.exec("COMMIT;");
+      } catch (err) {
+        this.db.exec("ROLLBACK;");
+        throw err;
+      }
+    } else {
+      for (const l of ledgers) {
+        this.upsertCoverageLedger(l);
+      }
+    }
   }
 }
 

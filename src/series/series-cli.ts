@@ -13,6 +13,10 @@ import { RateCardManager } from "../orchestration/rate-card-manager.js";
 import { normalizeScript } from "./script-normalizer.js";
 import { StoryToScreenplayGenerator } from "./story-to-screenplay.js";
 import { ConceptArtGenerator } from "./concept-art-generator.js";
+import { SourceIngestionEngine, TextChunker, StoryAnalysisEngine } from "../novel/index.js";
+import { SeriesPlanner } from "./series-planner.js";
+import { CoverageLedgerManager } from "./coverage-ledger.js";
+import { SeasonOrchestrator } from "../orchestration/season-orchestrator.js";
 import { log } from "../utils/logger.js";
 
 function getArgValue(args: string[], flag: string, short?: string): string | undefined {
@@ -87,6 +91,10 @@ export function printSeriesUsage(): void {
 
 Lệnh chính:
   series:doctor     Kiểm tra môi trường hệ thống (FFmpeg, ffprobe, SQLite, GPU/ComfyUI)
+  series:ingest     Nhập tiểu thuyết/kịch bản nguồn vào hệ thống với băm SHA-256 & chỉ mục
+  series:analyze    Phân tích cấu trúc truyện: nhân vật, sự kiện beat, tuyến truyện, tri thức 4D
+  series:plan-series Lập kế hoạch chuyển thể toàn bộ loạt phim N tập kèm coverage ledger
+  series:season     Sản xuất hàng loạt toàn bộ mùa phim (Season) với điều phối tự động & resume
   series:plan       Dự toán chi phí sản xuất kịch bản theo bảng giá rate card từng provider
   series:init       Khởi tạo series mới với phong cách mỹ thuật và thông số chuẩn
   series:character  Đăng ký hoặc cập nhật nhân vật (khuôn mặt, trang phục, giọng nói)
@@ -936,6 +944,261 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         const cmd = process.platform === "win32" ? `start ${url}` : process.platform === "darwin" ? `open ${url}` : `xdg-open ${url}`;
         exec(cmd, () => {});
       }
+      break;
+    }
+
+    case "series:ingest": {
+      if (!seriesId) {
+        console.error("❌ Lỗi: Cần cung cấp --series <seriesId>.");
+        process.exit(2);
+      }
+      const inputFile = getArgValue(subArgs, "--input") || getArgValue(subArgs, "-i");
+      const inputText = getArgValue(subArgs, "--text");
+      const title = getArgValue(subArgs, "--title") || "Tác phẩm chuyển thể";
+      const author = getArgValue(subArgs, "--author");
+      const sourceType = (getArgValue(subArgs, "--type") as any) || "novel";
+
+      if (!inputFile && !inputText) {
+        console.error("❌ Lỗi: Cần cung cấp --input <path> hoặc --text <content>.");
+        process.exit(2);
+      }
+
+      let rawContent = "";
+      if (inputFile) {
+        if (!existsSync(inputFile)) {
+          console.error(`❌ File nguồn không tồn tại: ${inputFile}`);
+          process.exit(2);
+        }
+        rawContent = readFileSync(inputFile, "utf8");
+      } else {
+        rawContent = inputText!;
+      }
+
+      console.log(`\n📚 Đang nhập tác phẩm nguồn: "${title}" vào Series '${seriesId}'...`);
+      const ingestion = SourceIngestionEngine.ingestSourceText(
+        rawContent,
+        {
+          seriesId,
+          title,
+          author,
+          sourceType,
+        },
+        bible
+      );
+
+      console.log(`✅ Đã lưu tác phẩm nguồn: ${ingestion.work.id}`);
+      console.log(`   Phiên bản revision:   ${ingestion.work.current_revision}`);
+      console.log(`   SHA-256 content hash: ${ingestion.work.content_hash}`);
+
+      // Chunk into units & blocks
+      const units = TextChunker.splitIntoUnits(
+        ingestion.work.normalized_text,
+        ingestion.work.id,
+        seriesId,
+        ingestion.work.current_revision
+      );
+      bible.batchUpsertSourceUnits(units);
+
+      const blocks: any[] = [];
+      for (const u of units) {
+        blocks.push(...TextChunker.splitIntoBlocks(u, seriesId, ingestion.work.current_revision));
+      }
+      bible.batchUpsertSourceBlocks(blocks);
+
+      const coverage = TextChunker.verifyContentCoverage(
+        ingestion.work.normalized_text,
+        units
+      );
+
+      console.log(`   Số đơn vị (chương):   ${units.length}`);
+      console.log(`   Số khối đoạn văn:     ${blocks.length}`);
+      console.log(`   Zero-loss coverage:   ${coverage.hasZeroLoss ? "✅ BẢO TOÀN 100%" : "⚠️ CÓ KHOẢNG TRỐNG"}`);
+      break;
+    }
+
+    case "series:analyze": {
+      if (!seriesId) {
+        console.error("❌ Lỗi: Cần cung cấp --series <seriesId>.");
+        process.exit(2);
+      }
+
+      const explicitSource = getArgValue(subArgs, "--source");
+      let sourceWork = explicitSource ? bible.getSourceWork(explicitSource) : null;
+      if (!sourceWork) {
+        const works = bible.listSourceWorks(seriesId);
+        if (works.length > 0) sourceWork = works[0];
+      }
+
+      if (!sourceWork) {
+        console.error(`❌ Không tìm thấy tác phẩm nguồn nào cho series '${seriesId}'. Hãy chạy 'series:ingest' trước.`);
+        process.exit(2);
+      }
+
+      const units = bible.listSourceUnits(sourceWork.id);
+      const blocks = bible.listSourceBlocks(sourceWork.id);
+
+      console.log(`\n🔍 Đang phân tích câu chuyện: "${sourceWork.title}" (${units.length} chương, ${blocks.length} đoạn)...`);
+
+      const analysis = await StoryAnalysisEngine.analyzeWork(
+        sourceWork,
+        units,
+        blocks,
+        bible,
+        {
+          seriesId,
+          sourceId: sourceWork.id,
+        }
+      );
+
+      console.log(`✅ Phân tích hoàn tất:`);
+      console.log(
+        `   Nhân vật phát hiện:   ${analysis.characters.length} (nhân vật chính: ${
+          analysis.characters.filter((c) => c.role === "protagonist").map((c) => c.name).join(", ") || "N/A"
+        })`
+      );
+      console.log(
+        `   Nhịp truyện (beats):  ${analysis.beats.length} (${
+          analysis.beats.filter((b) => b.is_flashback === 1).length
+        } hồi tưởng)`
+      );
+      console.log(`   Tuyến truyện:         ${analysis.threads.length} (${analysis.threads.map((t) => t.name).join(", ")})`);
+      console.log(
+        `   Trạng thái tri thức:  ${analysis.knowledgeStates.length} bản ghi (nguồn, cải biên, nhân vật, khán giả)`
+      );
+      break;
+    }
+
+    case "series:plan-series": {
+      if (!seriesId) {
+        console.error("❌ Lỗi: Cần cung cấp --series <seriesId>.");
+        process.exit(2);
+      }
+
+      const explicitSource = getArgValue(subArgs, "--source");
+      let sourceWork = explicitSource ? bible.getSourceWork(explicitSource) : null;
+      if (!sourceWork) {
+        const works = bible.listSourceWorks(seriesId);
+        if (works.length > 0) sourceWork = works[0];
+      }
+
+      if (!sourceWork) {
+        console.error(`❌ Không tìm thấy tác phẩm nguồn nào cho series '${seriesId}'. Hãy chạy 'series:ingest' trước.`);
+        process.exit(2);
+      }
+
+      const targetEpisodes = getArgValue(subArgs, "--episodes")
+        ? parseInt(getArgValue(subArgs, "--episodes")!, 10)
+        : undefined;
+      const targetDuration = getArgValue(subArgs, "--duration")
+        ? parseFloat(getArgValue(subArgs, "--duration")!)
+        : undefined;
+      const totalDuration = getArgValue(subArgs, "--total-duration")
+        ? parseFloat(getArgValue(subArgs, "--total-duration")!)
+        : undefined;
+      const pacingPreset = (getArgValue(subArgs, "--pacing") as any) || "standard";
+
+      console.log(`\n📋 Đang lập kế hoạch chuyển thể cho '${sourceWork.title}' (Pacing: ${pacingPreset})...`);
+
+      const planner = new SeriesPlanner(bible);
+      const planResult = await planner.planSeries({
+        seriesId,
+        sourceId: sourceWork.id,
+        targetEpisodes,
+        targetDurationPerEpisodeSec: targetDuration,
+        targetTotalDurationSec: totalDuration,
+        pacingPreset,
+        status: "active",
+      });
+
+      console.log(`✅ Đã tạo Kế Hoạch Chuyển Thể: ${planResult.plan.id}`);
+      console.log(`   Số tập dự kiến:      ${planResult.episodes.length} tập`);
+      console.log(
+        `   Thời lượng mục tiêu: ${planResult.episodes[0]?.target_duration_sec}s / tập (Tổng: ${planResult.summary.estimatedTotalDurationSec}s)`
+      );
+      console.log(`   Sổ cái độ phủ:       ${planResult.coverageLedgers.length} bản ghi`);
+
+      const coverageMetrics = CoverageLedgerManager.calculateCoverage(seriesId, planResult.plan.id, bible);
+      console.log(`   Độ phủ chương:       ${coverageMetrics.unitCoveragePercent}%`);
+      console.log(`   Bảo toàn beat chính: ${coverageMetrics.mandatoryBeatsCoveragePercent}%`);
+
+      if (planResult.warnings.length > 0) {
+        console.log(`\n⚠️ Cảnh báo xung đột / điều chỉnh:`);
+        for (const w of planResult.warnings) {
+          console.log(`   - ${w}`);
+        }
+      }
+
+      console.log(`\nDanh sách các tập phim dự kiến:`);
+      for (const ep of planResult.episodes) {
+        console.log(`   [Tập ${ep.episode_number}] ${ep.title} (${ep.target_duration_sec}s)`);
+        console.log(`     Mục tiêu:   ${ep.goal}`);
+        console.log(`     Hồi kết:    ${ep.ending}`);
+      }
+      break;
+    }
+
+    case "series:season": {
+      if (!seriesId) {
+        console.error("❌ Lỗi: Cần cung cấp --series <seriesId>.");
+        process.exit(2);
+      }
+
+      const execMode = resolveExecutionMode(subArgs);
+      const planId = getArgValue(subArgs, "--plan");
+      const fromEp = getArgValue(subArgs, "--from") ? parseInt(getArgValue(subArgs, "--from")!, 10) : undefined;
+      const toEp = getArgValue(subArgs, "--to") ? parseInt(getArgValue(subArgs, "--to")!, 10) : undefined;
+      const episodesArg = getArgValue(subArgs, "--episodes");
+      const episodes = episodesArg
+        ? episodesArg.split(",").map((e) => parseInt(e.trim(), 10)).filter((n) => !isNaN(n))
+        : undefined;
+      const budgetCap = getArgValue(subArgs, "--budget-cap")
+        ? parseFloat(getArgValue(subArgs, "--budget-cap")!)
+        : undefined;
+      const outputDir = getArgValue(subArgs, "--output");
+      const continueOnError = !hasFlag(subArgs, "--stop-on-error");
+      const resume = !hasFlag(subArgs, "--no-resume");
+      const hierarchical = !hasFlag(subArgs, "--no-hierarchical");
+      const transitionDurationSec = parseTransitionSec(subArgs);
+
+      console.log(`\n🎥 Đang khởi chạy Điều Phối Toàn Mùa (Season Orchestration) cho series '${seriesId}'...`);
+      console.log(`   Provider:         ${execMode.provider} (Dry-run: ${execMode.dryRun})`);
+      console.log(`   Resume:           ${resume}`);
+      console.log(`   Continue on error: ${continueOnError}`);
+      console.log(`   Hierarchical:     ${hierarchical}`);
+
+      const orchestrator = new SeasonOrchestrator(bible);
+      const result = await orchestrator.produceSeason({
+        seriesId,
+        planId,
+        fromEpisode: fromEp,
+        toEpisode: toEp,
+        episodes,
+        outputBaseDir: outputDir,
+        provider: execMode.provider,
+        dryRun: execMode.dryRun,
+        mockTts: execMode.mockTts,
+        skipAudit: execMode.skipAudit,
+        skipRender: execMode.skipRender,
+        resume,
+        budgetCapUsd: budgetCap,
+        commitCanon: execMode.commitCanon,
+        continueOnError,
+        useHierarchicalAssembly: hierarchical,
+        transitionDurationSec,
+      });
+
+      console.log(`\n=======================================================`);
+      console.log(`🎬 KẾT QUẢ ĐIỀU PHỐI MÙA PHIM (SEASON EXECUTION SUMMARY)`);
+      console.log(`   Series:               ${seriesId}`);
+      console.log(`   Trạng thái tổng thể:  ${result.success ? "✅ THÀNH CÔNG" : "⚠️ CÓ TẬP LỖI HOẶC VƯỢT NGÂN SÁCH"}`);
+      console.log(`   Tập hoàn thành:       ${result.episodesCompleted} / ${result.totalTargetEpisodes}`);
+      console.log(`   Tập thất bại:         ${result.episodesFailed}`);
+      console.log(`   Tổng thời lượng:      ${result.totalDurationSec}s`);
+      console.log(`   Chi phí xác nhận:     $${result.totalCostUsd.toFixed(2)} USD`);
+      if (result.seasonMasterReportPath) {
+        console.log(`   Báo cáo Master:       ${result.seasonMasterReportPath}`);
+      }
+      console.log(`=======================================================\n`);
       break;
     }
 

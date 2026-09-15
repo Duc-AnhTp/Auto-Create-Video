@@ -4,7 +4,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { ScriptSchema, type Script } from "../render/script-schema.js";
 import { normalizeVietnameseForTts } from "../tts/vietnamese-normalizer.js";
-import { BibleManager } from "../bible/bible-manager.js";
+import { BibleManager, type EpisodeSummaryRecord, type NarrativeDelta } from "../bible/bible-manager.js";
+import { CoverageLedgerManager } from "../series/coverage-ledger.js";
 import { log } from "../utils/logger.js";
 
 export interface ReviewServerOptions {
@@ -699,7 +700,8 @@ function escapeHtml(str: unknown): string {
 export function renderSeriesDashboardHtml(
   script: any,
   takes: any[] = [],
-  seriesMetadata?: any
+  seriesMetadata?: any,
+  traceability?: any
 ): string {
   const scenes = script.scenes || [];
   const totalShots = scenes.reduce((acc: number, s: any) => acc + (s.shots?.length || 0), 0);
@@ -872,13 +874,87 @@ export function renderSeriesDashboardHtml(
       <h1>🎬 Episodic AI Film Series: ${escapeHtml(fullTitle)}</h1>
       <div class="subtitle">Tập ${escapeHtml(script.episodeNumber || 1)} &bull; Series ID: ${escapeHtml(script.seriesId || "N/A")} &bull; Tỷ lệ: ${escapeHtml(script.aspectRatio || "9:16")}</div>
     </div>
+    <div>
+      <button class="btn-sm" style="background:#10b981;font-size:13px;padding:8px 16px;cursor:pointer;" onclick="finalizeEpisode()">🚀 Phê Duyệt & Khóa Canon (Finalize)</button>
+    </div>
   </div>
+
+  ${
+    (script as any).generatorUsed === "rule_based"
+      ? `<div style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 18px;">⚠️</span>
+          <div>
+            <strong>[CẢNH BÁO FALLBACK RULE-BASED]</strong> Kịch bản tập phim này được tạo bằng thuật toán rule-based offline dự phòng${(script as any).fallbackReason ? ` (Lý do: <em>${escapeHtml((script as any).fallbackReason)}</em>)` : ""}. Nội dung và phân cảnh có thể mang tính mẫu khuôn.
+          </div>
+        </div>`
+      : ""
+  }
 
   <div class="stats-bar">
     <div class="stat-badge">Số Cảnh: <strong>${scenes.length}</strong></div>
     <div class="stat-badge">Tổng Số Cú Máy: <strong>${totalShots}</strong></div>
     <div class="stat-badge">Ước Tính Thời Lượng: <strong>${totalDuration}s</strong></div>
   </div>
+
+  ${
+    traceability && traceability.chain && traceability.chain.length > 0
+      ? `
+  <div style="background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 18px; margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 style="font-size: 15px; font-weight: 600; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
+        <span>🔗</span> Chuỗi Truy Xuất Tình Tiết Nguồn (Beat Traceability Chain)
+      </h2>
+      <span style="font-size: 12px; color: ${traceability.missingMandatoryBeats?.length === 0 ? '#10b981' : '#ef4444'}; font-weight: 600;">
+        Độ phủ Beat bắt buộc: ${traceability.coveredMandatoryBeats ?? 0}/${traceability.totalMandatoryBeats ?? 0}
+      </span>
+    </div>
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+        <thead>
+          <tr style="border-bottom: 1px solid #1f2d4d; color: #94a3b8;">
+            <th style="padding: 6px 10px;">Tình Tiết (Beat)</th>
+            <th style="padding: 6px 10px;">Loại</th>
+            <th style="padding: 6px 10px;">Tập</th>
+            <th style="padding: 6px 10px;">Cảnh</th>
+            <th style="padding: 6px 10px;">Cú Máy</th>
+            <th style="padding: 6px 10px;">Quyết Định</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${traceability.chain
+            .map(
+              (node: any) => `
+            <tr style="border-bottom: 1px solid #141f38;">
+              <td style="padding: 6px 10px;">
+                <strong>${escapeHtml(node.beatName)}</strong>
+                <div style="color: #64748b; font-size: 10px;">${escapeHtml(node.beatId)}</div>
+              </td>
+              <td style="padding: 6px 10px;">
+                ${
+                  node.isMandatory
+                    ? `<span style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 10px;">BẮT BUỘC</span>`
+                    : `<span style="background: #1e293b; color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-size: 10px;">Bổ trợ</span>`
+                }
+              </td>
+              <td style="padding: 6px 10px;">${node.episodeNumber !== null ? `Tập ${escapeHtml(node.episodeNumber)}` : "—"}</td>
+              <td style="padding: 6px 10px;">${node.sceneNumber !== null ? `Cảnh ${escapeHtml(node.sceneNumber)}` : (node.sceneId ? escapeHtml(node.sceneId) : "—")}</td>
+              <td style="padding: 6px 10px; font-family: monospace; color: #38bdf8;">${node.shotId ? escapeHtml(node.shotId) : "—"}</td>
+              <td style="padding: 6px 10px;">
+                <span style="padding: 2px 6px; border-radius: 4px; font-size: 10px; background: ${node.adaptationDecision === 'omitted' ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)'}; color: ${node.adaptationDecision === 'omitted' ? '#ef4444' : '#10b981'};">
+                  ${escapeHtml(node.adaptationDecision)}
+                </span>
+              </td>
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  `
+      : ""
+  }
 
   <div id="scenes-container">
     ${scenes
@@ -969,6 +1045,24 @@ export function renderSeriesDashboardHtml(
         alert('Lỗi kết nối: ' + err.message);
       }
     }
+    async function finalizeEpisode() {
+      if (!confirm('Bạn có chắc chắn muốn phê duyệt toàn bộ take và khóa Canon cho tập phim này?')) return;
+      try {
+        const res = await fetch('/api/series/finalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Đã hoàn tất phê duyệt và cập nhật Story Bible thành công!');
+          window.location.reload();
+        } else {
+          alert('Không thể hoàn tất: ' + (data.error || 'Còn shot chưa được phê duyệt.'));
+        }
+      } catch (err) {
+        alert('Lỗi kết nối: ' + err.message);
+      }
+    }
   </script>
 </body>
 </html>`;
@@ -983,6 +1077,14 @@ export interface SeriesReviewServerOptions {
   port?: number;
   autoOpen?: boolean;
   onReady?: (url: string) => void;
+  outputDir?: string;
+  closeOnFinalize?: boolean;
+  onFinalize?: (params: {
+    seriesId: string;
+    episodeNumber: number;
+    script: any;
+    bible: BibleManager;
+  }) => Promise<{ masterVideoPath?: string; canonCommitted?: boolean }>;
 }
 
 export type SeriesReviewServerPromise = Promise<void> & {
@@ -1032,8 +1134,12 @@ export function startSeriesReviewServer(options: SeriesReviewServerOptions): Ser
       if ((url === "/" || url === "/series") && method === "GET") {
         const takes = bible.listShotTakes(seriesId, episodeNumber);
         const meta = bible.getSeriesMetadata();
+        const activePlan = bible.getActiveSeriesPlan(seriesId);
+        const traceability = activePlan
+          ? CoverageLedgerManager.getTraceabilityChain(bible, seriesId, activePlan.id)
+          : null;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderSeriesDashboardHtml(script, takes, meta));
+        res.end(renderSeriesDashboardHtml(script, takes, meta, traceability));
         return;
       }
 
@@ -1059,10 +1165,88 @@ export function startSeriesReviewServer(options: SeriesReviewServerOptions): Ser
       }
 
       if (url === "/api/series/finalize" && method === "POST") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true }));
-        if (activeServer) {
-          activeServer.close(() => resolve());
+        try {
+          // 1. Completeness check: verify every shot has an approved take
+          const unapprovedShots: string[] = [];
+          for (const scene of script.scenes || []) {
+            for (const shot of scene.shots || []) {
+              const approved = bible.getApprovedTakeForShot(seriesId, episodeNumber, shot.shotId);
+              if (!approved) {
+                unapprovedShots.push(shot.shotId);
+              }
+            }
+          }
+
+          if (unapprovedShots.length > 0) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                success: false,
+                error: `Không thể finalize: Còn ${unapprovedShots.length} shot chưa có take được duyệt (${unapprovedShots.join(", ")}).`,
+                missingApprovals: unapprovedShots,
+              })
+            );
+            return;
+          }
+
+          // 2. Execute onFinalize callback if supplied, or default canon commit transaction
+          let finalizeResult: { masterVideoPath?: string; canonCommitted?: boolean } = {};
+          if (options.onFinalize) {
+            finalizeResult = await options.onFinalize({
+              seriesId,
+              episodeNumber,
+              script,
+              bible,
+            });
+          } else {
+            const summaryRecord: EpisodeSummaryRecord = {
+              series_id: seriesId,
+              episode_number: episodeNumber,
+              title: script.title,
+              logline: script.logline,
+              major_events: [script.logline || `Hoàn thành tập ${episodeNumber}`],
+              delta_changes: {},
+              created_at: new Date().toISOString(),
+            };
+            const delta: NarrativeDelta = {
+              major_events: [script.logline || `Hoàn thành tập ${episodeNumber}`],
+            };
+
+            // Transition lifecycle to approved by director before committing canon
+            bible.setEpisodeLifecycle({
+              seriesId,
+              episodeNumber,
+              status: "approved",
+              reviewNotes: "director_approval",
+              needsReview: false,
+            });
+
+            bible.commitEpisode(summaryRecord, delta, {
+              seriesId,
+              confirmationSource: "director_approval",
+              force: true,
+            });
+            finalizeResult.canonCommitted = true;
+          }
+
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              success: true,
+              missingApprovals: [],
+              masterPath: finalizeResult.masterVideoPath || null,
+              canonCommitted: finalizeResult.canonCommitted ?? true,
+            })
+          );
+
+          if (options.closeOnFinalize && activeServer) {
+            setTimeout(() => {
+              activeServer?.close(() => resolveMain());
+            }, 500);
+          }
+        } catch (err: any) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: false, error: err.message }));
         }
         return;
       }

@@ -484,4 +484,166 @@ CÚ MÁY 3 (wide, 4s): Tiếng sấm rền vang trên bầu trời Lạc Dương
       expect(screenplayResult.script.scenes[0].shots[0].shotType).toBe("establishing");
     });
   });
+
+  describe("7. Long-Form Pacing Presets & Proportional Distribution", () => {
+    it("supports mid_form_10m, long_form_20m, and broadcast_45m pacing profiles", async () => {
+      const planner = new SeriesPlanner(bible);
+
+      const midPlan = await planner.planSeries({
+        seriesId,
+        sourceId,
+        planId: "plan_mid_10m",
+        targetEpisodes: 2,
+        pacingPreset: "mid_form_10m",
+      });
+      expect(midPlan.episodes[0].target_duration_sec).toBe(600);
+      expect(midPlan.episodes[0].estimated_scenes).toBe(8);
+
+      const longPlan = await planner.planSeries({
+        seriesId,
+        sourceId,
+        planId: "plan_long_20m",
+        targetEpisodes: 2,
+        pacingPreset: "long_form_20m",
+      });
+      expect(longPlan.episodes[0].target_duration_sec).toBe(1200);
+      expect(longPlan.episodes[0].estimated_scenes).toBe(12);
+
+      const broadcastPlan = await planner.planSeries({
+        seriesId,
+        sourceId,
+        planId: "plan_broad_45m",
+        targetEpisodes: 2,
+        pacingPreset: "broadcast_45m",
+      });
+      expect(broadcastPlan.episodes[0].target_duration_sec).toBe(2700);
+      expect(broadcastPlan.episodes[0].estimated_scenes).toBe(20);
+    });
+
+    it("distributes units proportionally when episodes > chapters without unfair repetition of last chapter", async () => {
+      const planner = new SeriesPlanner(bible);
+      // 4 chapters into 6 episodes
+      const result = await planner.planSeries({
+        seriesId,
+        sourceId,
+        targetEpisodes: 6,
+        pacingPreset: "standard",
+      });
+
+      expect(result.episodes.length).toBe(6);
+
+      const units = bible.listSourceUnits(sourceId);
+      // Verify every unit appears in at least one episode
+      for (const u of units) {
+        const appearsInEpisodes = result.coverageLedgers.filter((c) => c.source_unit_id === u.id);
+        expect(appearsInEpisodes.length).toBeGreaterThanOrEqual(1);
+      }
+
+      // Verify Chapter 1 is in Episode 1 and Chapter 4 is in Episode 6
+      const ep1Ledgers = result.coverageLedgers.filter((c) => c.episode_number === 1);
+      expect(ep1Ledgers.some((c) => c.source_unit_id === units[0].id)).toBe(true);
+
+      const ep6Ledgers = result.coverageLedgers.filter((c) => c.episode_number === 6);
+      expect(ep6Ledgers.some((c) => c.source_unit_id === units[units.length - 1].id)).toBe(true);
+    });
+  });
+
+  describe("8. Series Plan Approval & Lifecycle State Machine", () => {
+    it("approves and activates series plans with audit gating", async () => {
+      const planner = new SeriesPlanner(bible);
+      const planResult = await planner.planSeries({
+        seriesId,
+        sourceId,
+        targetEpisodes: 3,
+      });
+
+      expect(planResult.plan.status).toBe("draft");
+
+      // Approval throws when not approved in production
+      expect(() => {
+        SeriesPlanner.ensurePlanApprovedForProduction(planResult.plan, false);
+      }).toThrow(/requires an 'approved' or 'active' plan/i);
+
+      // In mock mode, gating passes
+      expect(SeriesPlanner.ensurePlanApprovedForProduction(planResult.plan, true)).toBe(true);
+
+      // Approve plan
+      const approved = planner.approvePlan(planResult.plan.id, "director_nguyen");
+      expect(approved.status).toBe("approved");
+      expect(approved.summary_json).toContain("director_nguyen");
+
+      // Now production gating passes
+      expect(SeriesPlanner.ensurePlanApprovedForProduction(approved, false)).toBe(true);
+
+      // Activate plan
+      const activated = planner.activatePlan(planResult.plan.id);
+      expect(activated.status).toBe("active");
+    });
+  });
+
+  describe("9. End-to-End Beat-to-Shot Traceability", () => {
+    it("tracks full traceability chain from source beat -> episode -> scene -> shot", async () => {
+      const planner = new SeriesPlanner(bible);
+      const planResult = await planner.planSeries({
+        seriesId,
+        sourceId,
+        targetEpisodes: 3,
+      });
+
+      const generator = new StoryToScreenplayGenerator(bible);
+      await generator.generateEpisodeFromPlan({
+        seriesId,
+        planId: planResult.plan.id,
+        episodeNumber: 1,
+        skipAudit: true,
+      });
+
+      // Verify traceability chain
+      const report = CoverageLedgerManager.getTraceabilityChain(
+        bible,
+        seriesId,
+        planResult.plan.id
+      );
+
+      expect(report.totalBeats).toBeGreaterThan(0);
+      expect(report.chain.length).toBeGreaterThan(0);
+
+      // Check if shots were linked
+      const shotLinked = report.chain.filter((n) => n.shotId !== null);
+      expect(shotLinked.length).toBeGreaterThan(0);
+      for (const node of shotLinked) {
+        expect(node.episodeNumber).toBe(1);
+        expect(node.sceneId).toBeDefined();
+        expect(node.shotId).toBeDefined();
+      }
+    });
+
+    it("verifies beat coverage in hierarchical assembly", async () => {
+      const planner = new SeriesPlanner(bible);
+      const planResult = await planner.planSeries({
+        seriesId,
+        sourceId,
+        targetEpisodes: 3,
+      });
+
+      const generator = new StoryToScreenplayGenerator(bible);
+      await generator.generateEpisodeFromPlan({
+        seriesId,
+        planId: planResult.plan.id,
+        episodeNumber: 1,
+        skipAudit: true,
+      });
+
+      const assemblyAudit = CoverageLedgerManager.verifyBeatCoverageInAssembly(
+        bible,
+        seriesId,
+        planResult.plan.id,
+        1
+      );
+
+      // Mandatory beats in episode 1 should have shots linked
+      expect(assemblyAudit.missingBeatIds.length).toBe(0);
+      expect(assemblyAudit.isValid).toBe(true);
+    });
+  });
 });

@@ -4,6 +4,7 @@ import { normalizeScript, parseRawScreenplay } from "./script-normalizer.js";
 import type { EpisodicScript } from "./series-schema.js";
 import { ContextBuilder, type EpisodeGenerationContext } from "../novel/context-builder.js";
 import { CoverageLedgerManager } from "./coverage-ledger.js";
+import { log } from "../utils/logger.js";
 
 export interface StoryToScreenplayOptions {
   seriesId: string;
@@ -40,6 +41,7 @@ export interface GeneratedScreenplayResult {
   estimatedDurationSec: number;
   canonContextSummary: string;
   generatorUsed: "llm" | "rule_based";
+  fallbackReason?: string;
 }
 
 /**
@@ -86,20 +88,33 @@ export class StoryToScreenplayGenerator {
 
     let rawScreenplay = "";
     let generatorUsed: "llm" | "rule_based" = "rule_based";
+    let fallbackReason: string | undefined = undefined;
 
     // Try LLM if configured
     if (options.customLlmInvoker) {
       try {
         rawScreenplay = await this.generateViaCustomInvoker(options, canonSummary, episodeNumber);
         generatorUsed = "llm";
-      } catch (err) {
+      } catch (err: any) {
+        fallbackReason = `Custom LLM invoker error: ${err.message}`;
+        log.warn(`⚠️ [FALLBACK WARNING] ${fallbackReason}. Chuyển sang sinh kịch bản rule-based offline.`);
         rawScreenplay = this.generateRuleBasedScreenplay(options, canonSummary, episodeNumber);
       }
-    } else if (options.llmApiKey || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY) {
+    } else if (
+      options.llmApiKey ||
+      (options.llmProvider === "anthropic" && (options.llmApiKey || process.env.ANTHROPIC_API_KEY)) ||
+      (options.llmProvider === "openai" && (options.llmApiKey || process.env.OPENAI_API_KEY)) ||
+      (options.llmProvider === "gemini" && (options.llmApiKey || process.env.GEMINI_API_KEY)) ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      process.env.GEMINI_API_KEY
+    ) {
       try {
         rawScreenplay = await this.generateViaLlmApi(options, canonSummary, episodeNumber);
         generatorUsed = "llm";
-      } catch (err) {
+      } catch (err: any) {
+        fallbackReason = `LLM API call (${options.llmProvider || "auto"}) error: ${err.message}`;
+        log.warn(`⚠️ [FALLBACK WARNING] ${fallbackReason}. Chuyển sang sinh kịch bản rule-based offline.`);
         rawScreenplay = this.generateRuleBasedScreenplay(options, canonSummary, episodeNumber);
       }
     } else {
@@ -114,6 +129,10 @@ export class StoryToScreenplayGenerator {
       seriesId,
       skipAudit: options.skipAudit ?? false,
     });
+    script.generatorUsed = generatorUsed;
+    if (fallbackReason) {
+      script.fallbackReason = fallbackReason;
+    }
 
     // Compute stats
     let shotCount = 0;
@@ -155,6 +174,7 @@ export class StoryToScreenplayGenerator {
       estimatedDurationSec,
       canonContextSummary: canonSummary,
       generatorUsed,
+      fallbackReason,
     };
   }
 
@@ -191,6 +211,7 @@ export class StoryToScreenplayGenerator {
 
     let rawScreenplay = "";
     let generatorUsed: "llm" | "rule_based" = "rule_based";
+    let fallbackReason: string | undefined = undefined;
 
     if (options.customLlmInvoker) {
       try {
@@ -199,11 +220,16 @@ export class StoryToScreenplayGenerator {
           this.buildSystemPrompt()
         );
         generatorUsed = "llm";
-      } catch {
+      } catch (err: any) {
+        fallbackReason = `Custom LLM invoker error: ${err.message}`;
+        log.warn(`⚠️ [FALLBACK WARNING] ${fallbackReason}. Chuyển sang sinh kịch bản plan rule-based.`);
         rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
       }
     } else if (
       options.llmApiKey ||
+      (options.llmProvider === "anthropic" && (options.llmApiKey || process.env.ANTHROPIC_API_KEY)) ||
+      (options.llmProvider === "openai" && (options.llmApiKey || process.env.OPENAI_API_KEY)) ||
+      (options.llmProvider === "gemini" && (options.llmApiKey || process.env.GEMINI_API_KEY)) ||
       process.env.ANTHROPIC_API_KEY ||
       process.env.OPENAI_API_KEY ||
       process.env.GEMINI_API_KEY
@@ -221,7 +247,9 @@ export class StoryToScreenplayGenerator {
           episodeNumber
         );
         generatorUsed = "llm";
-      } catch {
+      } catch (err: any) {
+        fallbackReason = `LLM API call (${options.llmProvider || "auto"}) error: ${err.message}`;
+        log.warn(`⚠️ [FALLBACK WARNING] ${fallbackReason}. Chuyển sang sinh kịch bản plan rule-based.`);
         rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
       }
     } else {
@@ -234,6 +262,10 @@ export class StoryToScreenplayGenerator {
       seriesId,
       skipAudit: options.skipAudit ?? false,
     });
+    script.generatorUsed = generatorUsed;
+    if (fallbackReason) {
+      script.fallbackReason = fallbackReason;
+    }
 
     // Compute stats
     let shotCount = 0;
@@ -259,6 +291,87 @@ export class StoryToScreenplayGenerator {
       }
     }
 
+    // Traceability: Link scenes and shots back to assigned beats in coverage ledgers
+    const episodeBeats =
+      epContext.mandatoryBeats && epContext.mandatoryBeats.length > 0
+        ? epContext.mandatoryBeats
+        : this.bible.listStoryBeats(seriesId).filter((b) => b.source_unit_id && sourceUnitIds.includes(b.source_unit_id));
+
+    if (episodeBeats.length > 0 && script.scenes.length > 0) {
+      // Collect all shots across scenes
+      const allShotsWithScene: Array<{
+        scene: typeof script.scenes[0];
+        sIdx: number;
+        shot: typeof script.scenes[0]["shots"][0];
+      }> = [];
+      for (let sIdx = 0; sIdx < script.scenes.length; sIdx++) {
+        const scene = script.scenes[sIdx];
+        for (const shot of scene.shots) {
+          allShotsWithScene.push({ scene, sIdx, shot });
+        }
+      }
+
+      if (allShotsWithScene.length > 0) {
+        // First pass: ensure every beat in episodeBeats is linked to at least one shot
+        for (let bIdx = 0; bIdx < episodeBeats.length; bIdx++) {
+          const beat = episodeBeats[bIdx];
+          const shotTargetIdx = Math.min(
+            allShotsWithScene.length - 1,
+            Math.floor((bIdx / episodeBeats.length) * allShotsWithScene.length)
+          );
+          const { scene, sIdx, shot } = allShotsWithScene[shotTargetIdx];
+          const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
+          const isMandatory = Boolean(beat.is_mandatory);
+
+          try {
+            CoverageLedgerManager.recordEntry(this.bible, {
+              plan_id: planId,
+              series_id: seriesId,
+              source_id: beat.source_id,
+              source_unit_id: beat.source_unit_id || sourceUnitIds[0] || "unknown",
+              episode_number: episodeNumber,
+              scene_number: scene.sceneNumber || sIdx + 1,
+              scene_id: sceneId,
+              shot_id: shot.shotId,
+              beat_id: beat.id,
+              mandatory_beat_id: isMandatory ? beat.id : null,
+              adaptation_decision: "kept",
+              rationale: `Chuyển thể beat '${beat.name}' thành Cảnh ${scene.sceneNumber || sIdx + 1}, Cú máy ${shot.shotId}.`,
+            });
+          } catch {}
+        }
+
+        // Second pass: link remaining shots proportionally
+        for (let shIdx = 0; shIdx < allShotsWithScene.length; shIdx++) {
+          const { scene, sIdx, shot } = allShotsWithScene[shIdx];
+          const beatIdx = Math.min(
+            episodeBeats.length - 1,
+            Math.floor((shIdx / allShotsWithScene.length) * episodeBeats.length)
+          );
+          const beat = episodeBeats[beatIdx];
+          const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
+          const isMandatory = Boolean(beat.is_mandatory);
+
+          try {
+            CoverageLedgerManager.recordEntry(this.bible, {
+              plan_id: planId,
+              series_id: seriesId,
+              source_id: beat.source_id,
+              source_unit_id: beat.source_unit_id || sourceUnitIds[0] || "unknown",
+              episode_number: episodeNumber,
+              scene_number: scene.sceneNumber || sIdx + 1,
+              scene_id: sceneId,
+              shot_id: shot.shotId,
+              beat_id: beat.id,
+              mandatory_beat_id: isMandatory ? beat.id : null,
+              adaptation_decision: "kept",
+              rationale: `Chuyển thể beat '${beat.name}' thành Cảnh ${scene.sceneNumber || sIdx + 1}, Cú máy ${shot.shotId}.`,
+            });
+          } catch {}
+        }
+      }
+    }
+
     return {
       rawScreenplay,
       script,
@@ -269,6 +382,7 @@ export class StoryToScreenplayGenerator {
       estimatedDurationSec,
       canonContextSummary: epContext.formattedPrompt,
       generatorUsed,
+      fallbackReason,
     };
   }
 
@@ -445,9 +559,71 @@ export class StoryToScreenplayGenerator {
     const prompt = this.buildLlmPrompt(options, canonSummary, episodeNumber);
     const systemPrompt = this.buildSystemPrompt();
 
-    // 1. Anthropic Claude
-    const anthropicKey = options.llmApiKey || process.env.ANTHROPIC_API_KEY;
-    if (options.llmProvider === "anthropic" || anthropicKey) {
+    let provider = options.llmProvider;
+    let apiKey = options.llmApiKey;
+
+    // Detect provider from API key prefix if not explicitly specified
+    if (!provider && apiKey) {
+      if (apiKey.startsWith("AIza")) {
+        provider = "gemini";
+      } else if (apiKey.startsWith("sk-ant")) {
+        provider = "anthropic";
+      } else if (apiKey.startsWith("sk-")) {
+        provider = "openai";
+      }
+    }
+
+    // Resolve ambient keys and provider precedence
+    if (!provider) {
+      if (process.env.ANTHROPIC_API_KEY) {
+        provider = "anthropic";
+        apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
+      } else if (process.env.GEMINI_API_KEY) {
+        provider = "gemini";
+        apiKey = apiKey || process.env.GEMINI_API_KEY;
+      } else if (process.env.OPENAI_API_KEY) {
+        provider = "openai";
+        apiKey = apiKey || process.env.OPENAI_API_KEY;
+      }
+    } else if (!apiKey) {
+      if (provider === "anthropic") apiKey = process.env.ANTHROPIC_API_KEY;
+      else if (provider === "gemini") apiKey = process.env.GEMINI_API_KEY;
+      else if (provider === "openai") apiKey = process.env.OPENAI_API_KEY;
+    }
+
+    // 1. Google Gemini
+    if (provider === "gemini") {
+      if (!apiKey) throw new Error("GEMINI_API_KEY is missing for Gemini screenplay generation.");
+      const res = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
+        {
+          systemInstruction: {
+            parts: [{ text: systemPrompt }],
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096,
+          },
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          timeout: 45000,
+        }
+      );
+      return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+
+    // 2. Anthropic Claude
+    if (provider === "anthropic") {
+      if (!apiKey) throw new Error("ANTHROPIC_API_KEY is missing for Anthropic screenplay generation.");
       const res = await axios.post(
         "https://api.anthropic.com/v1/messages",
         {
@@ -458,7 +634,7 @@ export class StoryToScreenplayGenerator {
         },
         {
           headers: {
-            "x-api-key": anthropicKey,
+            "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
           },
@@ -468,9 +644,9 @@ export class StoryToScreenplayGenerator {
       return res.data?.content?.[0]?.text || "";
     }
 
-    // 2. OpenAI
-    const openAiKey = options.llmApiKey || process.env.OPENAI_API_KEY;
-    if (options.llmProvider === "openai" || openAiKey) {
+    // 3. OpenAI
+    if (provider === "openai") {
+      if (!apiKey) throw new Error("OPENAI_API_KEY is missing for OpenAI screenplay generation.");
       const res = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
@@ -482,7 +658,7 @@ export class StoryToScreenplayGenerator {
         },
         {
           headers: {
-            Authorization: `Bearer ${openAiKey}`,
+            Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
           timeout: 45000,
@@ -491,8 +667,7 @@ export class StoryToScreenplayGenerator {
       return res.data?.choices?.[0]?.message?.content || "";
     }
 
-    // Fallback to rule based
-    return this.generateRuleBasedScreenplay(options, canonSummary, episodeNumber);
+    throw new Error("No valid LLM provider or API key configured for screenplay generation.");
   }
 
   /**

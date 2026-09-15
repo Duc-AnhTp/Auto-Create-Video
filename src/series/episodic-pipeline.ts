@@ -54,6 +54,7 @@ import {
   type EffectiveRenderConfig,
   resolveEffectiveRenderConfig,
 } from "./series-schema.js";
+import { CoverageLedgerManager } from "./coverage-ledger.js";
 import { log } from "../utils/logger.js";
 import { createValidMockMp4File, hasFfmpeg } from "../assets/mock-media-generator.js";
 
@@ -1471,13 +1472,18 @@ export class EpisodicPipeline {
 
     // Collect approved takes for all shots in sequence (Take ID -> File -> QA -> Approval -> Assembly)
     shotVideos.length = 0;
+    const unapprovedShots: Array<{ shotId: string }> = [];
+
     for (const scene of script.scenes) {
       for (const shot of scene.shots) {
         const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
-        const vPath = approved?.local_path || job.shots[shot.shotId]?.videoPath;
+        if (!approved) {
+          unapprovedShots.push({ shotId: shot.shotId });
+        }
+        const vPath = approved?.local_path || (provider === "mock" ? job.shots[shot.shotId]?.videoPath : undefined);
         if (vPath && existsSync(vPath)) {
           shotVideos.push(vPath);
-        } else {
+        } else if (provider === "mock") {
           const fallbackPath = join(videoShotsDir, `${shot.shotId}.mp4`);
           if (existsSync(fallbackPath)) {
             shotVideos.push(fallbackPath);
@@ -1487,9 +1493,35 @@ export class EpisodicPipeline {
     }
 
     if (provider !== "mock") {
+      if (unapprovedShots.length > 0) {
+        throw new Error(
+          `[PRODUCTION GATEWAY ERROR] Cấm dựng master video: Còn ${unapprovedShots.length} shot chưa có take được phê duyệt (${unapprovedShots.map((s) => s.shotId).join(", ")}).`
+        );
+      }
       if (shotVideos.length === 0) {
         throw new Error("[PRODUCTION ERROR] Không có video shot nào được kết xuất thành công.");
       }
+
+      // Verify mandatory beat coverage in Story Bible if a series plan exists
+      try {
+        const activePlan = this.bible.getActiveSeriesPlan(seriesId);
+        if (activePlan) {
+          const beatAudit = CoverageLedgerManager.verifyBeatCoverageInAssembly(
+            this.bible,
+            seriesId,
+            activePlan.id,
+            script.episodeNumber
+          );
+          if (!beatAudit.isValid) {
+            for (const w of beatAudit.warnings) {
+              log.warn(`⚠️ [BEAT TRACEABILITY WARNING] ${w}`);
+            }
+          }
+        }
+      } catch (err: any) {
+        log.warn(`[BEAT AUDIT WARNING] Could not verify beat coverage: ${err.message}`);
+      }
+
       const tempFinalVideoPath = `${finalVideoPath}.tmp.mp4`;
       try {
         if (options.useHierarchicalAssembly) {
@@ -1499,7 +1531,7 @@ export class EpisodicPipeline {
             sceneId: sc.sceneId || `scene_${scIdx + 1}`,
             shots: sc.shots.map((sh) => {
               const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, sh.shotId);
-              const vPath = approved?.local_path || job?.shots[sh.shotId]?.videoPath || join(videoShotsDir, `${sh.shotId}.mp4`);
+              const vPath = approved?.local_path || "";
               return {
                 shotId: sh.shotId,
                 sceneId: sc.sceneId || `scene_${scIdx + 1}`,
@@ -1507,7 +1539,7 @@ export class EpisodicPipeline {
                 sourceClipPath: vPath,
                 rawDurationSec: sh.durationSec,
                 trimStartSec: 0,
-                isApproved: true,
+                isApproved: Boolean(approved ? approved.is_approved : false),
               };
             }),
           }));
@@ -1520,6 +1552,7 @@ export class EpisodicPipeline {
             aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
             scenes: scenesInput,
             outputDir: join(outputDir, "assembly"),
+            requireApprovedShots: true,
           });
 
           const manifest = await hierarchicalAssembler.assemble();
@@ -1711,15 +1744,15 @@ export class EpisodicPipeline {
     const isIsolatedTestCommit = options._testOnlyAllowMockCommit === true && isTestDatabase;
 
     const allShots = script.scenes.flatMap((s) => s.shots);
-    const unapprovedShots = allShots.filter((sh) => {
+    const unapprovedCanonShots = allShots.filter((sh) => {
       const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, sh.shotId);
       return !approved;
     });
 
     if (options.dryRun || options.skipRender || provider === "mock") {
       if (isIsolatedTestCommit) {
-        if (unapprovedShots.length > 0) {
-          log.warn(`  [CANON COMMIT BLOCKED] Môi trường test nhưng còn ${unapprovedShots.length} shot chưa có take được phê duyệt (${unapprovedShots.map(s => s.shotId).join(", ")}). Từ chối commit canon.`);
+        if (unapprovedCanonShots.length > 0) {
+          log.warn(`  [CANON COMMIT BLOCKED] Môi trường test nhưng còn ${unapprovedCanonShots.length} shot chưa có take được phê duyệt (${unapprovedCanonShots.map(s => s.shotId).join(", ")}). Từ chối commit canon.`);
           shouldCommit = false;
         } else if (faceQaFailCount > 0) {
           log.warn(`  [CANON COMMIT BLOCKED] Môi trường test nhưng còn ${faceQaFailCount} shot Face QA FAIL chưa được giải quyết.`);
@@ -1737,7 +1770,7 @@ export class EpisodicPipeline {
     } else {
       // Production path: Lifecycle record must exist and have status 'approved' (Requirement G.1 & G.2)
       if (!lifecycle) {
-        if (options.autoCommitCanon !== false && !options.requireApproval && unapprovedShots.length === 0 && faceQaFailCount === 0) {
+        if (options.autoCommitCanon !== false && !options.requireApproval && unapprovedCanonShots.length === 0 && faceQaFailCount === 0) {
           this.bible.setEpisodeLifecycle({
             seriesId,
             episodeNumber: script.episodeNumber,
@@ -1770,8 +1803,9 @@ export class EpisodicPipeline {
     }
 
     if (shouldCommit) {
-      const deltaObj = (options.narrativeDelta as any) || {};
-      const majorEvents = deltaObj.majorEvents || deltaObj.major_events || [script.logline];
+      const delta: NarrativeDelta = options.narrativeDelta || this.generateNarrativeDelta(script);
+      const deltaObj = (delta as any) || {};
+      const majorEvents = deltaObj.majorEvents || deltaObj.major_events || (script.logline ? [script.logline] : ["Hoàn thành tập phim"]);
       const summaryRecord: EpisodeSummaryRecord = {
         series_id: seriesId,
         episode_number: script.episodeNumber,
@@ -1780,10 +1814,6 @@ export class EpisodicPipeline {
         major_events: majorEvents,
         delta_changes: deltaObj,
         created_at: new Date().toISOString(),
-      };
-
-      const delta: NarrativeDelta = options.narrativeDelta || {
-        major_events: [script.logline],
       };
 
       this.bible.commitEpisode(summaryRecord, delta, { force: isIsolatedTestCommit, seriesId });
@@ -2349,6 +2379,86 @@ export class EpisodicPipeline {
       takeId,
       videoPath: takeLocalPath,
       isApproved: shouldApproveNewTake,
+    };
+  }
+
+  /**
+   * Generates structured narrative delta from the normalized script and Bible state
+   * when caller does not provide explicit options.narrativeDelta.
+   */
+  public generateNarrativeDelta(script: EpisodicScript): NarrativeDelta {
+    const majorEvents: string[] = [];
+    if (script.logline) {
+      majorEvents.push(script.logline);
+    }
+
+    const locationsVisited = new Set<string>();
+    const charactersAppeared = new Set<string>();
+    const wardrobeMap = new Map<string, string>();
+    const propsUsed = new Set<string>();
+
+    for (const scene of script.scenes) {
+      const loc = `${scene.locationName} (${scene.timeOfDay})`;
+      locationsVisited.add(loc);
+
+      // Extract significant action or dialogue from scene
+      const keyShots = (scene.shots || []).filter(
+        (s) => (s.dialogues && s.dialogues.length > 0) || s.actionDescription || s.visualPrompt
+      );
+      if (keyShots.length > 0) {
+        const primaryShot = keyShots[0];
+        const dialogueSummary =
+          primaryShot.dialogues && primaryShot.dialogues[0]?.text
+            ? `: "${primaryShot.dialogues[0].text.slice(0, 80)}"`
+            : "";
+        const action = primaryShot.actionDescription || primaryShot.visualPrompt || "";
+        majorEvents.push(
+          `Cảnh ${scene.sceneNumber} (${scene.locationName}): ${action.slice(0, 100)}${dialogueSummary}`
+        );
+      }
+
+      for (const char of scene.charactersPresent || []) {
+        charactersAppeared.add(char.characterId);
+        if (char.wardrobeId) {
+          wardrobeMap.set(char.characterId, char.wardrobeId);
+        }
+      }
+
+      for (const propId of scene.propsPresent || []) {
+        propsUsed.add(propId);
+      }
+    }
+
+    const characterStatusUpdates: Array<{ id: string; status: string; notes?: string }> = [];
+    for (const charId of charactersAppeared) {
+      characterStatusUpdates.push({
+        id: charId,
+        status: "alive",
+        notes: `Tham gia tập ${script.episodeNumber}: ${script.title}`,
+      });
+    }
+
+    const wardrobeUpdates: Array<{ characterId: string; wardrobeId: string }> = [];
+    for (const [charId, wId] of wardrobeMap.entries()) {
+      wardrobeUpdates.push({
+        characterId: charId,
+        wardrobeId: wId,
+      });
+    }
+
+    const worldStateUpdates: Record<string, unknown> = {
+      last_episode_number: script.episodeNumber,
+      last_episode_title: script.title,
+      locations_visited: Array.from(locationsVisited),
+      props_active: Array.from(propsUsed),
+      timestamp: new Date().toISOString(),
+    };
+
+    return {
+      major_events: majorEvents,
+      character_status_updates: characterStatusUpdates,
+      character_wardrobe_updates: wardrobeUpdates,
+      world_state_updates: worldStateUpdates,
     };
   }
 }

@@ -11,7 +11,13 @@ import type {
 } from "../bible/bible-manager.js";
 import { CoverageLedgerManager, type AdaptationDecision } from "./coverage-ledger.js";
 
-export type PacingPreset = "fast" | "standard" | "contemplative";
+export type PacingPreset =
+  | "fast"
+  | "standard"
+  | "contemplative"
+  | "mid_form_10m"
+  | "long_form_20m"
+  | "broadcast_45m";
 
 export interface PacingProfile {
   preset: PacingPreset;
@@ -47,6 +53,30 @@ export const PACING_PROFILES: Record<PacingPreset, PacingProfile> = {
     estimatedShotsPerScene: 3,
     beatsPerEpisodeRecommendation: 2,
   },
+  mid_form_10m: {
+    preset: "mid_form_10m",
+    targetDurationPerEpisodeSec: 600,
+    averageShotDurationSec: 5.0,
+    estimatedScenesPerEpisode: 8,
+    estimatedShotsPerScene: 4,
+    beatsPerEpisodeRecommendation: 6,
+  },
+  long_form_20m: {
+    preset: "long_form_20m",
+    targetDurationPerEpisodeSec: 1200,
+    averageShotDurationSec: 6.0,
+    estimatedScenesPerEpisode: 12,
+    estimatedShotsPerScene: 5,
+    beatsPerEpisodeRecommendation: 8,
+  },
+  broadcast_45m: {
+    preset: "broadcast_45m",
+    targetDurationPerEpisodeSec: 2700,
+    averageShotDurationSec: 6.0,
+    estimatedScenesPerEpisode: 20,
+    estimatedShotsPerScene: 5,
+    beatsPerEpisodeRecommendation: 12,
+  },
 };
 
 export interface SeriesPlannerOptions {
@@ -59,6 +89,10 @@ export interface SeriesPlannerOptions {
   targetTotalDurationSec?: number;
   pacingPreset?: PacingPreset;
   status?: "draft" | "approved" | "active" | "stale";
+  useLlm?: boolean;
+  customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
+  llmApiKey?: string;
+  llmProvider?: "anthropic" | "openai" | "gemini" | "custom";
 }
 
 export interface PlanGenerationResult {
@@ -343,6 +377,12 @@ export class SeriesPlanner {
    * Guarantees that EVERY unit is assigned to at least one episode,
    * and the final unit is always allocated to the final episode (zero silent drop).
    */
+  /**
+   * Allocates units into N episodes sequentially.
+   * Guarantees that EVERY unit is assigned to at least one episode,
+   * distributes units proportionally when targetEpisodes > units.length (no unfair repetition of last unit),
+   * and the final unit is always allocated to the final episode (zero silent drop).
+   */
   private allocateUnitsToEpisodes(
     units: SourceUnitRecord[],
     targetEpisodes: number
@@ -354,15 +394,41 @@ export class SeriesPlanner {
 
     if (units.length === 0) return allocations;
 
+    if (units.length === 1) {
+      for (let ep = 0; ep < targetEpisodes; ep++) {
+        allocations[ep].push(units[0]);
+      }
+      return allocations;
+    }
+
     if (units.length <= targetEpisodes) {
       // More episodes than or equal to units:
-      // Map 1 unit per episode until units exhausted, distribute evenly
-      for (let u = 0; u < units.length; u++) {
-        allocations[u].push(units[u]);
+      // Proportionally map units across episodes so units are evenly stretched
+      // without duplicating only the last chapter.
+      for (let ep = 0; ep < targetEpisodes; ep++) {
+        const uIdx = Math.min(
+          units.length - 1,
+          Math.floor((ep / targetEpisodes) * units.length)
+        );
+        allocations[ep].push(units[uIdx]);
       }
-      // If remaining episodes, link final unit or distribute expansion
-      for (let e = units.length; e < targetEpisodes; e++) {
-        allocations[e].push(units[units.length - 1]);
+
+      // Safety check: ensure every unit is present in at least one episode
+      for (let u = 0; u < units.length; u++) {
+        const present = allocations.some((epList) => epList.some((unit) => unit.id === units[u].id));
+        if (!present) {
+          const expectedEp = Math.min(
+            targetEpisodes - 1,
+            Math.round((u / units.length) * targetEpisodes)
+          );
+          allocations[expectedEp].push(units[u]);
+        }
+      }
+
+      // Safety check: ensure the last unit is definitely in the last episode
+      const lastUnit = units[units.length - 1];
+      if (!allocations[targetEpisodes - 1].some((u) => u.id === lastUnit.id)) {
+        allocations[targetEpisodes - 1].push(lastUnit);
       }
       return allocations;
     }
@@ -390,7 +456,8 @@ export class SeriesPlanner {
   }
 
   /**
-   * Synthesizes a structured episodic arc (Goal, Opening, Development, Climax, Ending).
+   * Synthesizes a structured episodic arc (Goal, Opening, Development, Climax, Ending)
+   * dynamically informed by actual story beats, turning points, and character motivations.
    */
   private synthesizeEpisodeArc(params: {
     episodeNumber: number;
@@ -423,6 +490,13 @@ export class SeriesPlanner {
       title += `Hành Trình Mới`;
     }
 
+    const sortedBeats = [...beats].sort((a, b) => (a.beat_order || 0) - (b.beat_order || 0));
+    const mandatoryBeats = sortedBeats.filter((b) => b.is_mandatory === 1);
+    const keyBeat = mandatoryBeats[mandatoryBeats.length - 1] || sortedBeats[sortedBeats.length - 1];
+    const firstBeat = sortedBeats[0];
+    const midBeat = sortedBeats.length > 2 ? sortedBeats[Math.floor(sortedBeats.length / 2)] : null;
+    const flashbackBeat = sortedBeats.find((b) => b.is_flashback === 1);
+
     let goal = "";
     let opening = "";
     let development = "";
@@ -431,31 +505,46 @@ export class SeriesPlanner {
     let logline = "";
 
     if (isFirst) {
-      goal = `Thiết lập thế giới câu chuyện, giới thiệu ${leadCharName} và kích hoạt biến cố khởi đầu.`;
-      opening = `Mở đầu không gian câu chuyện, ${leadCharName} xuất hiện giữa bối cảnh chính.`;
-      development = `Biến cố bất ngờ xảy ra buộc các nhân vật phải dấn thân hành động (${unitTitles}).`;
-      climax = beats[0]
-        ? `Xung đột đỉnh điểm: ${beats[0].name}.`
+      const openingHook = firstBeat ? ` (${firstBeat.name})` : "";
+      const climaxHook = keyBeat
+        ? `Xung đột đỉnh điểm: ${keyBeat.name}.`
         : `Phát hiện manh mối then chốt làm đảo lộn tình hình.`;
+      const flashbackNote = flashbackBeat
+        ? ` Ký ức trong quá khứ ùa về: '${flashbackBeat.name}'.`
+        : "";
+
+      goal = `Thiết lập thế giới câu chuyện, giới thiệu ${leadCharName} và kích hoạt biến cố khởi đầu${openingHook}.`;
+      opening = `Mở đầu không gian câu chuyện, ${leadCharName} xuất hiện giữa bối cảnh chính.`;
+      development = `Biến cố bất ngờ xảy ra buộc các nhân vật phải dấn thân hành động (${unitTitles}).${flashbackNote}`;
+      climax = climaxHook;
       ending = `Cliffhanger: Câu hỏi mở đầy kịch tính dẫn dắt sang tập kế tiếp.`;
       logline = `${leadCharName} đối mặt với biến cố đầu tiên trong '${sourceWork.title}', kích hoạt chuỗi sự kiện không thể cứu vãn.`;
     } else if (isLast) {
+      const climaxHook = keyBeat
+        ? `Đại cục ngã ngũ: ${keyBeat.name}.`
+        : `Đối đầu quyết định giải quyết xung đột cốt lõi.`;
+      const resolutionNote = firstBeat && firstBeat !== keyBeat
+        ? ` Khởi phát từ ${firstBeat.name}, mọi bí mật hội tụ về hồi kết.`
+        : "";
+
       goal = `Đẩy toàn bộ xung đột lên đỉnh điểm, đối đầu trực diện và giải quyết số phận các nhân vật.`;
       opening = `Căng thẳng bao trùm khi trận chiến hoặc nút thắt cuối cùng đến gần.`;
-      development = `Các bí mật trong quá khứ được lật mở toàn diện (${unitTitles}).`;
-      climax =
-        beats.length > 0
-          ? `Đại cục ngã ngũ: ${beats[beats.length - 1].name}.`
-          : `Đối đầu quyết định giải quyết xung đột cốt lõi.`;
+      development = `Các bí mật trong quá khứ được lật mở toàn diện (${unitTitles}).${resolutionNote}`;
+      climax = climaxHook;
       ending = `Khép lại hồi kết của câu chuyện với dư âm cảm xúc điện ảnh.`;
       logline = `Hồi kết kịch tính cho ${leadCharName} và các nhân vật khi chân tướng toàn bộ câu chuyện '${sourceWork.title}' được phơi bày.`;
     } else {
+      const climaxHook = keyBeat
+        ? `Điểm rơi kịch tính: ${keyBeat.name}.`
+        : `Một biến số bất ngờ thay đổi cục diện hiện tại.`;
+      const midHook = midBeat && midBeat !== keyBeat
+        ? ` Nút thắt '${midBeat.name}' làm thay đổi tình thế.`
+        : "";
+
       goal = `Đẩy mạnh điều tra/đối đầu, tăng tốc độ xung đột và làm sâu sắc mối quan hệ nhân vật.`;
       opening = `Tiếp nối hậu quả của tập trước, nhịp phim tăng dần.`;
-      development = `Dấn thân vào hiểm cảnh hoặc phát hiện thêm những bất ngờ mới (${unitTitles}).`;
-      climax = beats[0]
-        ? `Điểm rơi kịch tính: ${beats[0].name}.`
-        : `Một biến số bất ngờ thay đổi cục diện hiện tại.`;
+      development = `Dấn thân vào hiểm cảnh hoặc phát hiện thêm những bất ngờ mới (${unitTitles}).${midHook}`;
+      climax = climaxHook;
       ending = `Khép lại phân đoạn trong sự ngờ vực hoặc một lời cảnh báo gay cấn.`;
       logline = `Trong vòng xoáy của '${sourceWork.title}', ${leadCharName} dấn sâu vào thử thách cam go hơn.`;
     }
@@ -469,5 +558,89 @@ export class SeriesPlanner {
       climax,
       ending,
     };
+  }
+
+  /**
+   * Approves a series plan, allowing it to transition from draft to production-ready.
+   */
+  public approvePlan(planId: string, approvedBy: string = "human_operator"): SeriesPlanRecord {
+    const plan = this.bible.getSeriesPlan(planId);
+    if (!plan) {
+      throw new Error(`Plan '${planId}' not found in Story Bible.`);
+    }
+    let currentSummary: Record<string, unknown> = {};
+    try {
+      currentSummary = JSON.parse(plan.summary_json || "{}");
+    } catch {}
+
+    const updated: SeriesPlanRecord = {
+      ...plan,
+      status: "approved",
+      summary_json: JSON.stringify({
+        ...currentSummary,
+        approvedBy,
+        approvedAt: new Date().toISOString(),
+      }),
+      updated_at: new Date().toISOString(),
+    };
+    this.bible.upsertSeriesPlan(updated);
+    return updated;
+  }
+
+  /**
+   * Activates a series plan. Ensures the plan has been approved by human operator first,
+   * and ensures only one plan is active for the series at a time.
+   */
+  public activatePlan(planId: string, options?: { allowUnapproved?: boolean }): SeriesPlanRecord {
+    const plan = this.bible.getSeriesPlan(planId);
+    if (!plan) {
+      throw new Error(`Plan '${planId}' not found in Story Bible.`);
+    }
+
+    if (!options?.allowUnapproved && plan.status !== "approved" && plan.status !== "active") {
+      throw new Error(
+        `Cannot activate plan '${planId}' because it has status '${plan.status}'. A series plan must be 'approved' before it can be made active.`
+      );
+    }
+
+    // Deactivate previous active plans for this series
+    const existingPlans = this.bible.listSeriesPlans(plan.series_id);
+    for (const p of existingPlans) {
+      if (p.id !== planId && p.status === "active") {
+        this.bible.upsertSeriesPlan({
+          ...p,
+          status: "stale",
+          updated_at: new Date().toISOString(),
+        });
+      }
+    }
+
+    const updated: SeriesPlanRecord = {
+      ...plan,
+      status: "active",
+      updated_at: new Date().toISOString(),
+    };
+    this.bible.upsertSeriesPlan(updated);
+    return updated;
+  }
+
+  /**
+   * Enforces that a plan is approved or active before production/shooting commences.
+   * Throws an error in non-mock mode if the plan is still in draft or stale.
+   */
+  public static ensurePlanApprovedForProduction(
+    plan: SeriesPlanRecord | null,
+    isMock: boolean = false
+  ): boolean {
+    if (isMock) return true;
+    if (!plan) {
+      throw new Error("No series adaptation plan provided for production.");
+    }
+    if (plan.status !== "approved" && plan.status !== "active") {
+      throw new Error(
+        `Series plan '${plan.id}' has status '${plan.status}'. Production requires an 'approved' or 'active' plan.`
+      );
+    }
+    return true;
   }
 }

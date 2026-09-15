@@ -1,3 +1,4 @@
+import axios from "axios";
 import type {
   BibleManager,
   SourceWorkRecord,
@@ -9,13 +10,22 @@ import type {
   CharacterRecord,
 } from "../bible/bible-manager.js";
 import { TextChunker } from "./text-chunker.js";
+import {
+  LlmStoryAnalysisOutputSchema,
+  type LlmStoryAnalysisOutput,
+} from "./llm-analysis-schemas.js";
+import type { AnalysisReviewQueue } from "./analysis-review-queue.js";
+import { log } from "../utils/logger.js";
 
 export interface StoryAnalysisOptions {
   seriesId: string;
   sourceId: string;
   revision?: number;
   useLlm?: boolean;
-  llmProvider?: (prompt: string) => Promise<string>;
+  llmProvider?: ((prompt: string, systemPrompt?: string) => Promise<string>) | "anthropic" | "openai" | "gemini" | "custom";
+  customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
+  llmApiKey?: string;
+  reviewQueue?: AnalysisReviewQueue;
 }
 
 export interface ExtractedEntity {
@@ -34,6 +44,8 @@ export interface AnalysisResult {
   threads: StoryThreadRecord[];
   knowledgeStates: KnowledgeStateRecord[];
   warnings: string[];
+  generatorUsed?: "llm" | "rule_based";
+  fallbackReason?: string;
 }
 
 export class StoryAnalysisEngine {
@@ -62,6 +74,35 @@ export class StoryAnalysisEngine {
     const revision = options.revision || work.current_revision;
 
     const warnings: string[] = [];
+
+    // Attempt LLM Analysis if enabled or invoker/keys provided
+    const hasLlmConfig =
+      options.useLlm ||
+      typeof options.llmProvider === "function" ||
+      options.customLlmInvoker ||
+      (typeof options.llmProvider === "string" && options.llmProvider !== "custom") ||
+      Boolean(options.llmApiKey) ||
+      Boolean(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY);
+
+    if (options.useLlm !== false && hasLlmConfig) {
+      try {
+        const llmResult = await StoryAnalysisEngine.analyzeViaLlm(
+          work,
+          units,
+          blocks,
+          bible,
+          options
+        );
+        return {
+          ...llmResult,
+          generatorUsed: "llm",
+        };
+      } catch (err: any) {
+        const fallbackReason = `LLM Story Analysis failed: ${err.message}`;
+        log.warn(`⚠️ [FALLBACK WARNING] ${fallbackReason}. Chuyển sang trích xuất heuristic.`);
+        warnings.push(`[FALLBACK WARNING] ${fallbackReason}`);
+      }
+    }
 
     // Step 1: Extract characters with aliases and citations
     const extractedEntities = StoryAnalysisEngine.extractCharacters(
@@ -124,7 +165,360 @@ export class StoryAnalysisEngine {
       threads,
       knowledgeStates,
       warnings,
+      generatorUsed: "rule_based",
     };
+  }
+
+  /**
+   * LLM-driven structured story analysis with Zod validation and review queue integration.
+   */
+  public static async analyzeViaLlm(
+    work: SourceWorkRecord,
+    units: SourceUnitRecord[],
+    blocks: SourceBlockRecord[],
+    bible: BibleManager,
+    options: StoryAnalysisOptions
+  ): Promise<AnalysisResult> {
+    const seriesId = options.seriesId;
+    const sourceId = options.sourceId;
+
+    const systemPrompt = `Bạn là chuyên gia phân tích kịch bản và cấu trúc tự sự cho điện ảnh nhiều tập (Episodic AI Series).
+Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuất cấu trúc câu chuyện thành đối tượng JSON chuẩn xác.
+Đầu ra PHẢI là một khối JSON duy nhất hợp lệ, không chứa văn bản ngoài:
+{
+  "characters": [
+    {
+      "name": "Tên nhân vật",
+      "aliases": ["biệt danh", "danh hiệu"],
+      "role": "protagonist" | "antagonist" | "supporting" | "minor",
+      "visualSummary": "Mô tả ngoại hình ngắn gọn",
+      "personalityTraits": ["tính cách"],
+      "relationships": [{"targetName": "Tên người liên quan", "relationType": "quan hệ"}],
+      "confidenceScore": 0.9,
+      "needsHumanReview": false
+    }
+  ],
+  "beats": [
+    {
+      "name": "Tiêu đề beat",
+      "description": "Tóm tắt sự kiện cụ thể",
+      "participatingCharacters": ["Tên nhân vật tham gia"],
+      "storyTime": "Hiện tại" hoặc "Hồi tưởng 5 năm trước",
+      "isFlashback": false,
+      "importanceLevel": "mandatory" | "key" | "flavor",
+      "chapterIndex": 0,
+      "causalityPreconditions": ["Điều kiện tiên quyết"],
+      "causalityPostChanges": ["Biến chuyển sau beat"],
+      "confidenceScore": 0.9,
+      "needsHumanReview": false
+    }
+  ],
+  "threads": [
+    {
+      "name": "Tên tuyến truyện",
+      "threadType": "main" | "subplot" | "character_arc",
+      "description": "Mô tả tuyến truyện",
+      "setupBeatIndex": 0,
+      "payoffBeatIndex": 2,
+      "dependencies": [],
+      "confidenceScore": 0.9,
+      "needsHumanReview": false
+    }
+  ],
+  "knowledgeStates": [
+    {
+      "characterName": "Tên nhân vật",
+      "factKey": "key_fact",
+      "factDescription": "Mô tả sự thật nhân vật biết",
+      "revealedAtBeatIndex": 0,
+      "isSecret": false
+    }
+  ]
+}`;
+
+    const unitSummaries = units.map((u, i) => `=== PHẦN ${i + 1}: ${u.title} ===\n${u.raw_text.slice(0, 3000)}`).join("\n\n");
+    const userPrompt = `Hãy phân tích toàn bộ tác phẩm sau để xây dựng Story Bible cho series "${seriesId}":\nTác phẩm: ${work.title}\n\nNội dung các chương:\n${unitSummaries}`;
+
+    let rawOutput = "";
+    if (options.customLlmInvoker) {
+      rawOutput = await options.customLlmInvoker(userPrompt, systemPrompt);
+    } else if (typeof options.llmProvider === "function") {
+      rawOutput = await options.llmProvider(userPrompt, systemPrompt);
+    } else {
+      rawOutput = await StoryAnalysisEngine.callLlmApi(userPrompt, systemPrompt, options);
+    }
+
+    // Strip markdown formatting if any
+    const cleanJson = StoryAnalysisEngine.stripMarkdownFences(rawOutput);
+    const parsed = JSON.parse(cleanJson);
+    const validated: LlmStoryAnalysisOutput = LlmStoryAnalysisOutputSchema.parse(parsed);
+
+    // Process Characters
+    const characters: CharacterRecord[] = [];
+    const charNameToIdMap = new Map<string, string>();
+
+    // Pre-pass: register all character names & aliases to IDs to resolve forward relationship references
+    for (let i = 0; i < validated.characters.length; i++) {
+      const char = validated.characters[i];
+      const slug = char.name
+        .toLowerCase()
+        .replace(/đ/g, "d")
+        .replace(/Đ/g, "d")
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 24);
+      const id = `char_${slug || `person_${i + 1}`}`;
+      charNameToIdMap.set(char.name, id);
+      for (const a of char.aliases) {
+        charNameToIdMap.set(a, id);
+      }
+    }
+
+    for (let i = 0; i < validated.characters.length; i++) {
+      const char = validated.characters[i];
+      const id = charNameToIdMap.get(char.name)!;
+
+      const relations = char.relationships.map((r) => ({
+        targetId: charNameToIdMap.get(r.targetName) || r.targetName,
+        relationType: r.relationType,
+      }));
+
+      const record: CharacterRecord = {
+        id,
+        name: char.name,
+        role: char.role,
+        series_id: seriesId,
+        visual_summary: char.visualSummary || `Nhân vật ${char.name} trong tác phẩm.`,
+        personality_traits: char.personalityTraits.length > 0 ? char.personalityTraits : char.aliases,
+        voice_profile_id: `voice_${id}`,
+        status: "alive",
+        aliases_json: JSON.stringify(char.aliases),
+        relationship_graph_json: JSON.stringify(relations),
+      };
+
+      if (options.reviewQueue) {
+        options.reviewQueue.enqueue("character", seriesId, char, {
+          id: `rev_${id}`,
+          sourceId,
+          confidenceScore: char.confidenceScore,
+        });
+      }
+
+      bible.upsertCharacter(record);
+      characters.push(record);
+    }
+
+    // Process Beats
+    const beats: StoryBeatRecord[] = [];
+    for (let i = 0; i < validated.beats.length; i++) {
+      const beat = validated.beats[i];
+      const beatId = `beat_${sourceId}_b${String(i + 1).padStart(3, "0")}`;
+      const participantIds = beat.participatingCharacters.map(
+        (name) => charNameToIdMap.get(name) || name
+      );
+
+      // Determine corresponding source unit across multi-chapter novels
+      let assignedUnit = units[0];
+      if (typeof beat.chapterIndex === "number" && units[beat.chapterIndex]) {
+        assignedUnit = units[beat.chapterIndex];
+      } else if (beat.sourceSpanStart !== undefined) {
+        const found = units.find(
+          (u) => beat.sourceSpanStart! >= u.char_start && beat.sourceSpanStart! <= u.char_end
+        );
+        if (found) assignedUnit = found;
+      } else if (units.length > 1) {
+        const uIdx = Math.min(
+          units.length - 1,
+          Math.floor((i / validated.beats.length) * units.length)
+        );
+        assignedUnit = units[uIdx];
+      }
+
+      const record: StoryBeatRecord = {
+        id: beatId,
+        source_id: sourceId,
+        source_unit_id: assignedUnit?.id || units[0]?.id || null,
+        series_id: seriesId,
+        beat_order: i + 1,
+        name: beat.name,
+        description: beat.description,
+        participating_characters_json: JSON.stringify(participantIds),
+        location_id: null,
+        story_time: beat.storyTime,
+        is_flashback: beat.isFlashback ? 1 : 0,
+        preconditions_json: JSON.stringify(beat.causalityPreconditions),
+        post_state_changes_json: JSON.stringify(beat.causalityPostChanges),
+        source_span_start: beat.sourceSpanStart,
+        source_span_end: beat.sourceSpanEnd,
+        source_citations_json: JSON.stringify([
+          {
+            charStart: beat.sourceSpanStart ?? 0,
+            charEnd: beat.sourceSpanEnd ?? 0,
+            excerpt: beat.description.slice(0, 150),
+          },
+        ]),
+        is_mandatory: beat.importanceLevel === "mandatory" ? 1 : 0,
+        created_at: new Date().toISOString(),
+      };
+
+      if (options.reviewQueue) {
+        options.reviewQueue.enqueue("beat", seriesId, beat, {
+          id: `rev_${beatId}`,
+          sourceId,
+          confidenceScore: beat.confidenceScore,
+        });
+      }
+
+      beats.push(record);
+    }
+    bible.batchUpsertStoryBeats(beats);
+
+    // Process Threads
+    const threads: StoryThreadRecord[] = [];
+    for (let i = 0; i < validated.threads.length; i++) {
+      const t = validated.threads[i];
+      const setupBeatId =
+        t.setupBeatIndex !== undefined && beats[t.setupBeatIndex]
+          ? beats[t.setupBeatIndex].id
+          : beats[0]?.id || null;
+      const payoffBeatId =
+        t.payoffBeatIndex !== undefined && beats[t.payoffBeatIndex]
+          ? beats[t.payoffBeatIndex].id
+          : null;
+
+      const record: StoryThreadRecord = {
+        id: `thread_${seriesId}_${i + 1}`,
+        series_id: seriesId,
+        name: t.name,
+        thread_type: t.threadType,
+        description: t.description,
+        setup_beat_id: setupBeatId,
+        payoff_beat_id: payoffBeatId,
+        status: "open",
+        dependencies_json: JSON.stringify(t.dependencies),
+        created_at: new Date().toISOString(),
+      };
+
+      if (options.reviewQueue) {
+        options.reviewQueue.enqueue("thread", seriesId, t, {
+          id: `rev_${record.id}`,
+          sourceId,
+          confidenceScore: t.confidenceScore,
+        });
+      }
+
+      bible.upsertStoryThread(record);
+      threads.push(record);
+    }
+
+    // Process Knowledge States
+    const knowledgeStates: KnowledgeStateRecord[] = [];
+    for (const ks of validated.knowledgeStates) {
+      const charId = charNameToIdMap.get(ks.characterName) || ks.characterName;
+      const beatId =
+        ks.revealedAtBeatIndex !== undefined && beats[ks.revealedAtBeatIndex]
+          ? beats[ks.revealedAtBeatIndex].id
+          : null;
+
+      const state: Omit<KnowledgeStateRecord, "id" | "created_at"> = {
+        series_id: seriesId,
+        fact_key: ks.factKey,
+        fact_type: ks.isSecret ? "adaptation_decision" : "character_knowledge",
+        entity_id: charId,
+        revealed_at_episode: null,
+        revealed_at_beat_id: beatId,
+        is_flashback: 0,
+        notes: ks.factDescription,
+      };
+      bible.recordKnowledgeState(state);
+    }
+
+    return {
+      characters,
+      beats,
+      threads,
+      knowledgeStates,
+      warnings: [],
+    };
+  }
+
+  private static async callLlmApi(
+    prompt: string,
+    systemPrompt: string,
+    options: StoryAnalysisOptions
+  ): Promise<string> {
+    const explicitProvider = typeof options.llmProvider === "string" ? options.llmProvider : undefined;
+    const anthropicKey = options.llmApiKey || process.env.ANTHROPIC_API_KEY;
+    const openAiKey = options.llmApiKey || process.env.OPENAI_API_KEY;
+    const geminiKey = options.llmApiKey || process.env.GEMINI_API_KEY;
+
+    if (explicitProvider === "gemini" || (!explicitProvider && geminiKey && !anthropicKey && !openAiKey)) {
+      if (!geminiKey) throw new Error("GEMINI_API_KEY is missing for Gemini story analysis.");
+      const res = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`,
+        {
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
+        },
+        { headers: { "Content-Type": "application/json" }, timeout: 60000 }
+      );
+      return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
+
+    if (explicitProvider === "anthropic" || (!explicitProvider && anthropicKey)) {
+      if (!anthropicKey) throw new Error("ANTHROPIC_API_KEY is missing for Anthropic story analysis.");
+      const res = await axios.post(
+        "https://api.anthropic.com/v1/messages",
+        {
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 8000,
+          system: systemPrompt,
+          messages: [{ role: "user", content: prompt }],
+        },
+        {
+          headers: {
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          timeout: 60000,
+        }
+      );
+      return res.data?.content?.[0]?.text || "";
+    }
+
+    if (explicitProvider === "openai" || (!explicitProvider && openAiKey)) {
+      if (!openAiKey) throw new Error("OPENAI_API_KEY is missing for OpenAI story analysis.");
+      const res = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${openAiKey}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 60000,
+        }
+      );
+      return res.data?.choices?.[0]?.message?.content || "";
+    }
+
+    throw new Error("No valid LLM provider or API key configured for story analysis.");
+  }
+
+  private static stripMarkdownFences(text: string): string {
+    const trimmed = text.trim();
+    const jsonMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return jsonMatch ? jsonMatch[1].trim() : trimmed;
   }
 
   /**

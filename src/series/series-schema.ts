@@ -158,6 +158,8 @@ export const EpisodicScriptSchema = z
     fps: z.number().int().positive().default(30),
     bgm: z.string().optional(),
     unresolvedCharacters: z.array(z.string()).default([]),
+    generatorUsed: z.enum(["llm", "rule_based"]).optional(),
+    fallbackReason: z.string().optional(),
     scenes: z.array(SceneSchema).min(1, "Episode must contain at least one scene"),
   })
   .transform((script) => {

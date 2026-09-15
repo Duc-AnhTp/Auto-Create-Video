@@ -465,6 +465,8 @@ export interface StoryBeatRecord {
   preconditions_json?: string;
   post_state_changes_json?: string;
   source_citations_json?: string; // [{ charStart, charEnd, excerpt }]
+  source_span_start?: number | null;
+  source_span_end?: number | null;
   is_mandatory: boolean | number;
   created_at?: string;
 }
@@ -543,6 +545,9 @@ export interface CoverageLedgerRecord {
   adaptation_decision: "kept" | "compressed" | "moved" | "omitted" | "expanded";
   rationale?: string | null;
   mandatory_beat_id?: string | null;
+  beat_id?: string | null;
+  scene_id?: string | null;
+  shot_id?: string | null;
   created_at?: string;
 }
 
@@ -1107,6 +1112,8 @@ export class BibleManager {
         preconditions_json TEXT NOT NULL DEFAULT '{}',
         post_state_changes_json TEXT NOT NULL DEFAULT '{}',
         source_citations_json TEXT NOT NULL DEFAULT '[]',
+        source_span_start INTEGER,
+        source_span_end INTEGER,
         is_mandatory INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
       );
@@ -1193,12 +1200,22 @@ export class BibleManager {
         adaptation_decision TEXT NOT NULL DEFAULT 'kept',
         rationale TEXT,
         mandatory_beat_id TEXT,
+        beat_id TEXT,
+        scene_id TEXT,
+        shot_id TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_lookup ON coverage_ledgers (plan_id, source_unit_id, episode_number);
       CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_series ON coverage_ledgers (series_id, source_id);
     `);
+
+    // Safe column additions if tables already existed
+    try { this.db.exec("ALTER TABLE story_beats ADD COLUMN source_span_start INTEGER;"); } catch {}
+    try { this.db.exec("ALTER TABLE story_beats ADD COLUMN source_span_end INTEGER;"); } catch {}
+    try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN beat_id TEXT;"); } catch {}
+    try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN scene_id TEXT;"); } catch {}
+    try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN shot_id TEXT;"); } catch {}
   }
 
   private applySchemaSql() {
@@ -5053,6 +5070,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       preconditions_json: beat.preconditions_json ?? "{}",
       post_state_changes_json: beat.post_state_changes_json ?? "{}",
       source_citations_json: beat.source_citations_json ?? "[]",
+      source_span_start: beat.source_span_start ?? null,
+      source_span_end: beat.source_span_end ?? null,
       is_mandatory: beat.is_mandatory ? 1 : 0,
       created_at: now,
     };
@@ -5064,8 +5083,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
             id, source_id, source_unit_id, series_id, beat_order,
             name, description, participating_characters_json, location_id,
             story_time, is_flashback, preconditions_json, post_state_changes_json,
-            source_citations_json, is_mandatory, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            source_citations_json, source_span_start, source_span_end, is_mandatory, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             beat_order = excluded.beat_order,
             name = excluded.name,
@@ -5077,6 +5096,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
             preconditions_json = excluded.preconditions_json,
             post_state_changes_json = excluded.post_state_changes_json,
             source_citations_json = excluded.source_citations_json,
+            source_span_start = excluded.source_span_start,
+            source_span_end = excluded.source_span_end,
             is_mandatory = excluded.is_mandatory
         `)
         .run(
@@ -5094,6 +5115,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           clean.preconditions_json,
           clean.post_state_changes_json,
           clean.source_citations_json,
+          clean.source_span_start ?? null,
+          clean.source_span_end ?? null,
           clean.is_mandatory ? 1 : 0,
           clean.created_at
         );
@@ -5526,6 +5549,9 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       adaptation_decision: raw.adaptation_decision ?? raw.adaptationDecision ?? "kept",
       rationale: cov.rationale ?? null,
       mandatory_beat_id: raw.mandatory_beat_id ?? raw.mandatoryBeatId ?? null,
+      beat_id: raw.beat_id ?? raw.beatId ?? null,
+      scene_id: raw.scene_id ?? raw.sceneId ?? null,
+      shot_id: raw.shot_id ?? raw.shotId ?? null,
       created_at: now,
     };
 
@@ -5535,14 +5561,17 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           INSERT INTO coverage_ledgers (
             id, plan_id, series_id, source_id, source_unit_id, source_block_id,
             episode_number, scene_number, adaptation_decision, rationale,
-            mandatory_beat_id, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            mandatory_beat_id, beat_id, scene_id, shot_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             episode_number = excluded.episode_number,
             scene_number = excluded.scene_number,
             adaptation_decision = excluded.adaptation_decision,
             rationale = excluded.rationale,
-            mandatory_beat_id = excluded.mandatory_beat_id
+            mandatory_beat_id = excluded.mandatory_beat_id,
+            beat_id = excluded.beat_id,
+            scene_id = excluded.scene_id,
+            shot_id = excluded.shot_id
         `)
         .run(
           clean.id,
@@ -5556,6 +5585,9 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           clean.adaptation_decision,
           clean.rationale,
           clean.mandatory_beat_id,
+          clean.beat_id ?? null,
+          clean.scene_id ?? null,
+          clean.shot_id ?? null,
           clean.created_at
         );
     } else {

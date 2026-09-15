@@ -47,6 +47,29 @@ export interface CoverageMetrics {
   violations: CoverageAuditViolation[];
 }
 
+export interface BeatTraceabilityNode {
+  beatId: string;
+  beatName: string;
+  isMandatory: boolean;
+  sourceUnitId: string | null;
+  episodeNumber: number | null;
+  sceneNumber: number | null;
+  sceneId: string | null;
+  shotId: string | null;
+  adaptationDecision: AdaptationDecision | "unmapped";
+  rationale: string | null;
+}
+
+export interface BeatTraceabilityReport {
+  seriesId: string;
+  planId: string;
+  totalBeats: number;
+  totalMandatoryBeats: number;
+  coveredMandatoryBeats: number;
+  missingMandatoryBeats: string[];
+  chain: BeatTraceabilityNode[];
+}
+
 /**
  * CoverageLedgerManager
  *
@@ -86,6 +109,9 @@ export class CoverageLedgerManager {
       adaptation_decision: entry.adaptation_decision,
       rationale: entry.rationale ?? null,
       mandatory_beat_id: entry.mandatory_beat_id ?? null,
+      beat_id: entry.beat_id ?? entry.mandatory_beat_id ?? null,
+      scene_id: entry.scene_id ?? null,
+      shot_id: entry.shot_id ?? null,
       created_at: new Date().toISOString(),
     };
 
@@ -373,6 +399,134 @@ export class CoverageLedgerManager {
       uncoveredUnitIds,
       uncoveredBeatIds,
       violations,
+    };
+  }
+
+  /**
+   * Builds an end-to-end traceability report linking:
+   * source_unit -> beat -> episode -> scene -> shot
+   */
+  public static getTraceabilityChain(
+    bible: BibleManager,
+    seriesId: string,
+    planId: string
+  ): BeatTraceabilityReport {
+    const beats = bible.listStoryBeats(seriesId);
+    const ledgers = CoverageLedgerManager.getEntriesForPlan(bible, seriesId, planId);
+
+    const chain: BeatTraceabilityNode[] = [];
+    const missingMandatory: string[] = [];
+
+    for (const beat of beats) {
+      // Find all ledger matches for this beat
+      const matches = ledgers.filter(
+        (l) => l.beat_id === beat.id || l.mandatory_beat_id === beat.id
+      );
+
+      if (matches.length > 0) {
+        for (const m of matches) {
+          chain.push({
+            beatId: beat.id,
+            beatName: beat.name,
+            isMandatory: beat.is_mandatory === 1,
+            sourceUnitId: beat.source_unit_id ?? m.source_unit_id,
+            episodeNumber: m.episode_number ?? null,
+            sceneNumber: m.scene_number ?? null,
+            sceneId: m.scene_id ?? null,
+            shotId: m.shot_id ?? null,
+            adaptationDecision: m.adaptation_decision,
+            rationale: m.rationale ?? null,
+          });
+        }
+      } else {
+        // Check if unit was mapped
+        const unitLedger = beat.source_unit_id
+          ? ledgers.find((l) => l.source_unit_id === beat.source_unit_id && l.adaptation_decision !== "omitted")
+          : null;
+
+        if (unitLedger) {
+          chain.push({
+            beatId: beat.id,
+            beatName: beat.name,
+            isMandatory: Boolean(beat.is_mandatory),
+            sourceUnitId: beat.source_unit_id ?? null,
+            episodeNumber: unitLedger.episode_number ?? null,
+            sceneNumber: unitLedger.scene_number ?? null,
+            sceneId: unitLedger.scene_id ?? null,
+            shotId: unitLedger.shot_id ?? null,
+            adaptationDecision: unitLedger.adaptation_decision,
+            rationale: unitLedger.rationale ?? "Mapped via parent source unit",
+          });
+        } else {
+          if (beat.is_mandatory) {
+            missingMandatory.push(beat.id);
+          }
+          chain.push({
+            beatId: beat.id,
+            beatName: beat.name,
+            isMandatory: Boolean(beat.is_mandatory),
+            sourceUnitId: beat.source_unit_id ?? null,
+            episodeNumber: null,
+            sceneNumber: null,
+            sceneId: null,
+            shotId: null,
+            adaptationDecision: "unmapped",
+            rationale: "Beat has no mapping in coverage ledgers",
+          });
+        }
+      }
+    }
+
+    const mandatoryBeats = beats.filter((b) => Boolean(b.is_mandatory));
+    const coveredMandatory = mandatoryBeats.length - missingMandatory.length;
+
+    return {
+      seriesId,
+      planId,
+      totalBeats: beats.length,
+      totalMandatoryBeats: mandatoryBeats.length,
+      coveredMandatoryBeats: Math.max(0, coveredMandatory),
+      missingMandatoryBeats: missingMandatory,
+      chain,
+    };
+  }
+
+  /**
+   * Verifies beat coverage during hierarchical assembly:
+   * Returns warning or error if any mandatory beat assigned to this episode has zero shots linked to it.
+   */
+  public static verifyBeatCoverageInAssembly(
+    bible: BibleManager,
+    seriesId: string,
+    planId: string,
+    episodeNumber: number
+  ): { isValid: boolean; warnings: string[]; missingBeatIds: string[] } {
+    const beats = bible.listStoryBeats(seriesId);
+    const ledgers = CoverageLedgerManager.getEntriesForEpisode(bible, seriesId, planId, episodeNumber);
+    const epBeats = beats.filter((b) => {
+      if (!b.is_mandatory) return false;
+      return ledgers.some((l) => l.beat_id === b.id || l.mandatory_beat_id === b.id);
+    });
+
+    const warnings: string[] = [];
+    const missingBeatIds: string[] = [];
+
+    for (const b of epBeats) {
+      const shotLedgers = ledgers.filter(
+        (l) => (l.beat_id === b.id || l.mandatory_beat_id === b.id) && l.shot_id
+      );
+      if (shotLedgers.length === 0) {
+        warnings.push(
+          `Mandatory beat '${b.name}' (${b.id}) in Episode ${episodeNumber} does not have an explicit shot linked in the coverage ledger.`
+        );
+        missingBeatIds.push(b.id);
+      }
+    }
+
+    return {
+      isValid: missingBeatIds.length === 0,
+      warnings,
+      missingBeatIds,
     };
   }
 }

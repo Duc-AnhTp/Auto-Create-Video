@@ -68,6 +68,7 @@ export interface HierarchicalAssemblerOptions {
   forceReRender?: boolean;
   maxAllowedDriftSec?: number;
   detectBlackFrames?: boolean;
+  requireApprovedShots?: boolean;
 }
 
 /**
@@ -264,6 +265,14 @@ export class HierarchicalFilmAssembler {
 
     // ── STAGE 1: Verify All Approved Takes & Source Clips ──────────────────
     log.info("\n--- BƯỚC 1: KIỂM TRA CÁC TAKE ĐÃ DUYỆT VÀ SOURCE CLIPS ---");
+    if (this.options.requireApprovedShots) {
+      const unapproved = scenes.flatMap((sc) => sc.shots).filter((sh) => !sh.isApproved);
+      if (unapproved.length > 0) {
+        throw new Error(
+          `[ASSEMBLY GATEWAY ERROR] Cấm dựng master: Phát hiện ${unapproved.length} shot chưa được phê duyệt (${unapproved.map((u) => u.shotId).join(", ")}).`
+        );
+      }
+    }
     const allInputClipPaths: string[] = [];
 
     for (const sc of scenes) {

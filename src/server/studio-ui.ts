@@ -1471,8 +1471,8 @@ export function renderStudioHtml(): string {
           <!-- Director Approval Desk -->
           <div class="card">
             <div class="card-header" style="margin-bottom: 8px;">
-              <div class="card-title">🎬 BÀN DUYỆT TAKE CỦA ĐẠO DIỄN (DIRECTOR DESK)</div>
-              <button class="btn btn-secondary btn-sm" onclick="populateSampleTakes()">Nạp Cú Máy Mẫu</button>
+              <div class="card-title">🎬 BÀN DUYỆT TAKE CỦA ĐẠO DIỄN <span class="badge badge-warn" style="font-size: 10px; margin-left: 6px;">PROTOTYPE</span></div>
+              <button class="btn btn-secondary btn-sm" onclick="populateSampleTakes()">Nạp Cú Máy Mẫu (Demo UI)</button>
             </div>
             <div id="takesContainer" style="margin-top: 14px; display: flex; flex-direction: column; gap: 12px; max-height: 334px; overflow-y: auto;">
               <div class="caption" style="text-align: center; padding: 50px 20px;">
@@ -2132,6 +2132,9 @@ export function renderStudioHtml(): string {
     function populateSampleTakes() {
       const container = document.getElementById("takesContainer");
       container.innerHTML = \`
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px; padding: 4px 8px; background: rgba(245, 158, 11, 0.1); border-radius: 4px; border: 1px dashed rgba(245, 158, 11, 0.3);">
+          ⚠️ [DEMO PROTOTYPE] Bảng take dưới đây là dữ liệu mẫu giao diện. Để duyệt take sản xuất thực tế với Story Bible SQLite, hãy sử dụng giao diện Series Review Dashboard.
+        </div>
         <div class="take-review-card">
           <div class="take-thumb-box">▶ Take 1</div>
           <div>
@@ -2144,8 +2147,8 @@ export function renderStudioHtml(): string {
             </div>
           </div>
           <div style="display: flex; flex-direction: column; gap: 6px;">
-            <button class="btn btn-emerald btn-sm" onclick="showToast('Đã phê duyệt Take 1 vào bản Master', 'success')">✓ Duyệt</button>
-            <button class="btn btn-secondary btn-sm" onclick="showToast('Đã xếp hàng quay lại Take 1', 'info')">↻ Reroll</button>
+            <button class="btn btn-emerald btn-sm" onclick="showToast('[DEMO] Phê duyệt Take 1 vào bản Master', 'success')">✓ Duyệt</button>
+            <button class="btn btn-secondary btn-sm" onclick="showToast('[DEMO] Xếp hàng quay lại Take 1', 'info')">↻ Reroll</button>
           </div>
         </div>
 
@@ -2161,8 +2164,8 @@ export function renderStudioHtml(): string {
             </div>
           </div>
           <div style="display: flex; flex-direction: column; gap: 6px;">
-            <button class="btn btn-emerald btn-sm" onclick="showToast('Đã phê duyệt Take 2 vào bản Master', 'success')">✓ Duyệt</button>
-            <button class="btn btn-secondary btn-sm" onclick="showToast('Đã xếp hàng quay lại Take 2', 'info')">↻ Reroll</button>
+            <button class="btn btn-emerald btn-sm" onclick="showToast('[DEMO] Phê duyệt Take 2 vào bản Master', 'success')">✓ Duyệt</button>
+            <button class="btn btn-secondary btn-sm" onclick="showToast('[DEMO] Xếp hàng quay lại Take 2', 'info')">↻ Reroll</button>
           </div>
         </div>
       \`;

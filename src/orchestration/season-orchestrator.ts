@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { BibleManager, type SeriesPlanRecord, type PlannedEpisodeRecord } from "../bible/bible-manager.js";
 import { EpisodicPipeline, type EpisodicPipelineOptions, type EpisodicPipelineResult } from "../series/episodic-pipeline.js";
 import { StoryToScreenplayGenerator } from "../series/story-to-screenplay.js";
+import { SeriesPlanner } from "../series/series-planner.js";
 import { BudgetLedger } from "./budget-ledger.js";
 import type { BackendProvider } from "../gateway/video-gateway.js";
 import { log } from "../utils/logger.js";
@@ -129,14 +130,13 @@ export class SeasonOrchestrator {
     if (options.planId) {
       plan = this.bible.getSeriesPlan(options.planId);
     } else {
-      plan = this.bible.getActiveSeriesPlan(seriesId);
-    }
-
-    if (!plan) {
-      const plans = this.bible.listSeriesPlans(seriesId);
-      if (plans.length > 0) {
-        plan = plans[0];
-      }
+      const allPlans = this.bible.listSeriesPlans(seriesId);
+      // Prioritize active, then approved, before falling back to latest revision
+      plan =
+        allPlans.find((p) => p.status === "active") ||
+        allPlans.find((p) => p.status === "approved") ||
+        this.bible.getActiveSeriesPlan(seriesId) ||
+        (allPlans.length > 0 ? allPlans[0] : null);
     }
 
     if (!plan) {
@@ -144,6 +144,12 @@ export class SeasonOrchestrator {
         `No adaptation plan found for series '${seriesId}'. Run 'series:plan-series' first.`
       );
     }
+
+    // Gating: ensure plan is approved or active before production starts
+    SeriesPlanner.ensurePlanApprovedForProduction(
+      plan,
+      options.provider === "mock" || options.dryRun === true
+    );
 
     const planId = plan.id;
     const allPlannedEpisodes = this.bible.listPlannedEpisodes(planId);

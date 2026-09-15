@@ -47,7 +47,12 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.length > 0 && args[0].startsWith("series:")) {
-    await runSeriesCli(args);
+    try {
+      await runSeriesCli(args);
+    } catch (e: any) {
+      log.error(`Series CLI failed: ${e?.message || e}`);
+      process.exit(1);
+    }
     return;
   }
 

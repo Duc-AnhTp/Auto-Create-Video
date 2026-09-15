@@ -15,7 +15,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Node: 22+](https://img.shields.io/badge/Node.js-22%2B-brightgreen?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript: 5+](https://img.shields.io/badge/TypeScript-5%2B-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests: 392 Passed](https://img.shields.io/badge/Tests-392%20Passed%20(100%25)-success?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
+[![Tests: Vitest](https://img.shields.io/badge/Tests-Passing-success?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
 [![Database: SQLite v6](https://img.shields.io/badge/Story%20Bible-SQLite%20v6-cyan?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
 [**🇬🇧 English**](README.md) · [**🇻🇳 Tiếng Việt**](README.vi.md) · [**🖥️ Web Studio UI**](#-cinema-production-studio-web-ui) · [**🎯 Dual-Engine**](#-dual-engine-overview) · [**🚀 Quick Start**](#-quick-start) · [**📚 Deep Dive**](#-deep-dive-novel-to-series-production-engine) · [**💻 CLI Reference**](#-complete-cli-reference)
@@ -61,7 +61,7 @@ npm run studio
 ```
 
 - **Dual-View Screenplay Console:** Read director action notes, camera lens specifications, atmospheric lighting cues, and AI generation prompts side-by-side.
-- **ArcFace 512-D Face Lightbox:** Inspect facial vector cosine similarity against character anchors across multi-episode takes to eliminate character drift.
+- **ArcFace 512-D Face Lightbox:** Inspect facial vector cosine similarity against character anchors across multi-episode takes to eliminate character drift *(Note: Test & CI suites use deterministic synthetic simulation; production deployment binds live InsightFace/ArcFace weights)*.
 - **Dynamic Audio Stems Equalizer:** Real-time 4-channel VU meter animating Dialogue, SFX, Ambience, and Ducked BGM tracks.
 - **In-Browser Configuration:** Securely update API keys (Kling, Runway, Gemini, LucyLab, ElevenLabs) without touching terminal files or restarting the server.
 

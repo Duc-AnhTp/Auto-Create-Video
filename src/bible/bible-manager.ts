@@ -5058,6 +5058,11 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
   // ── Story Beats Operations ────────────────────────────────────────────────
 
+  public recordStoryBeat(beat: StoryBeatRecord): StoryBeatRecord {
+    this.upsertStoryBeat(beat);
+    return beat;
+  }
+
   public upsertStoryBeat(beat: StoryBeatRecord): void {
     const now = beat.created_at || new Date().toISOString();
     const clean: StoryBeatRecord = {

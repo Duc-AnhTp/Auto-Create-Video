@@ -142,8 +142,8 @@ export class ContextBuilder {
 
     // 7. Tier 3: Verbatim Source Spans (Span Tier, respecting maxTokensBudget)
     const totalCharBudget = tokenBudget * 3;
-    const reservedChars = 4500;
-    const availableSpanBudget = Math.max(3000, totalCharBudget - reservedChars);
+    const reservedChars = Math.min(2500, Math.floor(totalCharBudget * 0.4));
+    const availableSpanBudget = Math.max(300, totalCharBudget - reservedChars);
     const budgetPerUnit = Math.floor(availableSpanBudget / Math.max(1, unitIds.length));
 
     const sourceSpans: SourceSpanContext[] = [];
@@ -167,21 +167,85 @@ export class ContextBuilder {
       }
     }
 
-    // 8. Active Characters
-    const allCharacters = bible.listCharacters();
+    // 8. Active Characters (scoped to current series)
+    const allCharacters = bible.listCharacters(seriesId);
     const activeCharacters = allCharacters.filter((c) => c.status !== "deceased");
+
+    // Build beat-to-episode and unit-to-episode map if plan exists to enforce epistemic knowledge boundaries
+    const beatEpisodeMap = new Map<string, number>();
+    const unitEpisodeMap = new Map<string, number>();
+    let hasPlanLedgers = false;
+
+    const setMinEp = (map: Map<string, number>, key: string, ep: number) => {
+      const cur = map.get(key);
+      if (cur === undefined || ep < cur) {
+        map.set(key, ep);
+      }
+    };
+
+    if (plan) {
+      const ledgers = bible.listCoverageLedgers(plan.id);
+      if (ledgers.length > 0) {
+        hasPlanLedgers = true;
+      }
+      for (const l of ledgers) {
+        if (typeof l.episode_number === "number") {
+          if (l.beat_id) {
+            setMinEp(beatEpisodeMap, l.beat_id, l.episode_number);
+          }
+          if (l.mandatory_beat_id) {
+            setMinEp(beatEpisodeMap, l.mandatory_beat_id, l.episode_number);
+          }
+          if (l.source_unit_id) {
+            setMinEp(unitEpisodeMap, l.source_unit_id, l.episode_number);
+          }
+        }
+      }
+    }
+
+    // Pre-index beats to resolve unanchored ledgers or unit mappings
+    const beatsById = new Map<string, StoryBeatRecord>(allBeats.map((b) => [b.id, b]));
 
     // 9. Character Knowledge (epistemic state: what character knows up to episode N)
     const characterKnowledge = new Map<string, string[]>();
     for (const char of activeCharacters) {
       const states = bible.listKnowledgeStates(seriesId, char.id, "character_knowledge");
       const knownFacts = states
-        .filter(
-          (s) =>
-            s.revealed_at_episode === null ||
-            s.revealed_at_episode === undefined ||
-            s.revealed_at_episode <= epNum
-        )
+        .filter((s) => {
+          if (typeof s.revealed_at_episode === "number") {
+            return s.revealed_at_episode <= epNum;
+          }
+          if (s.revealed_at_beat_id) {
+            const beatEp = beatEpisodeMap.get(s.revealed_at_beat_id);
+            if (beatEp !== undefined) {
+              return beatEp <= epNum;
+            }
+
+            // Fallback via source_unit_id mapping
+            const beat = beatsById.get(s.revealed_at_beat_id);
+            if (beat?.source_unit_id) {
+              const unitEp = unitEpisodeMap.get(beat.source_unit_id);
+              if (unitEp !== undefined) {
+                return unitEp <= epNum;
+              }
+              // If current episode contains this beat's source unit, reveal it
+              if (unitIds.includes(beat.source_unit_id)) {
+                return true;
+              }
+            }
+
+            // If beat order <= 1, treat as foundational knowledge rather than dropping it.
+            // Do not leak future beats (beat_order > 1) even before coverage ledgers are created.
+            if (beat && beat.beat_order <= 1) {
+              return true;
+            }
+
+            // If beat is unassigned or in future episodes, do not reveal in early episodes
+            return false;
+          }
+          // Foundational knowledge without specific future beat anchor
+          return true;
+        })
         .map((s) => s.notes || s.fact_key);
       characterKnowledge.set(char.id, knownFacts);
     }

@@ -203,10 +203,12 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       "name": "Tiêu đề beat",
       "description": "Tóm tắt sự kiện cụ thể",
       "participatingCharacters": ["Tên nhân vật tham gia"],
-      "storyTime": "Hiện tại" hoặc "Hồi tưởng 5 năm trước",
+      "storyTime": "Hiện tại",
       "isFlashback": false,
-      "importanceLevel": "mandatory" | "key" | "flavor",
+      "importanceLevel": "mandatory",
       "chapterIndex": 0,
+      "sourceSpanStart": 0,
+      "sourceSpanEnd": 1200,
       "causalityPreconditions": ["Điều kiện tiên quyết"],
       "causalityPostChanges": ["Biến chuyển sau beat"],
       "confidenceScore": 0.9,
@@ -236,7 +238,21 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
   ]
 }`;
 
-    const unitSummaries = units.map((u, i) => `=== PHẦN ${i + 1}: ${u.title} ===\n${u.raw_text.slice(0, 3000)}`).join("\n\n");
+    // Cap and sample units to prevent overflowing context limits for large novels (e.g. 100+ chapters)
+    const MAX_PROMPT_UNITS = 12;
+    const unitsToPrompt =
+      units.length <= MAX_PROMPT_UNITS
+        ? units
+        : units.filter(
+            (_, idx) =>
+              idx < 4 ||
+              idx >= units.length - 3 ||
+              idx % Math.ceil(units.length / 8) === 0
+          );
+
+    const unitSummaries = unitsToPrompt
+      .map((u, i) => `=== PHẦN ${u.order_index + 1} (Chỉ số: ${i}, Chương: ${u.order_index + 1}): ${u.title} (vị trí ký tự: ${u.char_start}..${u.char_end}) ===\n${u.raw_text.slice(0, 3000)}`)
+      .join("\n\n");
     const userPrompt = `Hãy phân tích toàn bộ tác phẩm sau để xây dựng Story Bible cho series "${seriesId}":\nTác phẩm: ${work.title}\n\nNội dung các chương:\n${unitSummaries}`;
 
     let rawOutput = "";
@@ -321,8 +337,14 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
       // Determine corresponding source unit across multi-chapter novels
       let assignedUnit = units[0];
-      if (typeof beat.chapterIndex === "number" && units[beat.chapterIndex]) {
-        assignedUnit = units[beat.chapterIndex];
+      if (typeof beat.chapterIndex === "number") {
+        if (units[beat.chapterIndex]) {
+          assignedUnit = units[beat.chapterIndex];
+        } else if (units.find((u) => u.order_index === beat.chapterIndex)) {
+          assignedUnit = units.find((u) => u.order_index === beat.chapterIndex)!;
+        } else if (unitsToPrompt[beat.chapterIndex]) {
+          assignedUnit = unitsToPrompt[beat.chapterIndex];
+        }
       } else if (beat.sourceSpanStart !== undefined) {
         const found = units.find(
           (u) => beat.sourceSpanStart! >= u.char_start && beat.sourceSpanStart! <= u.char_end
@@ -334,6 +356,33 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
           Math.floor((i / validated.beats.length) * units.length)
         );
         assignedUnit = units[uIdx];
+      }
+
+      let spanStart = assignedUnit?.char_start ?? 0;
+      if (typeof beat.sourceSpanStart === "number") {
+        if (assignedUnit && beat.sourceSpanStart >= assignedUnit.char_start && beat.sourceSpanStart <= assignedUnit.char_end) {
+          spanStart = beat.sourceSpanStart;
+        } else if (assignedUnit) {
+          spanStart = Math.min(assignedUnit.char_end, assignedUnit.char_start + Math.max(0, beat.sourceSpanStart));
+        } else {
+          spanStart = beat.sourceSpanStart;
+        }
+      }
+
+      let spanEnd = spanStart + 300;
+      if (typeof beat.sourceSpanEnd === "number") {
+        if (assignedUnit && beat.sourceSpanEnd >= spanStart && beat.sourceSpanEnd <= assignedUnit.char_end) {
+          spanEnd = beat.sourceSpanEnd;
+        } else if (assignedUnit && beat.sourceSpanEnd > 0) {
+          const candidateEnd = assignedUnit.char_start + beat.sourceSpanEnd;
+          if (candidateEnd >= spanStart) {
+            spanEnd = Math.min(assignedUnit.char_end, candidateEnd);
+          } else {
+            spanEnd = Math.min(assignedUnit.char_end, spanStart + beat.sourceSpanEnd);
+          }
+        }
+      } else if (assignedUnit) {
+        spanEnd = Math.min(assignedUnit.char_end, spanStart + Math.max(300, beat.description.length * 2));
       }
 
       const record: StoryBeatRecord = {
@@ -350,12 +399,12 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         is_flashback: beat.isFlashback ? 1 : 0,
         preconditions_json: JSON.stringify(beat.causalityPreconditions),
         post_state_changes_json: JSON.stringify(beat.causalityPostChanges),
-        source_span_start: beat.sourceSpanStart,
-        source_span_end: beat.sourceSpanEnd,
+        source_span_start: spanStart,
+        source_span_end: spanEnd,
         source_citations_json: JSON.stringify([
           {
-            charStart: beat.sourceSpanStart ?? 0,
-            charEnd: beat.sourceSpanEnd ?? 0,
+            charStart: spanStart,
+            charEnd: spanEnd,
             excerpt: beat.description.slice(0, 150),
           },
         ]),
@@ -432,7 +481,8 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         is_flashback: 0,
         notes: ks.factDescription,
       };
-      bible.recordKnowledgeState(state);
+      const recorded = bible.recordKnowledgeState(state);
+      knowledgeStates.push(recorded);
     }
 
     return {
@@ -444,54 +494,98 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
     };
   }
 
-  private static async callLlmApi(
+  public static async callLlmApi(
     prompt: string,
     systemPrompt: string,
-    options: StoryAnalysisOptions
+    options: {
+      llmProvider?: "anthropic" | "openai" | "gemini" | "custom" | ((prompt: string, systemPrompt?: string) => Promise<string>);
+      llmApiKey?: string;
+      customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
+      temperature?: number;
+      maxOutputTokens?: number;
+      timeoutMs?: number;
+    }
   ): Promise<string> {
-    const explicitProvider = typeof options.llmProvider === "string" ? options.llmProvider : undefined;
-    const anthropicKey = options.llmApiKey || process.env.ANTHROPIC_API_KEY;
-    const openAiKey = options.llmApiKey || process.env.OPENAI_API_KEY;
-    const geminiKey = options.llmApiKey || process.env.GEMINI_API_KEY;
+    if (options.customLlmInvoker) {
+      return options.customLlmInvoker(prompt, systemPrompt);
+    }
+    if (typeof options.llmProvider === "function") {
+      return options.llmProvider(prompt, systemPrompt);
+    }
 
-    if (explicitProvider === "gemini" || (!explicitProvider && geminiKey && !anthropicKey && !openAiKey)) {
-      if (!geminiKey) throw new Error("GEMINI_API_KEY is missing for Gemini story analysis.");
+    let provider = typeof options.llmProvider === "string" ? options.llmProvider : undefined;
+    let apiKey = options.llmApiKey;
+    const temp = options.temperature ?? 0.3;
+    const maxTokens = options.maxOutputTokens ?? 8192;
+    const timeout = options.timeoutMs ?? 60000;
+
+    // Detect provider from API key prefix if not explicitly specified or if custom
+    if ((!provider || provider === "custom") && apiKey) {
+      if (apiKey.startsWith("AIza")) {
+        provider = "gemini";
+      } else if (apiKey.startsWith("sk-ant")) {
+        provider = "anthropic";
+      } else if (apiKey.startsWith("sk-")) {
+        provider = "openai";
+      }
+    }
+
+    // Resolve ambient keys and provider precedence
+    if (!provider || provider === "custom") {
+      if (process.env.ANTHROPIC_API_KEY) {
+        provider = "anthropic";
+        apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
+      } else if (process.env.GEMINI_API_KEY) {
+        provider = "gemini";
+        apiKey = apiKey || process.env.GEMINI_API_KEY;
+      } else if (process.env.OPENAI_API_KEY) {
+        provider = "openai";
+        apiKey = apiKey || process.env.OPENAI_API_KEY;
+      }
+    } else if (!apiKey) {
+      if (provider === "anthropic") apiKey = process.env.ANTHROPIC_API_KEY;
+      else if (provider === "gemini") apiKey = process.env.GEMINI_API_KEY;
+      else if (provider === "openai") apiKey = process.env.OPENAI_API_KEY;
+    }
+
+    if (provider === "gemini") {
+      if (!apiKey) throw new Error("GEMINI_API_KEY is missing for Gemini story analysis.");
       const res = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
         {
           systemInstruction: { parts: [{ text: systemPrompt }] },
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 8192 },
+          generationConfig: { temperature: temp, maxOutputTokens: maxTokens },
         },
-        { headers: { "Content-Type": "application/json" }, timeout: 60000 }
+        { headers: { "Content-Type": "application/json" }, timeout }
       );
       return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     }
 
-    if (explicitProvider === "anthropic" || (!explicitProvider && anthropicKey)) {
-      if (!anthropicKey) throw new Error("ANTHROPIC_API_KEY is missing for Anthropic story analysis.");
+    if (provider === "anthropic") {
+      if (!apiKey) throw new Error("ANTHROPIC_API_KEY is missing for Anthropic story analysis.");
       const res = await axios.post(
         "https://api.anthropic.com/v1/messages",
         {
           model: "claude-3-5-sonnet-20241022",
-          max_tokens: 8000,
+          max_tokens: Math.min(8192, maxTokens),
           system: systemPrompt,
           messages: [{ role: "user", content: prompt }],
         },
         {
           headers: {
-            "x-api-key": anthropicKey,
+            "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
           },
-          timeout: 60000,
+          timeout,
         }
       );
       return res.data?.content?.[0]?.text || "";
     }
 
-    if (explicitProvider === "openai" || (!explicitProvider && openAiKey)) {
-      if (!openAiKey) throw new Error("OPENAI_API_KEY is missing for OpenAI story analysis.");
+    if (provider === "openai") {
+      if (!apiKey) throw new Error("OPENAI_API_KEY is missing for OpenAI story analysis.");
       const res = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
@@ -500,13 +594,42 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
           ],
+          temperature: temp,
+          max_tokens: maxTokens,
         },
         {
           headers: {
-            Authorization: `Bearer ${openAiKey}`,
+            Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
           },
-          timeout: 60000,
+          timeout,
+        }
+      );
+      return res.data?.choices?.[0]?.message?.content || "";
+    }
+
+    if (provider === "custom") {
+      const customUrl = process.env.CUSTOM_LLM_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1/chat/completions";
+      const endpoint = customUrl.endsWith("/chat/completions") ? customUrl : `${customUrl.replace(/\/+$/, "")}/chat/completions`;
+      const key = apiKey || process.env.CUSTOM_LLM_API_KEY || process.env.OPENAI_API_KEY || "custom-key";
+      const model = process.env.CUSTOM_LLM_MODEL || "gpt-4o";
+      const res = await axios.post(
+        endpoint,
+        {
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: prompt },
+          ],
+          temperature: temp,
+          max_tokens: maxTokens,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+          },
+          timeout,
         }
       );
       return res.data?.choices?.[0]?.message?.content || "";
@@ -517,8 +640,16 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
   private static stripMarkdownFences(text: string): string {
     const trimmed = text.trim();
-    const jsonMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-    return jsonMatch ? jsonMatch[1].trim() : trimmed;
+    const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (jsonMatch) {
+      return jsonMatch[1].trim();
+    }
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      return trimmed.slice(firstBrace, lastBrace + 1).trim();
+    }
+    return trimmed;
   }
 
   /**

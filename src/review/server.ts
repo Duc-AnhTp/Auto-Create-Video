@@ -1,11 +1,15 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { exec } from "node:child_process";
 import { ScriptSchema, type Script } from "../render/script-schema.js";
 import { normalizeVietnameseForTts } from "../tts/vietnamese-normalizer.js";
 import { BibleManager, type EpisodeSummaryRecord, type NarrativeDelta } from "../bible/bible-manager.js";
 import { CoverageLedgerManager } from "../series/coverage-ledger.js";
+import { HierarchicalFilmAssembler, type SceneAssemblyInput } from "../assembly/hierarchical-assembler.js";
+import { extractNarrativeDeltaFromScript } from "../series/episodic-pipeline.js";
 import { log } from "../utils/logger.js";
 
 export interface ReviewServerOptions {
@@ -1166,13 +1170,29 @@ export function startSeriesReviewServer(options: SeriesReviewServerOptions): Ser
 
       if (url === "/api/series/finalize" && method === "POST") {
         try {
-          // 1. Completeness check: verify every shot has an approved take
+          if (!script.scenes || script.scenes.length === 0) {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                success: false,
+                error: "Không thể finalize: Kịch bản không có cảnh nào (scenes rỗng).",
+              })
+            );
+            return;
+          }
+
+          // 1. Completeness check: verify every shot has an approved take AND the take video file exists on disk
+          // Cache approved takes to eliminate redundant database queries across completeness check and scene mapping
+          const approvedTakesMap = new Map<string, any>();
           const unapprovedShots: string[] = [];
-          for (const scene of script.scenes || []) {
+          for (const scene of script.scenes) {
             for (const shot of scene.shots || []) {
               const approved = bible.getApprovedTakeForShot(seriesId, episodeNumber, shot.shotId);
+              approvedTakesMap.set(shot.shotId, approved);
               if (!approved) {
-                unapprovedShots.push(shot.shotId);
+                unapprovedShots.push(`${shot.shotId} (chưa có take được duyệt)`);
+              } else if (!approved.local_path || !existsSync(approved.local_path)) {
+                unapprovedShots.push(`${shot.shotId} (file take không tồn tại trên đĩa: ${approved.local_path || "rỗng"})`);
               }
             }
           }
@@ -1199,17 +1219,74 @@ export function startSeriesReviewServer(options: SeriesReviewServerOptions): Ser
               bible,
             });
           } else {
+            // Build scenes input from cached approved takes and assemble master video
+            const scenesInput: SceneAssemblyInput[] = (script.scenes || []).map((sc: any, scIdx: number) => ({
+              sceneNumber: sc.sceneNumber ?? (scIdx + 1),
+              sceneId: sc.sceneId || `scene_${scIdx + 1}`,
+              shots: (sc.shots || []).map((sh: any) => {
+                const approved = approvedTakesMap.get(sh.shotId) ?? bible.getApprovedTakeForShot(seriesId, episodeNumber, sh.shotId);
+                const vPath = approved?.local_path || "";
+                return {
+                  shotId: sh.shotId,
+                  sceneId: sc.sceneId || `scene_${scIdx + 1}`,
+                  takeId: approved?.id || `take_${sh.shotId}`,
+                  sourceClipPath: vPath,
+                  rawDurationSec: sh.durationSec,
+                  trimStartSec: 0,
+                  isApproved: Boolean(approved ? approved.is_approved : false),
+                };
+              }),
+            }));
+
+            const epNumStr = String(episodeNumber).padStart(2, "0");
+            const assemblyOutputDir = options.outputDir
+              ? join(options.outputDir, "assembly")
+              : join("output", "series", seriesId, `ep-${epNumStr}`, "assembly");
+
+            // Atomic Finalize & Assembly Verification (P0-2): Must build and verify master before canon commit
+            const hierarchicalAssembler = new HierarchicalFilmAssembler({
+              seriesId,
+              episodeNumber,
+              title: script.title,
+              fps: script.fps || 30,
+              aspectRatio: (script.aspectRatio || "9:16") as any,
+              scenes: scenesInput,
+              outputDir: assemblyOutputDir,
+              requireApprovedShots: true,
+            });
+            const manifest = await hierarchicalAssembler.assemble();
+            const masterPath = manifest.masterOutputs.masterVideoPath;
+            if (!masterPath || !existsSync(masterPath)) {
+              throw new Error(`[FINALIZATION GATE] Master video không tồn tại sau khi assemble: ${masterPath || "null"}`);
+            }
+
+            finalizeResult.masterVideoPath = masterPath;
+
+            // Multi-dimensional Narrative Delta Extraction (P0-3) using unified pipeline helper
+            const delta = extractNarrativeDeltaFromScript(script, bible, seriesId);
+
+            const charactersAppeared = new Set<string>();
+            for (const scene of script.scenes || []) {
+              for (const char of scene.charactersPresent || []) {
+                const charId = typeof char === "string" ? char : char?.characterId;
+                if (charId) charactersAppeared.add(charId);
+              }
+            }
+
             const summaryRecord: EpisodeSummaryRecord = {
               series_id: seriesId,
               episode_number: episodeNumber,
               title: script.title,
               logline: script.logline,
-              major_events: [script.logline || `Hoàn thành tập ${episodeNumber}`],
-              delta_changes: {},
+              major_events: delta.major_events || [script.logline || `Hoàn thành tập ${episodeNumber}`],
+              delta_changes: {
+                master_video_path: masterPath,
+                locations_visited: (delta.world_state_updates as any)?.locations_visited || [],
+                characters_appeared: Array.from(charactersAppeared),
+                wardrobe_changes: delta.character_wardrobe_updates || [],
+                props_used: (delta.world_state_updates as any)?.props_active || [],
+              },
               created_at: new Date().toISOString(),
-            };
-            const delta: NarrativeDelta = {
-              major_events: [script.logline || `Hoàn thành tập ${episodeNumber}`],
             };
 
             // Transition lifecycle to approved by director before committing canon

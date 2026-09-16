@@ -1472,21 +1472,26 @@ export class EpisodicPipeline {
 
     // Collect approved takes for all shots in sequence (Take ID -> File -> QA -> Approval -> Assembly)
     shotVideos.length = 0;
-    const unapprovedShots: Array<{ shotId: string }> = [];
+    const shotVideoEntries: Array<{ shot: typeof script.scenes[0]["shots"][0]; videoPath: string }> = [];
+    const unapprovedShots: Array<{ shotId: string; reason?: string }> = [];
 
     for (const scene of script.scenes) {
       for (const shot of scene.shots) {
         const approved = this.bible.getApprovedTakeForShot(seriesId, script.episodeNumber, shot.shotId);
         if (!approved) {
-          unapprovedShots.push({ shotId: shot.shotId });
+          unapprovedShots.push({ shotId: shot.shotId, reason: "Chưa có take được phê duyệt" });
         }
         const vPath = approved?.local_path || (provider === "mock" ? job.shots[shot.shotId]?.videoPath : undefined);
         if (vPath && existsSync(vPath)) {
           shotVideos.push(vPath);
+          shotVideoEntries.push({ shot, videoPath: vPath });
+        } else if (approved) {
+          unapprovedShots.push({ shotId: shot.shotId, reason: `File take đã duyệt không tồn tại trên đĩa: ${vPath}` });
         } else if (provider === "mock") {
           const fallbackPath = join(videoShotsDir, `${shot.shotId}.mp4`);
           if (existsSync(fallbackPath)) {
             shotVideos.push(fallbackPath);
+            shotVideoEntries.push({ shot, videoPath: fallbackPath });
           }
         }
       }
@@ -1495,7 +1500,7 @@ export class EpisodicPipeline {
     if (provider !== "mock") {
       if (unapprovedShots.length > 0) {
         throw new Error(
-          `[PRODUCTION GATEWAY ERROR] Cấm dựng master video: Còn ${unapprovedShots.length} shot chưa có take được phê duyệt (${unapprovedShots.map((s) => s.shotId).join(", ")}).`
+          `[PRODUCTION GATEWAY ERROR] Cấm dựng master video: Còn ${unapprovedShots.length} shot chưa có take hợp lệ (${unapprovedShots.map((s) => `${s.shotId}${s.reason ? `: ${s.reason}` : ""}`).join("; ")}).`
         );
       }
       if (shotVideos.length === 0) {
@@ -1603,11 +1608,11 @@ export class EpisodicPipeline {
           } else {
             await copyFile(singleShot, tempFinalVideoPath);
           }
-        } else {
+        } else if (shotVideos.length > 1) {
           // Multi-shot scene: crossfade stitch filter with explicit transition duration
           if (await hasFfmpeg()) {
             const transitionSec = effectiveConfig.transitionDurationSec;
-            const durations = script.scenes.flatMap((s) => s.shots.map((sh) => sh.durationSec));
+            const durations = shotVideoEntries.map((e) => e.shot.durationSec);
             const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
               crossfadeSec: transitionSec,
               targetDurationSec: audioDurationSec > 0 ? audioDurationSec : undefined,
@@ -1634,6 +1639,8 @@ export class EpisodicPipeline {
           } else {
             await copyFile(shotVideos[0], tempFinalVideoPath);
           }
+        } else {
+          throw new Error("[PRODUCTION ERROR] Không có video shot hợp lệ nào để ghép nối.");
         }
 
         // Validate final assembled video with ffprobe and check elementary stream drift
@@ -2387,78 +2394,116 @@ export class EpisodicPipeline {
    * when caller does not provide explicit options.narrativeDelta.
    */
   public generateNarrativeDelta(script: EpisodicScript): NarrativeDelta {
-    const majorEvents: string[] = [];
-    if (script.logline) {
-      majorEvents.push(script.logline);
+    return extractNarrativeDeltaFromScript(script, this.bible, script.seriesId);
+  }
+}
+
+/**
+ * Shared helper to extract multi-dimensional narrative delta from a script and Bible state.
+ * Validates characters and wardrobes against canon to prevent fatal DeltaValidationError.
+ */
+export function extractNarrativeDeltaFromScript(
+  script: {
+    seriesId?: string;
+    episodeNumber?: number;
+    title?: string;
+    logline?: string;
+    scenes?: any[];
+  },
+  bible: BibleManager,
+  seriesId?: string
+): NarrativeDelta {
+  const targetSeriesId = seriesId || script.seriesId;
+  const majorEvents: string[] = [];
+  if (script.logline) {
+    majorEvents.push(script.logline);
+  }
+
+  const locationsVisited = new Set<string>();
+  const charactersAppeared = new Set<string>();
+  const wardrobeMap = new Map<string, string>();
+  const propsUsed = new Set<string>();
+
+  for (const scene of script.scenes || []) {
+    const loc = `${scene.locationName || "Chưa rõ"} (${scene.timeOfDay || "DAY"})`;
+    locationsVisited.add(loc);
+
+    // Extract significant action or dialogue from scene
+    const keyShots = (scene.shots || []).filter(
+      (s: any) => (s.dialogues && s.dialogues.length > 0) || s.visualPrompt
+    );
+    if (keyShots.length > 0) {
+      const primaryShot = keyShots[0];
+      const dialogueSummary =
+        primaryShot.dialogues && primaryShot.dialogues[0]?.text
+          ? `: "${primaryShot.dialogues[0].text.slice(0, 80)}"`
+          : "";
+      const action = primaryShot.visualPrompt || "";
+      majorEvents.push(
+        `Cảnh ${scene.sceneNumber || 1} (${scene.locationName || "Scene"}): ${action.slice(0, 100)}${dialogueSummary}`
+      );
     }
 
-    const locationsVisited = new Set<string>();
-    const charactersAppeared = new Set<string>();
-    const wardrobeMap = new Map<string, string>();
-    const propsUsed = new Set<string>();
-
-    for (const scene of script.scenes) {
-      const loc = `${scene.locationName} (${scene.timeOfDay})`;
-      locationsVisited.add(loc);
-
-      // Extract significant action or dialogue from scene
-      const keyShots = (scene.shots || []).filter(
-        (s) => (s.dialogues && s.dialogues.length > 0) || s.actionDescription || s.visualPrompt
-      );
-      if (keyShots.length > 0) {
-        const primaryShot = keyShots[0];
-        const dialogueSummary =
-          primaryShot.dialogues && primaryShot.dialogues[0]?.text
-            ? `: "${primaryShot.dialogues[0].text.slice(0, 80)}"`
-            : "";
-        const action = primaryShot.actionDescription || primaryShot.visualPrompt || "";
-        majorEvents.push(
-          `Cảnh ${scene.sceneNumber} (${scene.locationName}): ${action.slice(0, 100)}${dialogueSummary}`
-        );
-      }
-
-      for (const char of scene.charactersPresent || []) {
-        charactersAppeared.add(char.characterId);
-        if (char.wardrobeId) {
-          wardrobeMap.set(char.characterId, char.wardrobeId);
+    for (const char of scene.charactersPresent || []) {
+      const charId = typeof char === "string" ? char : char?.characterId;
+      if (charId) {
+        charactersAppeared.add(charId);
+        if (typeof char === "object" && char.wardrobeId) {
+          wardrobeMap.set(charId, char.wardrobeId);
         }
       }
+    }
 
-      for (const propId of scene.propsPresent || []) {
+    for (const propId of scene.propsPresent || []) {
+      if (propId) {
         propsUsed.add(propId);
       }
     }
+  }
 
-    const characterStatusUpdates: Array<{ id: string; status: string; notes?: string }> = [];
-    for (const charId of charactersAppeared) {
+  const characterStatusUpdates: Array<{ id: string; status: string; notes?: string }> = [];
+  for (const charId of charactersAppeared) {
+    const existing = targetSeriesId ? bible.getCharacter(charId, targetSeriesId) : bible.getCharacter(charId);
+    if (existing) {
+      // Anti-resurrection gate: if character is deceased, do not reset status to alive
+      if (existing.status === "deceased") {
+        continue;
+      }
+      // Preserve current canon status (e.g. injured, missing, etc.)
       characterStatusUpdates.push({
         id: charId,
-        status: "alive",
-        notes: `Tham gia tập ${script.episodeNumber}: ${script.title}`,
+        status: existing.status || "alive",
+        notes: `Tham gia tập ${script.episodeNumber ?? "?"}: ${script.title ?? ""}`,
       });
     }
-
-    const wardrobeUpdates: Array<{ characterId: string; wardrobeId: string }> = [];
-    for (const [charId, wId] of wardrobeMap.entries()) {
-      wardrobeUpdates.push({
-        characterId: charId,
-        wardrobeId: wId,
-      });
-    }
-
-    const worldStateUpdates: Record<string, unknown> = {
-      last_episode_number: script.episodeNumber,
-      last_episode_title: script.title,
-      locations_visited: Array.from(locationsVisited),
-      props_active: Array.from(propsUsed),
-      timestamp: new Date().toISOString(),
-    };
-
-    return {
-      major_events: majorEvents,
-      character_status_updates: characterStatusUpdates,
-      character_wardrobe_updates: wardrobeUpdates,
-      world_state_updates: worldStateUpdates,
-    };
+    // Unpersisted characters are NOT pushed to characterStatusUpdates to prevent fatal DeltaValidationError during canon commit
   }
+
+  const wardrobeUpdates: Array<{ character_id: string; wardrobe_id: string }> = [];
+  for (const [charId, wId] of wardrobeMap.entries()) {
+    // Check if wardrobe exists in Bible and belongs to character before recording delta
+    const wardrobe = bible.getWardrobe(wId);
+    if (wardrobe && wardrobe.character_id === charId) {
+      wardrobeUpdates.push({
+        character_id: charId,
+        wardrobe_id: wId,
+      });
+    }
+  }
+
+  const worldStateUpdates: Record<string, unknown> = {
+    last_episode_number: script.episodeNumber,
+    last_episode_title: script.title,
+    locations_visited: Array.from(locationsVisited),
+    props_active: Array.from(propsUsed),
+    timestamp: new Date().toISOString(),
+  };
+
+  return {
+    major_events: majorEvents.length > 0 ? majorEvents : [script.logline || `Hoàn thành tập ${script.episodeNumber ?? 1}`],
+    character_status_updates: characterStatusUpdates,
+    character_wardrobe_updates: wardrobeUpdates,
+    world_state_updates: worldStateUpdates,
+  };
+}
 }

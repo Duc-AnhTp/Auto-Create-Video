@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { StoryToScreenplayGenerator } from "./story-to-screenplay.js";
 import { BibleManager } from "../bible/bible-manager.js";
+import { extractNarrativeDeltaFromScript } from "./episodic-pipeline.js";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -163,5 +164,194 @@ CÚ MÁY 3 (wide, 4s): Ca nô biến mất trong làn sương đêm.
     expect(result.script.episodeNumber).toBe(2);
     expect(result.script.title).toBe("TRUY ĐUỔI BẾN CẢNG");
     expect(result.script.scenes.length).toBe(3);
+  });
+
+  it("4. generateEpisodeFromPlan preserves plannedEp.logline and avoids duplicate coverage ledger IDs", async () => {
+    const planId = "test_plan_01";
+    bible.upsertSeriesPlan({
+      id: planId,
+      series_id: seriesId,
+      source_id: "src_01",
+      revision: 1,
+      target_episodes: 2,
+      target_duration_per_episode_sec: 60,
+      pacing_preset: "standard",
+      status: "approved",
+      summary_json: "{}",
+    });
+
+    bible.upsertPlannedEpisode({
+      id: `plan_ep_${planId}_e01`,
+      plan_id: planId,
+      series_id: seriesId,
+      episode_number: 1,
+      title: "Khởi Đầu Bí Mật",
+      logline: "Minh và An nhận nhiệm vụ đầu tiên tại khu phố ngầm.",
+      target_duration_sec: 60,
+    });
+
+    const beat1 = bible.recordStoryBeat({
+      id: "beat_001",
+      source_id: "src_01",
+      source_unit_id: "unit_01",
+      series_id: seriesId,
+      beat_order: 1,
+      name: "Cuộc Gặp Định Mệnh",
+      description: "Minh gặp An tại quán bar ngầm",
+      participating_characters_json: JSON.stringify(["char_minh", "char_an"]),
+      is_flashback: 0,
+      is_mandatory: 1,
+    });
+
+    let capturedPlanPrompt = "";
+    const mockPlanInvoker = async (prompt: string): Promise<string> => {
+      capturedPlanPrompt = prompt;
+      return `
+TẬP 1: KHỞI ĐẦU BÍ MẬT
+Logline: Minh và An nhận nhiệm vụ đầu tiên tại khu phố ngầm.
+
+CẢNH 1: QUÁN BAR - ĐÊM
+Nhân vật: Minh, An
+CÚ MÁY 1 (establishing, 4s): Quán bar ngập tràn ánh đèn neon.
+CÚ MÁY 2 (medium, 4s): Minh bước vào nhìn thấy An.
+MINH: Cô là An?
+AN: Đúng vậy, ngồi xuống đi.
+      `.trim();
+    };
+
+    const generator = new StoryToScreenplayGenerator(bible);
+    const result = await generator.generateEpisodeFromPlan({
+      seriesId,
+      planId,
+      episodeNumber: 1,
+      customLlmInvoker: mockPlanInvoker,
+      skipAudit: true,
+    });
+
+    expect(result.generatorUsed).toBe("llm");
+    expect(result.script.episodeNumber).toBe(1);
+    expect(result.script.title).toBe("KHỞI ĐẦU BÍ MẬT");
+
+    // Verify coverage ledgers have no duplicates
+    const ledgers = bible.listCoverageLedgers(planId);
+    const shotBeatLedgers = ledgers.filter((l) => l.shot_id && l.beat_id);
+    const uniqueKeys = new Set(shotBeatLedgers.map((l) => `${l.beat_id}::${l.shot_id}`));
+    expect(shotBeatLedgers.length).toBe(uniqueKeys.size);
+  });
+
+  it("5. generateEpisodeFromPlan forwards options.prompt to customLlmInvoker", async () => {
+    const planId = "plan_prompt_forward";
+    bible.upsertSeriesPlan({
+      id: planId,
+      series_id: seriesId,
+      source_id: "src_01",
+      revision: 1,
+      total_planned_episodes: 1,
+    });
+    bible.upsertPlannedEpisode({
+      id: `plan_ep_${planId}_e01`,
+      plan_id: planId,
+      series_id: seriesId,
+      episode_number: 1,
+      title: "Chỉ Đạo Bổ Sung",
+      logline: "Logline cơ bản",
+      target_duration_sec: 60,
+    });
+
+    let capturedPrompt = "";
+    const mockInvoker = async (prompt: string): Promise<string> => {
+      capturedPrompt = prompt;
+      return `
+TẬP 1: CHỈ ĐẠO BỔ SUNG
+Logline: Logline cơ bản.
+
+CẢNH 1: QUÁN CAFE - NGÀY
+Nhân vật: Minh
+CÚ MÁY 1 (establishing, 4s): Quán cafe ven đường.
+MINH: Cà phê ngon quá.
+      `.trim();
+    };
+
+    const generator = new StoryToScreenplayGenerator(bible);
+    await generator.generateEpisodeFromPlan({
+      seriesId,
+      planId,
+      episodeNumber: 1,
+      prompt: "Tập trung vào không khí căng thẳng và bí ẩn",
+      customLlmInvoker: mockInvoker,
+      skipAudit: true,
+    });
+
+    expect(capturedPrompt).toContain("Tập trung vào không khí căng thẳng và bí ẩn");
+  });
+
+  it("6. stripMarkdownFences cleanly removes conversational preamble before code fences", async () => {
+    const generator = new StoryToScreenplayGenerator(bible);
+    const rawWithPreamble = `
+Chào bạn, đây là kịch bản tôi vừa viết cho bạn:
+\`\`\`markdown
+TẬP 1: BƯỚC NGOẶT
+Logline: Một khởi đầu mới.
+
+CẢNH 1: PHÒNG LÀM VIỆC - NGÀY
+Nhân vật: Minh
+CÚ MÁY 1 (establishing, 4s): Phòng làm việc sáng sủa.
+MINH: Bắt đầu thôi.
+\`\`\`
+Hy vọng bạn hài lòng với kết quả này!
+    `.trim();
+
+    // Access stripMarkdownFences via private method cast
+    const stripped = (generator as any).stripMarkdownFences(rawWithPreamble);
+    expect(stripped.startsWith("TẬP 1: BƯỚC NGOẶT")).toBe(true);
+    expect(stripped.includes("Chào bạn")).toBe(false);
+    expect(stripped.includes("Hy vọng bạn")).toBe(false);
+    expect(stripped.includes("```")).toBe(false);
+  });
+
+  it("7. extractNarrativeDeltaFromScript safely skips unpersisted characters and non-existent wardrobes", () => {
+    const mockScript = {
+      seriesId,
+      episodeNumber: 1,
+      title: "Test Delta Safety",
+      logline: "Kiểm tra an toàn delta",
+      scenes: [
+        {
+          sceneNumber: 1,
+          locationName: "Căn cứ ngầm",
+          timeOfDay: "NIGHT",
+          charactersPresent: [
+            { characterId: "char_minh", wardrobeId: "wardrobe_nonexistent" },
+            { characterId: "char_ghost_unregistered", wardrobeId: "wardrobe_ghost" },
+          ],
+          shots: [
+            {
+              shotId: "s01",
+              visualPrompt: "Minh xuất hiện trong bóng tối",
+              dialogues: [{ text: "Tôi đã đến." }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const delta = extractNarrativeDeltaFromScript(mockScript, bible, seriesId);
+
+    // char_minh exists in bible -> should be in status updates
+    const minhUpdate = delta.character_status_updates?.find((u) => u.id === "char_minh");
+    expect(minhUpdate).toBeDefined();
+    expect(minhUpdate?.status).toBe("alive");
+
+    // char_ghost_unregistered does NOT exist in bible -> must NOT be in status updates to avoid DeltaValidationError
+    const ghostUpdate = delta.character_status_updates?.find((u) => u.id === "char_ghost_unregistered");
+    expect(ghostUpdate).toBeUndefined();
+
+    // wardrobe_nonexistent does NOT exist in bible -> must NOT be in wardrobe updates
+    expect(delta.character_wardrobe_updates?.length).toBe(0);
+
+    // Delta validation should succeed without error
+    const validation = bible.validateNarrativeDelta(delta);
+    expect(validation.valid).toBe(true);
+    expect(validation.errors).toHaveLength(0);
   });
 });

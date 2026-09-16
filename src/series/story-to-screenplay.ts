@@ -1,8 +1,8 @@
-import axios from "axios";
 import { BibleManager, type PlannedEpisodeRecord } from "../bible/bible-manager.js";
 import { normalizeScript, parseRawScreenplay } from "./script-normalizer.js";
 import type { EpisodicScript } from "./series-schema.js";
 import { ContextBuilder, type EpisodeGenerationContext } from "../novel/context-builder.js";
+import { StoryAnalysisEngine } from "../novel/story-analyzer.js";
 import { CoverageLedgerManager } from "./coverage-ledger.js";
 import { log } from "../utils/logger.js";
 
@@ -24,6 +24,9 @@ export interface PlanToScreenplayOptions {
   seriesId: string;
   planId: string;
   episodeNumber: number;
+  prompt?: string;
+  storyText?: string;
+  targetScenes?: number;
   skipAudit?: boolean;
   llmApiKey?: string;
   llmProvider?: "anthropic" | "openai" | "gemini" | "custom";
@@ -215,8 +218,12 @@ export class StoryToScreenplayGenerator {
 
     if (options.customLlmInvoker) {
       try {
+        const steeringPrompt = (options.prompt || plannedEp.logline || "").trim();
+        const promptToSend = steeringPrompt
+          ? `Yêu cầu chỉ đạo kịch bản: ${steeringPrompt}\n\n${epContext.formattedPrompt}`
+          : epContext.formattedPrompt;
         rawScreenplay = await options.customLlmInvoker(
-          epContext.formattedPrompt,
+          promptToSend,
           this.buildSystemPrompt()
         );
         generatorUsed = "llm";
@@ -238,10 +245,12 @@ export class StoryToScreenplayGenerator {
         rawScreenplay = await this.generateViaLlmApi(
           {
             seriesId,
-            prompt: epContext.formattedPrompt,
+            prompt: options.prompt || plannedEp.logline || `Chuyển thể kịch bản phân cảnh cho Tập ${episodeNumber}: ${plannedEp.title}`,
             episodeNumber,
             llmApiKey: options.llmApiKey,
             llmProvider: options.llmProvider,
+            targetScenes: options.targetScenes,
+            tone: options.tone,
           },
           epContext.formattedPrompt,
           episodeNumber
@@ -312,6 +321,8 @@ export class StoryToScreenplayGenerator {
       }
 
       if (allShotsWithScene.length > 0) {
+        const recordedPairs = new Set<string>();
+
         // First pass: ensure every beat in episodeBeats is linked to at least one shot
         for (let bIdx = 0; bIdx < episodeBeats.length; bIdx++) {
           const beat = episodeBeats[bIdx];
@@ -320,11 +331,16 @@ export class StoryToScreenplayGenerator {
             Math.floor((bIdx / episodeBeats.length) * allShotsWithScene.length)
           );
           const { scene, sIdx, shot } = allShotsWithScene[shotTargetIdx];
+          const pairKey = `${beat.id}::${shot.shotId}`;
+          if (recordedPairs.has(pairKey)) continue;
+          recordedPairs.add(pairKey);
+
           const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
           const isMandatory = Boolean(beat.is_mandatory);
 
           try {
             CoverageLedgerManager.recordEntry(this.bible, {
+              id: `cov_${planId}_ep${episodeNumber}_b_${beat.id}_sh_${shot.shotId}`,
               plan_id: planId,
               series_id: seriesId,
               source_id: beat.source_id,
@@ -349,11 +365,16 @@ export class StoryToScreenplayGenerator {
             Math.floor((shIdx / allShotsWithScene.length) * episodeBeats.length)
           );
           const beat = episodeBeats[beatIdx];
+          const pairKey = `${beat.id}::${shot.shotId}`;
+          if (recordedPairs.has(pairKey)) continue;
+          recordedPairs.add(pairKey);
+
           const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
           const isMandatory = Boolean(beat.is_mandatory);
 
           try {
             CoverageLedgerManager.recordEntry(this.bible, {
+              id: `cov_${planId}_ep${episodeNumber}_b_${beat.id}_sh_${shot.shotId}`,
               plan_id: planId,
               series_id: seriesId,
               source_id: beat.source_id,
@@ -549,7 +570,7 @@ export class StoryToScreenplayGenerator {
   }
 
   /**
-   * Generates screenplay via standard Cloud LLM API.
+   * Generates screenplay via standard Cloud LLM API using unified multi-provider invocation.
    */
   private async generateViaLlmApi(
     options: StoryToScreenplayOptions,
@@ -559,115 +580,13 @@ export class StoryToScreenplayGenerator {
     const prompt = this.buildLlmPrompt(options, canonSummary, episodeNumber);
     const systemPrompt = this.buildSystemPrompt();
 
-    let provider = options.llmProvider;
-    let apiKey = options.llmApiKey;
-
-    // Detect provider from API key prefix if not explicitly specified
-    if (!provider && apiKey) {
-      if (apiKey.startsWith("AIza")) {
-        provider = "gemini";
-      } else if (apiKey.startsWith("sk-ant")) {
-        provider = "anthropic";
-      } else if (apiKey.startsWith("sk-")) {
-        provider = "openai";
-      }
-    }
-
-    // Resolve ambient keys and provider precedence
-    if (!provider) {
-      if (process.env.ANTHROPIC_API_KEY) {
-        provider = "anthropic";
-        apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
-      } else if (process.env.GEMINI_API_KEY) {
-        provider = "gemini";
-        apiKey = apiKey || process.env.GEMINI_API_KEY;
-      } else if (process.env.OPENAI_API_KEY) {
-        provider = "openai";
-        apiKey = apiKey || process.env.OPENAI_API_KEY;
-      }
-    } else if (!apiKey) {
-      if (provider === "anthropic") apiKey = process.env.ANTHROPIC_API_KEY;
-      else if (provider === "gemini") apiKey = process.env.GEMINI_API_KEY;
-      else if (provider === "openai") apiKey = process.env.OPENAI_API_KEY;
-    }
-
-    // 1. Google Gemini
-    if (provider === "gemini") {
-      if (!apiKey) throw new Error("GEMINI_API_KEY is missing for Gemini screenplay generation.");
-      const res = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`,
-        {
-          systemInstruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096,
-          },
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-          timeout: 45000,
-        }
-      );
-      return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    }
-
-    // 2. Anthropic Claude
-    if (provider === "anthropic") {
-      if (!apiKey) throw new Error("ANTHROPIC_API_KEY is missing for Anthropic screenplay generation.");
-      const res = await axios.post(
-        "https://api.anthropic.com/v1/messages",
-        {
-          model: "claude-3-5-sonnet-20241022",
-          max_tokens: 4000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: prompt }],
-        },
-        {
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          timeout: 45000,
-        }
-      );
-      return res.data?.content?.[0]?.text || "";
-    }
-
-    // 3. OpenAI
-    if (provider === "openai") {
-      if (!apiKey) throw new Error("OPENAI_API_KEY is missing for OpenAI screenplay generation.");
-      const res = await axios.post(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          model: "gpt-4o",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt },
-          ],
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          timeout: 45000,
-        }
-      );
-      return res.data?.choices?.[0]?.message?.content || "";
-    }
-
-    throw new Error("No valid LLM provider or API key configured for screenplay generation.");
+    return StoryAnalysisEngine.callLlmApi(prompt, systemPrompt, {
+      llmProvider: options.llmProvider,
+      llmApiKey: options.llmApiKey,
+      temperature: 0.7,
+      maxOutputTokens: 4096,
+      timeoutMs: 45000,
+    });
   }
 
   /**
@@ -703,17 +622,20 @@ QUY TẮC BẤT DI BẤT DỊCH:
     canonSummary: string,
     episodeNumber: number
   ): string {
-    const inputContent = options.prompt || options.storyText || "Hành trình tiếp tục của các nhân vật.";
+    const rawInput = (options.prompt || options.storyText || "").trim();
+    const hasCustomInput = rawInput.length > 0 && rawInput !== canonSummary.trim();
+    const inputContent = hasCustomInput ? rawInput : "Hành trình tiếp tục của các nhân vật theo mạch phát triển tự nhiên của Story Bible.";
     const targetScenes = options.targetScenes || 3;
+
+    const inputSection = hasCustomInput
+      ? `\n=== ĐẦU VÀO CỐT TRUYỆN / Ý TƯỞNG CỦA ĐẠO DIỄN ===\n${inputContent}\n`
+      : "";
 
     return `Hãy viết kịch bản điện ảnh Tập ${episodeNumber} cho Series với các thông tin sau:
 
 === KÝ ỨC VÀ BỘ NHỚ CANON (STORY BIBLE) ===
 ${canonSummary}
-
-=== ĐẦU VÀO CỐT TRUYỆN / Ý TƯỞNG CỦA ĐẠO DIỄN ===
-${inputContent}
-
+${inputSection}
 YÊU CẦU:
 - Số cảnh mục tiêu: ${targetScenes} cảnh.
 - Nhịp phim: ${options.tone || "Kịch tính, điện ảnh, giàu cảm xúc"}.
@@ -878,20 +800,22 @@ YÊU CẦU:
   }
 
   /**
-   * Strips markdown fences (``` ... ```) from LLM raw output.
+   * Strips markdown fences (``` ... ```) from LLM raw output, robust to introductory preamble.
    */
   private stripMarkdownFences(text: string): string {
-    let clean = text.trim();
-    if (clean.startsWith("```")) {
-      const lines = clean.split("\n");
-      if (lines[0].startsWith("```")) {
-        lines.shift();
-      }
-      if (lines.length > 0 && lines[lines.length - 1].trim().startsWith("```")) {
-        lines.pop();
-      }
-      clean = lines.join("\n").trim();
+    const trimmed = text.trim();
+    const fenceMatch = trimmed.match(/```(?:markdown|text|fountain)?\s*([\s\S]*?)\s*```/i);
+    if (fenceMatch) {
+      return fenceMatch[1].trim();
     }
-    return clean;
+    const firstFence = trimmed.indexOf("```");
+    if (firstFence !== -1) {
+      const afterFirstFence = trimmed.slice(firstFence + 3);
+      const newlineIdx = afterFirstFence.indexOf("\n");
+      const content = newlineIdx !== -1 ? afterFirstFence.slice(newlineIdx + 1) : afterFirstFence;
+      const secondFence = content.lastIndexOf("```");
+      return (secondFence !== -1 ? content.slice(0, secondFence) : content).trim();
+    }
+    return trimmed;
   }
 }

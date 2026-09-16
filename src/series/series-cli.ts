@@ -572,6 +572,7 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         biblePath,
         seriesId: sId,
         episodeNumber,
+        outputDir: join("output", "series", sId, `ep-${epNumStr}`),
         port,
         autoOpen: !hasFlag(subArgs, "--no-open"),
       });

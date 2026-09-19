@@ -112,6 +112,7 @@ export class CoverageLedgerManager {
       beat_id: entry.beat_id ?? entry.mandatory_beat_id ?? null,
       scene_id: entry.scene_id ?? null,
       shot_id: entry.shot_id ?? null,
+      stage: entry.stage ?? "allocated_to_episode",
       created_at: new Date().toISOString(),
     };
 
@@ -188,20 +189,26 @@ export class CoverageLedgerManager {
     let coveredCount = 0;
 
     for (const beat of mandatoryBeats) {
-      // 1. Check if explicitly mapped via mandatory_beat_id
-      const directMatch = ledgers.find((l) => l.mandatory_beat_id === beat.id);
+      // 1. Check if explicitly mapped via mandatory_beat_id or beat_id
+      const directMatches = ledgers.filter(
+        (l) => l.mandatory_beat_id === beat.id || l.beat_id === beat.id
+      );
 
-      if (directMatch) {
-        if (directMatch.adaptation_decision === "omitted") {
-          violations.push({
-            type: "missing_mandatory_beat",
-            entityId: beat.id,
-            name: beat.name,
-            sourceUnitId: beat.source_unit_id,
-            details: `Mandatory beat '${beat.name}' (${beat.id}) was marked as omitted in episode ${directMatch.episode_number}. Rationale: "${directMatch.rationale || "None"}"`,
-          });
-          continue;
-        }
+      const keptMatch = directMatches.find((l) => l.adaptation_decision !== "omitted");
+      const omittedMatch = directMatches.find((l) => l.adaptation_decision === "omitted");
+
+      if (omittedMatch && !keptMatch) {
+        violations.push({
+          type: "missing_mandatory_beat",
+          entityId: beat.id,
+          name: beat.name,
+          sourceUnitId: beat.source_unit_id,
+          details: `Mandatory beat '${beat.name}' (${beat.id}) was marked as omitted in episode ${omittedMatch.episode_number ?? "none"}. Rationale: "${omittedMatch.rationale || "None"}"`,
+        });
+        continue;
+      }
+
+      if (keptMatch) {
         coveredCount++;
         continue;
       }

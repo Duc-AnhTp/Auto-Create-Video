@@ -246,7 +246,11 @@ AN: Đúng vậy, ngồi xuống đi.
       series_id: seriesId,
       source_id: "src_01",
       revision: 1,
-      total_planned_episodes: 1,
+      target_episodes: 1,
+      target_duration_per_episode_sec: 60,
+      pacing_preset: "standard",
+      status: "approved",
+      summary_json: "{}",
     });
     bible.upsertPlannedEpisode({
       id: `plan_ep_${planId}_e01`,

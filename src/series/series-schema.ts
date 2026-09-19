@@ -80,6 +80,7 @@ export const ShotSchema = z
     dialogues: z.array(DialogueLineSchema).default([]),
     dialogue: DialogueLineSchema.optional(), // Backwards-compatible single dialogue line
     cameraMovement: z.string().optional(),
+    beatIds: z.array(z.string()).default([]),
     sfxCue: z
       .object({
         name: z.string(),
@@ -106,6 +107,7 @@ export const ShotSchema = z
     return {
       ...shot,
       dialogues,
+      beatIds: shot.beatIds ?? [],
       ...(firstDialogue ? { dialogue: firstDialogue } : {}),
     };
   });
@@ -133,6 +135,7 @@ export const SceneSchema = z
       )
       .default([]),
     propsPresent: z.array(z.string()).default([]),
+    beatIds: z.array(z.string()).default([]),
     shots: z.array(ShotSchema).min(1, "Each scene must contain at least one shot"),
   })
   .transform((scene) => {
@@ -140,6 +143,7 @@ export const SceneSchema = z
     return {
       ...scene,
       sceneId,
+      beatIds: scene.beatIds ?? [],
     };
   });
 
@@ -289,6 +293,7 @@ export interface EpisodeProductionJob {
   revision?: number;
   isMock?: boolean;
   isRendered?: boolean;
+  specHash?: string;
   totalCostUsd: number;
   createdAt: string;
   updatedAt: string;

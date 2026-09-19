@@ -505,7 +505,7 @@ export interface SeriesPlanRecord {
   target_episodes: number;
   target_duration_per_episode_sec: number;
   pacing_preset: "fast" | "standard" | "contemplative" | string;
-  status: "draft" | "approved" | "active" | "stale";
+  status: "draft" | "approved" | "active" | "stale" | "archived";
   warnings_json?: string;
   summary_json: string;
   created_at?: string;
@@ -548,6 +548,21 @@ export interface CoverageLedgerRecord {
   beat_id?: string | null;
   scene_id?: string | null;
   shot_id?: string | null;
+  stage?: "allocated_to_episode" | "scripted" | "assembled";
+  created_at?: string;
+}
+
+export interface AnalysisReviewItemRecord {
+  id: string;
+  type: string; // 'character', 'beat', 'thread'
+  series_id: string;
+  source_id?: string | null;
+  data_json: string;
+  confidence_score: number;
+  reasons_json?: string;
+  status: "pending" | "approved" | "rejected" | "modified";
+  reviewed_at?: string | null;
+  review_notes?: string | null;
   created_at?: string;
 }
 
@@ -644,6 +659,7 @@ export class BibleManager {
     series_plans: Map<string, SeriesPlanRecord>;
     planned_episodes: Map<string, PlannedEpisodeRecord>;
     coverage_ledgers: Map<string, CoverageLedgerRecord>;
+    analysis_review_queue: Map<string, AnalysisReviewItemRecord>;
   };
 
   constructor(dbPath: string = "story_bible.db", options: BibleManagerOptions = {}) {
@@ -682,6 +698,7 @@ export class BibleManager {
       series_plans: new Map(),
       planned_episodes: new Map(),
       coverage_ledgers: new Map(),
+      analysis_review_queue: new Map(),
     };
     this.initDb();
   }
@@ -1203,11 +1220,28 @@ export class BibleManager {
         beat_id TEXT,
         scene_id TEXT,
         shot_id TEXT,
+        stage TEXT DEFAULT 'allocated_to_episode',
         created_at TEXT NOT NULL,
         FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_lookup ON coverage_ledgers (plan_id, source_unit_id, episode_number);
       CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_series ON coverage_ledgers (series_id, source_id);
+
+      -- Novel Analysis Review Queue (PR3)
+      CREATE TABLE IF NOT EXISTS analysis_review_queue (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        source_id TEXT,
+        data_json TEXT NOT NULL,
+        confidence_score REAL NOT NULL DEFAULT 1.0,
+        reasons_json TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'pending',
+        reviewed_at TEXT,
+        review_notes TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_analysis_review_lookup ON analysis_review_queue (series_id, status);
     `);
 
     // Safe column additions if tables already existed
@@ -1216,6 +1250,7 @@ export class BibleManager {
     try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN beat_id TEXT;"); } catch {}
     try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN scene_id TEXT;"); } catch {}
     try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN shot_id TEXT;"); } catch {}
+    try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN stage TEXT DEFAULT 'allocated_to_episode';"); } catch {}
   }
 
   private applySchemaSql() {
@@ -2060,7 +2095,7 @@ export class BibleManager {
           value_json = excluded.value_json,
           updated_at_episode = excluded.updated_at_episode
       `);
-      stmt.run(key, JSON.stringify(value), episodeNumber);
+      stmt.run(key, JSON.stringify(value ?? null), episodeNumber);
     } else {
       this.memoryStore.world_state.set(key, { value, episode: episodeNumber });
     }
@@ -2361,7 +2396,7 @@ export class BibleManager {
           entity_id: key,
           event_type: "world_state",
           from_state_json: prevVal !== null ? JSON.stringify({ value: prevVal }) : null,
-          to_state_json: JSON.stringify({ value: val }),
+          to_state_json: JSON.stringify({ value: val ?? null }),
           story_time: storyTime,
           confirmation_source: confirmationSource,
           created_at: now,
@@ -3424,10 +3459,10 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         take.shot_id,
         take.take_number ?? 1,
         take.provider,
-        take.prompt,
+        take.prompt ?? "",
         take.seed ?? null,
-        take.local_path,
-        take.duration_sec,
+        take.local_path ?? null,
+        take.duration_sec ?? 0,
         take.qa_status ?? "PASS",
         take.qa_score ?? null,
         take.qa_notes ?? null,
@@ -5414,6 +5449,43 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     return all[0] ?? null;
   }
 
+  public approveSeriesPlan(planId: string): SeriesPlanRecord | null {
+    return this.setSeriesPlanStatus(planId, "active");
+  }
+
+  public setSeriesPlanStatus(
+    planId: string,
+    status: "draft" | "approved" | "active" | "stale" | "archived"
+  ): SeriesPlanRecord | null {
+    const plan = this.getSeriesPlan(planId);
+    if (!plan) return null;
+    const now = new Date().toISOString();
+    if (this.db && !this.isFallback) {
+      if (status === "active") {
+        this.db
+          .prepare(
+            "UPDATE series_plans SET status = 'approved', updated_at = ? WHERE series_id = ? AND status = 'active'"
+          )
+          .run(now, plan.series_id);
+      }
+      this.db
+        .prepare("UPDATE series_plans SET status = ?, updated_at = ? WHERE id = ?")
+        .run(status, now, planId);
+    } else {
+      if (status === "active") {
+        for (const p of this.memoryStore.series_plans.values()) {
+          if (p.series_id === plan.series_id && p.status === "active") {
+            p.status = "approved";
+            p.updated_at = now;
+          }
+        }
+      }
+      plan.status = status;
+      plan.updated_at = now;
+    }
+    return this.getSeriesPlan(planId);
+  }
+
   // ── Planned Episodes Operations ───────────────────────────────────────────
 
   public upsertPlannedEpisode(ep: PlannedEpisodeRecord): void {
@@ -5546,8 +5618,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       id: raw.id,
       plan_id: raw.plan_id ?? raw.planId,
       series_id: raw.series_id ?? raw.seriesId,
-      source_id: raw.source_id ?? raw.sourceId,
-      source_unit_id: raw.source_unit_id ?? raw.sourceUnitId,
+      source_id: raw.source_id ?? raw.sourceId ?? "source_unknown",
+      source_unit_id: raw.source_unit_id ?? raw.sourceUnitId ?? "unit_unknown",
       source_block_id: raw.source_block_id ?? raw.sourceBlockId ?? null,
       episode_number: raw.episode_number ?? raw.episodeNumber ?? null,
       scene_number: raw.scene_number ?? raw.sceneNumber ?? null,
@@ -5557,6 +5629,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       beat_id: raw.beat_id ?? raw.beatId ?? null,
       scene_id: raw.scene_id ?? raw.sceneId ?? null,
       shot_id: raw.shot_id ?? raw.shotId ?? null,
+      stage: raw.stage ?? "allocated_to_episode",
       created_at: now,
     };
 
@@ -5566,8 +5639,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           INSERT INTO coverage_ledgers (
             id, plan_id, series_id, source_id, source_unit_id, source_block_id,
             episode_number, scene_number, adaptation_decision, rationale,
-            mandatory_beat_id, beat_id, scene_id, shot_id, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            mandatory_beat_id, beat_id, scene_id, shot_id, stage, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(id) DO UPDATE SET
             episode_number = excluded.episode_number,
             scene_number = excluded.scene_number,
@@ -5576,7 +5649,8 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
             mandatory_beat_id = excluded.mandatory_beat_id,
             beat_id = excluded.beat_id,
             scene_id = excluded.scene_id,
-            shot_id = excluded.shot_id
+            shot_id = excluded.shot_id,
+            stage = excluded.stage
         `)
         .run(
           clean.id,
@@ -5593,6 +5667,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           clean.beat_id ?? null,
           clean.scene_id ?? null,
           clean.shot_id ?? null,
+          clean.stage ?? "allocated_to_episode",
           clean.created_at
         );
     } else {
@@ -5631,6 +5706,139 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       for (const l of ledgers) {
         this.upsertCoverageLedger(l);
       }
+    }
+  }
+
+  // ── Novel Analysis Review Queue Operations (PR3) ──────────────────────────
+
+  public enqueueReviewItem(
+    item: AnalysisReviewItemRecord | Omit<AnalysisReviewItemRecord, "created_at">
+  ): AnalysisReviewItemRecord {
+    const now = (item as any).created_at || new Date().toISOString();
+    const clean: AnalysisReviewItemRecord = {
+      ...item,
+      source_id: item.source_id ?? null,
+      confidence_score: item.confidence_score ?? 1.0,
+      reasons_json: item.reasons_json || "[]",
+      status: item.status || "pending",
+      reviewed_at: item.reviewed_at ?? null,
+      review_notes: item.review_notes ?? null,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO analysis_review_queue (
+            id, type, series_id, source_id, data_json,
+            confidence_score, reasons_json, status, reviewed_at, review_notes, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            type = excluded.type,
+            source_id = excluded.source_id,
+            data_json = excluded.data_json,
+            confidence_score = excluded.confidence_score,
+            reasons_json = excluded.reasons_json,
+            status = excluded.status,
+            reviewed_at = excluded.reviewed_at,
+            review_notes = excluded.review_notes
+        `)
+        .run(
+          clean.id,
+          clean.type,
+          clean.series_id,
+          clean.source_id,
+          clean.data_json,
+          clean.confidence_score,
+          clean.reasons_json,
+          clean.status,
+          clean.reviewed_at,
+          clean.review_notes,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.analysis_review_queue.set(clean.id, clean);
+    }
+    return clean;
+  }
+
+  public getReviewItem(id: string): AnalysisReviewItemRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM analysis_review_queue WHERE id = ?").get(id);
+      return (row as AnalysisReviewItemRecord) ?? null;
+    }
+    return this.memoryStore.analysis_review_queue.get(id) ?? null;
+  }
+
+  public listReviewItems(seriesId?: string, status?: string): AnalysisReviewItemRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM analysis_review_queue";
+      const conditions: string[] = [];
+      const params: any[] = [];
+      if (seriesId) {
+        conditions.push("series_id = ?");
+        params.push(seriesId);
+      }
+      if (status) {
+        conditions.push("status = ?");
+        params.push(status);
+      }
+      if (conditions.length > 0) {
+        query += " WHERE " + conditions.join(" AND ");
+      }
+      query += " ORDER BY created_at DESC";
+      return (this.db.prepare(query).all(...params) as AnalysisReviewItemRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.analysis_review_queue.values())
+      .filter(
+        (r) => (!seriesId || r.series_id === seriesId) && (!status || r.status === status)
+      )
+      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  }
+
+  public getPendingReviewItems(seriesId?: string): AnalysisReviewItemRecord[] {
+    return this.listReviewItems(seriesId, "pending");
+  }
+
+  public approveReviewItem(id: string, reviewNotes?: string): boolean {
+    const item = this.getReviewItem(id);
+    if (!item) return false;
+    const now = new Date().toISOString();
+    if (this.db && !this.isFallback) {
+      const res = this.db
+        .prepare(`
+          UPDATE analysis_review_queue
+          SET status = 'approved', reviewed_at = ?, review_notes = COALESCE(?, review_notes)
+          WHERE id = ?
+        `)
+        .run(now, reviewNotes ?? null, id);
+      return (res?.changes || 0) > 0;
+    } else {
+      item.status = "approved";
+      item.reviewed_at = now;
+      if (reviewNotes) item.review_notes = reviewNotes;
+      return true;
+    }
+  }
+
+  public rejectReviewItem(id: string, reviewNotes?: string): boolean {
+    const item = this.getReviewItem(id);
+    if (!item) return false;
+    const now = new Date().toISOString();
+    if (this.db && !this.isFallback) {
+      const res = this.db
+        .prepare(`
+          UPDATE analysis_review_queue
+          SET status = 'rejected', reviewed_at = ?, review_notes = COALESCE(?, review_notes)
+          WHERE id = ?
+        `)
+        .run(now, reviewNotes ?? null, id);
+      return (res?.changes || 0) > 0;
+    } else {
+      item.status = "rejected";
+      item.reviewed_at = now;
+      if (reviewNotes) item.review_notes = reviewNotes;
+      return true;
     }
   }
 }

@@ -190,6 +190,7 @@ export interface EpisodicPipelineOptions {
   ttsEngine?: string;
   voiceConfigs?: Record<string, any>;
   useHierarchicalAssembly?: boolean;
+  specHash?: string;
   onProgress?: (step: number, totalSteps: number, message: string) => void;
 }
 
@@ -385,6 +386,7 @@ export class EpisodicPipeline {
         shots: {},
         transitionDurationSec: effectiveConfig.transitionDurationSec,
         effectiveRenderConfig: effectiveConfig,
+        specHash: options.specHash,
         totalCostUsd: 0,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -403,6 +405,9 @@ export class EpisodicPipeline {
       job.shotProgress = script.scenes.flatMap((s) => s.shots).map((sh) => job!.shots[sh.shotId]).filter(Boolean);
       await this.saveCheckpoint(outputDir, job);
     } else {
+      if (options.specHash) {
+        job.specHash = options.specHash;
+      }
       job.transitionDurationSec = effectiveConfig.transitionDurationSec;
       job.effectiveRenderConfig = effectiveConfig;
       job.shotProgress = script.scenes.flatMap((s) => s.shots).map((sh) => {
@@ -2461,6 +2466,25 @@ export function extractNarrativeDeltaFromScript(
     }
   }
 
+  // 1. Detect dynamic character status changes (injuries, deaths, healing)
+  const scriptStatusOverrides = new Map<string, { status: string; notes?: string }>();
+  if ((script as any).characterStatusUpdates && Array.isArray((script as any).characterStatusUpdates)) {
+    for (const u of (script as any).characterStatusUpdates) {
+      if (u.id && u.status) scriptStatusOverrides.set(u.id, u);
+    }
+  }
+
+  const allSceneText = (script.scenes || [])
+    .flatMap((sc: any) => [
+      sc.locationName || "",
+      ...(sc.shots || []).flatMap((sh: any) => [
+        sh.visualPrompt || "",
+        ...(sh.dialogues || []).map((d: any) => `${d.speaker || ""}: ${d.text || ""}`),
+      ]),
+    ])
+    .join(" ")
+    .toLowerCase();
+
   const characterStatusUpdates: Array<{ id: string; status: string; notes?: string }> = [];
   for (const charId of charactersAppeared) {
     const existing = targetSeriesId ? bible.getCharacter(charId, targetSeriesId) : bible.getCharacter(charId);
@@ -2469,14 +2493,48 @@ export function extractNarrativeDeltaFromScript(
       if (existing.status === "deceased") {
         continue;
       }
-      // Preserve current canon status (e.g. injured, missing, etc.)
+
+      let determinedStatus: string = existing.status || "alive";
+      let notes = `Tham gia tập ${script.episodeNumber ?? "?"}: ${script.title ?? ""}`;
+
+      if (scriptStatusOverrides.has(charId)) {
+        const ov = scriptStatusOverrides.get(charId)!;
+        determinedStatus = ov.status;
+        if (ov.notes) notes = ov.notes;
+      } else {
+        const charNameLower = (existing.name || "").toLowerCase();
+        if (
+          allSceneText.includes(`${charNameLower} hy sinh`) ||
+          allSceneText.includes(`${charNameLower} tử vong`) ||
+          allSceneText.includes(`${charNameLower} đã chết`)
+        ) {
+          determinedStatus = "deceased";
+          notes = `Hy sinh trong tập ${script.episodeNumber ?? "?"}`;
+        } else if (
+          allSceneText.includes(`${charNameLower} bị thương`) ||
+          allSceneText.includes(`${charNameLower} trúng đạn`) ||
+          allSceneText.includes(`${charNameLower} gãy tay`) ||
+          allSceneText.includes(`${charNameLower} bất tỉnh`)
+        ) {
+          determinedStatus = "injured";
+          notes = `Bị thương trong tập ${script.episodeNumber ?? "?"}`;
+        } else if (
+          existing.status === "injured" &&
+          (allSceneText.includes(`${charNameLower} hồi phục`) ||
+            allSceneText.includes(`${charNameLower} đã khỏi`) ||
+            allSceneText.includes(`chữa lành cho ${charNameLower}`))
+        ) {
+          determinedStatus = "alive";
+          notes = `Hồi phục trong tập ${script.episodeNumber ?? "?"}`;
+        }
+      }
+
       characterStatusUpdates.push({
         id: charId,
-        status: existing.status || "alive",
-        notes: `Tham gia tập ${script.episodeNumber ?? "?"}: ${script.title ?? ""}`,
+        status: determinedStatus,
+        notes,
       });
     }
-    // Unpersisted characters are NOT pushed to characterStatusUpdates to prevent fatal DeltaValidationError during canon commit
   }
 
   const wardrobeUpdates: Array<{ character_id: string; wardrobe_id: string }> = [];
@@ -2491,19 +2549,100 @@ export function extractNarrativeDeltaFromScript(
     }
   }
 
+  // 2. Detect prop transfers & holder changes
+  const propTransfers: Array<{
+    prop_id: string;
+    new_holder_id: string;
+    from_holder_id?: string;
+    reason?: string;
+  }> = [];
+
+  if ((script as any).propTransfers && Array.isArray((script as any).propTransfers)) {
+    for (const pt of (script as any).propTransfers) {
+      const propId = pt.propId || pt.prop_id;
+      const newHolder = pt.newHolderId || pt.new_holder_id;
+      if (propId && newHolder) {
+        const prop = bible.getKeyProp(propId);
+        if (prop) {
+          propTransfers.push({
+            prop_id: propId,
+            new_holder_id: newHolder,
+            from_holder_id: prop.current_holder_id || undefined,
+            reason: pt.reason || `Chuyển giao trong tập ${script.episodeNumber ?? "?"}`,
+          });
+        }
+      }
+    }
+  } else {
+    for (const scene of script.scenes || []) {
+      if (
+        scene.propsPresent &&
+        scene.propsPresent.length > 0 &&
+        scene.charactersPresent &&
+        scene.charactersPresent.length > 0
+      ) {
+        for (const pId of scene.propsPresent) {
+          const prop = bible.getKeyProp(pId);
+          if (prop) {
+            const primaryChar =
+              typeof scene.charactersPresent[0] === "string"
+                ? scene.charactersPresent[0]
+                : scene.charactersPresent[0]?.characterId;
+            if (primaryChar && prop.current_holder_id && prop.current_holder_id !== primaryChar) {
+              const scText = (scene.shots || [])
+                .map((s: any) => s.visualPrompt || "")
+                .join(" ")
+                .toLowerCase();
+              if (
+                scText.includes("trao") ||
+                scText.includes("chuyển giao") ||
+                scText.includes("cầm lấy") ||
+                scText.includes("nhận lấy") ||
+                scText.includes("giữ lấy")
+              ) {
+                propTransfers.push({
+                  prop_id: pId,
+                  new_holder_id: primaryChar,
+                  from_holder_id: prop.current_holder_id,
+                  reason: `Chuyển giao cho ${primaryChar} trong Cảnh ${scene.sceneNumber || 1}`,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Detect new character knowledge / revealed secrets
+  const newKnowledge: Array<{ character_id: string; fact_key: string; notes?: string }> = [];
+  if ((script as any).newKnowledge && Array.isArray((script as any).newKnowledge)) {
+    for (const k of (script as any).newKnowledge) {
+      const charId = k.characterId || k.character_id;
+      const factKey = k.factKey || k.fact_key;
+      if (charId && factKey) {
+        newKnowledge.push({
+          character_id: charId,
+          fact_key: factKey,
+          notes: k.notes,
+        });
+      }
+    }
+  }
+
   const worldStateUpdates: Record<string, unknown> = {
     last_episode_number: script.episodeNumber,
     last_episode_title: script.title,
     locations_visited: Array.from(locationsVisited),
     props_active: Array.from(propsUsed),
-    timestamp: new Date().toISOString(),
   };
 
   return {
     major_events: majorEvents.length > 0 ? majorEvents : [script.logline || `Hoàn thành tập ${script.episodeNumber ?? 1}`],
     character_status_updates: characterStatusUpdates,
     character_wardrobe_updates: wardrobeUpdates,
+    prop_transfers: propTransfers,
+    new_knowledge: newKnowledge,
     world_state_updates: worldStateUpdates,
   };
-}
 }

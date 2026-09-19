@@ -388,6 +388,7 @@ export class AudioAssembler {
             visualPrompt: shot.visualPrompt,
             dialogues: [dialogue],
             dialogue,
+            beatIds: shot.beatIds || [],
           };
           const { provider, voiceId } = resolveVoiceForDialogue(mockShot, bible, this.cfg);
 

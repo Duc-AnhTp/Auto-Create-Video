@@ -17,6 +17,7 @@ import { SourceIngestionEngine, TextChunker, StoryAnalysisEngine } from "../nove
 import { SeriesPlanner } from "./series-planner.js";
 import { CoverageLedgerManager } from "./coverage-ledger.js";
 import { SeasonOrchestrator } from "../orchestration/season-orchestrator.js";
+import { finalizeEpisodeProduction } from "./finalize-service.js";
 import { log } from "../utils/logger.js";
 
 function getArgValue(args: string[], flag: string, short?: string): string | undefined {
@@ -94,7 +95,9 @@ Lệnh chính:
   series:ingest     Nhập tiểu thuyết/kịch bản nguồn vào hệ thống với băm SHA-256 & chỉ mục
   series:analyze    Phân tích cấu trúc truyện: nhân vật, sự kiện beat, tuyến truyện, tri thức 4D
   series:plan-series Lập kế hoạch chuyển thể toàn bộ loạt phim N tập kèm coverage ledger
+  series:plan-approve Phê duyệt và kích hoạt kế hoạch chuyển thể (draft -> active)
   series:season     Sản xuất hàng loạt toàn bộ mùa phim (Season) với điều phối tự động & resume
+  series:finalize   Chốt tập phim chuẩn mực: kiểm tra take duyệt, chặn mock, QA gate và commit canon
   series:plan       Dự toán chi phí sản xuất kịch bản theo bảng giá rate card từng provider
   series:init       Khởi tạo series mới với phong cách mỹ thuật và thông số chuẩn
   series:character  Đăng ký hoặc cập nhật nhân vật (khuôn mặt, trang phục, giọng nói)
@@ -1127,10 +1130,11 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         targetDurationPerEpisodeSec: targetDuration,
         targetTotalDurationSec: totalDuration,
         pacingPreset,
-        status: "active",
+        status: (getArgValue(subArgs, "--status") as any) || "draft",
       });
 
       console.log(`✅ Đã tạo Kế Hoạch Chuyển Thể: ${planResult.plan.id}`);
+      console.log(`   Trạng thái:          ${planResult.plan.status.toUpperCase()}`);
       console.log(`   Số tập dự kiến:      ${planResult.episodes.length} tập`);
       console.log(
         `   Thời lượng mục tiêu: ${planResult.episodes[0]?.target_duration_sec}s / tập (Tổng: ${planResult.summary.estimatedTotalDurationSec}s)`
@@ -1154,6 +1158,96 @@ export async function runSeriesCli(args: string[]): Promise<void> {
         console.log(`     Mục tiêu:   ${ep.goal}`);
         console.log(`     Hồi kết:    ${ep.ending}`);
       }
+
+      if (planResult.plan.status === "draft") {
+        console.log(`\n💡 Kế hoạch hiện ở trạng thái DRAFT. Để phê duyệt và kích hoạt sản xuất, chạy:`);
+        console.log(`   npx tsx src/cli.ts series:plan-approve ${planResult.plan.id} --series ${seriesId}`);
+      }
+      break;
+    }
+
+    case "series:plan-approve": {
+      const planId =
+        subArgs[0] && !subArgs[0].startsWith("-")
+          ? subArgs[0]
+          : getArgValue(subArgs, "--plan") || getArgValue(subArgs, "--id");
+      if (!planId) {
+        console.error("❌ Lỗi: Cần cung cấp planId (ví dụ: series:plan-approve <planId> hoặc --plan <planId>).");
+        process.exit(2);
+      }
+      const planner = new SeriesPlanner(bible);
+      try {
+        const approved = planner.approvePlan(planId, getArgValue(subArgs, "--by") || "cli_operator");
+        const activated = planner.activatePlan(planId);
+        console.log(`\n✅ Đã phê duyệt và kích hoạt Kế Hoạch Chuyển Thể: [${activated.id}]`);
+        console.log(`   Series ID:  ${activated.series_id}`);
+        console.log(`   Trạng thái: ${activated.status.toUpperCase()}`);
+        console.log(`   Kế hoạch hiện đã sẵn sàng cho sản xuất (series:season).\n`);
+      } catch (err: any) {
+        console.error(`❌ Lỗi phê duyệt kế hoạch: ${err.message}`);
+        process.exit(1);
+      }
+      break;
+    }
+
+    case "series:finalize": {
+      const epArg = getArgValue(subArgs, "--episode");
+      const epNum = epArg ? parseInt(epArg, 10) : 1;
+      const sId = seriesId || "default-series";
+      const epNumStr = String(epNum).padStart(2, "0");
+      const outDir =
+        getArgValue(subArgs, "--out") ||
+        join("output", "series", sId, `ep-${epNumStr}`);
+
+      const scriptPath =
+        getArgValue(subArgs, "--script") ||
+        join(outDir, "script-normalized.json");
+
+      if (!existsSync(scriptPath)) {
+        console.error(`❌ Lỗi: Không tìm thấy kịch bản tại ${scriptPath}. Cần chạy 'series:episode' trước.`);
+        process.exit(2);
+      }
+
+      let script: any;
+      try {
+        script = JSON.parse(await readFile(scriptPath, "utf8"));
+      } catch (err: any) {
+        console.error(`❌ Lỗi đọc kịch bản: ${err.message}`);
+        process.exit(1);
+      }
+
+      const allowMock = hasFlag(subArgs, "--allow-mock-media") || hasFlag(subArgs, "--dry-run");
+
+      console.log(`\n🔒 [FINALIZE] Bắt đầu kiểm tra và chốt tập ${epNum} ('${script.title}') cho series '${sId}'...`);
+      const result = await finalizeEpisodeProduction({
+        seriesId: sId,
+        episodeNumber: epNum,
+        script,
+        bible,
+        outputDir: outDir,
+        allowMockMedia: allowMock,
+      });
+
+      if (!result.success) {
+        console.error(`\n❌ Chốt tập thất bại: ${result.error}`);
+        if (result.missingApprovals && result.missingApprovals.length > 0) {
+          console.error(`   Shots chưa duyệt hoặc thiếu file:`);
+          for (const s of result.missingApprovals) console.error(`     - ${s}`);
+        }
+        if (result.mockTakesDetected && result.mockTakesDetected.length > 0) {
+          console.error(`   Takes mock bị phát hiện (bị chặn đưa vào canon):`);
+          for (const m of result.mockTakesDetected) console.error(`     - ${m}`);
+        }
+        process.exit(1);
+      }
+
+      console.log("\n=======================================================");
+      console.log(`🎉 TẬP PHIM ĐÃ ĐƯỢC CHỐT VÀO CANON THÀNH CÔNG!`);
+      console.log(`   Tập:        ${epNum} - "${script.title}"`);
+      console.log(`   Master MP4: ${result.masterVideoPath}`);
+      console.log(`   Commit ID:  ${result.commitId}`);
+      console.log(`   QA Status:  ${result.qaReport?.isValid ? "PASSED (Hợp lệ)" : "N/A"}`);
+      console.log("=======================================================\n");
       break;
     }
 

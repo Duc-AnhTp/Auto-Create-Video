@@ -506,11 +506,32 @@ CREATE TABLE IF NOT EXISTS coverage_ledgers (
   adaptation_decision TEXT NOT NULL DEFAULT 'kept', -- 'kept', 'compressed', 'moved', 'omitted', 'expanded'
   rationale TEXT,
   mandatory_beat_id TEXT,
+  beat_id TEXT,
+  scene_id TEXT,
+  shot_id TEXT,
+  stage TEXT DEFAULT 'allocated_to_episode',
   created_at TEXT NOT NULL,
   FOREIGN KEY (plan_id) REFERENCES series_plans (id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_lookup ON coverage_ledgers (plan_id, source_unit_id, episode_number);
 CREATE INDEX IF NOT EXISTS idx_coverage_ledgers_series ON coverage_ledgers (series_id, source_id);
+
+-- Novel Analysis Review Queue (PR3)
+CREATE TABLE IF NOT EXISTS analysis_review_queue (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL, -- 'character', 'beat', 'thread'
+  series_id TEXT NOT NULL,
+  source_id TEXT,
+  data_json TEXT NOT NULL,
+  confidence_score REAL NOT NULL DEFAULT 1.0,
+  reasons_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected', 'modified'
+  reviewed_at TEXT,
+  review_notes TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_review_lookup ON analysis_review_queue (series_id, status);
 
 

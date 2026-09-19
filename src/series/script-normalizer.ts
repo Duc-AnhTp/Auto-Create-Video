@@ -60,6 +60,7 @@ export interface IntermediateShot {
   dialogues: IntermediateDialogue[];
   dialogue?: IntermediateDialogue; // backward compatibility
   cameraMovement?: string;
+  beatIds?: string[];
   sfxCue?: {
     name: string;
     offsetSec?: number;
@@ -74,6 +75,7 @@ export interface IntermediateScene {
   timeOfDay?: "day" | "night" | "golden_hour" | "dusk" | "dawn";
   charactersMentioned?: string[];
   propsMentioned?: string[];
+  beatIds?: string[];
   shots: IntermediateShot[];
 }
 
@@ -197,9 +199,11 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
                   dialogues,
                   dialogue: dialogues[0],
                   cameraMovement: sh.cameraMovement,
+                  beatIds: Array.isArray(sh.beatIds) ? sh.beatIds : [],
                   sfxCue: sh.sfxCue,
                 };
               }),
+              beatIds: Array.isArray(s.beatIds) ? s.beatIds : [],
             };
           }),
         };
@@ -394,11 +398,20 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
       }
 
       const shotId = `${currentScene.sceneId}_sh${String(shotNum).padStart(2, "0")}`;
+      const extractedBeats: string[] = [];
+      if (initialVisualPrompt) {
+        const beatMatches = [...initialVisualPrompt.matchAll(/\[(?:BEAT|BEATS|TÌNH TIẾT):\s*([^\]]+)\]/gi)];
+        for (const bm of beatMatches) {
+          const ids = bm[1].split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+          extractedBeats.push(...ids);
+        }
+      }
       currentShot = {
         shotId,
         shotType,
         durationSec,
         visualPrompt: initialVisualPrompt,
+        beatIds: extractedBeats,
         dialogues: [],
       };
       continue;
@@ -426,6 +439,16 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
     }
 
     // Shot metadata fields
+    const beatLineMatch = line.match(/^(?:BEATS?|TÌNH TIẾT)\s*:\s*(.+)$/i);
+    if (beatLineMatch) {
+      const parsedBeats = beatLineMatch[1]
+        .split(/[,;]/)
+        .map((s) => s.trim().replace(/^\[|\]$/g, ""))
+        .filter(Boolean);
+      currentShot.beatIds = Array.from(new Set([...(currentShot.beatIds || []), ...parsedBeats]));
+      continue;
+    }
+
     const durMatch = line.match(/^(?:THỜI LƯỢNG|DURATION)\s*:\s*([\d.]+)\s*s?/i);
     if (durMatch) {
       const parsedDur = parseFloat(durMatch[1]);
@@ -438,6 +461,11 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
     const visualMatch = line.match(/^(?:HÌNH ẢNH|VISUAL|PROMPT)\s*:\s*(.+)$/i);
     if (visualMatch) {
       currentShot.visualPrompt = visualMatch[1].trim();
+      const beatMatches = [...currentShot.visualPrompt.matchAll(/\[(?:BEAT|BEATS|TÌNH TIẾT):\s*([^\]]+)\]/gi)];
+      for (const bm of beatMatches) {
+        const ids = bm[1].split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        currentShot.beatIds = Array.from(new Set([...(currentShot.beatIds || []), ...ids]));
+      }
       continue;
     }
 
@@ -814,6 +842,7 @@ export function enrichWithBibleContext(
         dialogues: enrichedDialogues,
         dialogue: enrichedDialogues[0], // for legacy callers
         cameraMovement: shot.cameraMovement,
+        beatIds: shot.beatIds || [],
         sfxCue: shot.sfxCue
           ? {
               name: shot.sfxCue.name,
@@ -833,6 +862,7 @@ export function enrichWithBibleContext(
       mood: scene.timeOfDay,
       charactersPresent: charsPresent,
       propsPresent,
+      beatIds: scene.beatIds || [],
       shots: enrichedShots,
     };
   });

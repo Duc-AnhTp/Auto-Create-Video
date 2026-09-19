@@ -1,12 +1,14 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { BibleManager, type SeriesPlanRecord, type PlannedEpisodeRecord } from "../bible/bible-manager.js";
 import { EpisodicPipeline, type EpisodicPipelineOptions, type EpisodicPipelineResult } from "../series/episodic-pipeline.js";
 import { StoryToScreenplayGenerator } from "../series/story-to-screenplay.js";
 import { SeriesPlanner } from "../series/series-planner.js";
 import { BudgetLedger } from "./budget-ledger.js";
 import type { BackendProvider } from "../gateway/video-gateway.js";
+import { probeVideoFile } from "../media/media-validator.js";
 import { log } from "../utils/logger.js";
 
 export interface SeasonOrchestratorOptions {
@@ -115,6 +117,60 @@ export class SeasonOrchestrator {
 
   public getPipeline(): EpisodicPipeline {
     return this.pipeline;
+  }
+
+  /**
+   * Computes composite specHash for an episode based on:
+   * source hash + plan hash + script hash + prior canon version + provider config (PR6).
+   */
+  public computeEpisodeSpecHash(
+    seriesId: string,
+    planId: string,
+    plannedEp: PlannedEpisodeRecord,
+    options: SeasonOrchestratorOptions,
+    epOutputDir?: string
+  ): string {
+    const canonHistory = this.bible.getCanonHistory(seriesId);
+    const priorCanonVersion = canonHistory
+      .filter((c) => c.episode_number < plannedEp.episode_number)
+      .map((c) => `${c.episode_number}:${c.title}:${c.created_at || ""}`)
+      .join(";");
+
+    const providerConfig = [
+      options.provider || "mock",
+      options.skipRender ? "skipRender" : "render",
+      options.dryRun ? "dryRun" : "live",
+      options.transitionDurationSec ?? 0,
+      options.useHierarchicalAssembly ?? true,
+    ].join("|");
+
+    let scriptHash = "";
+    if (epOutputDir) {
+      const screenplayPath = join(epOutputDir, "screenplay.txt");
+      if (existsSync(screenplayPath)) {
+        try {
+          const content = readFileSync(screenplayPath, "utf8");
+          scriptHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+        } catch {
+          scriptHash = "";
+        }
+      }
+    }
+
+    const payload = [
+      seriesId,
+      planId,
+      plannedEp.id,
+      plannedEp.episode_number,
+      plannedEp.logline || "",
+      plannedEp.dependencies_json || "",
+      plannedEp.target_duration_sec,
+      priorCanonVersion,
+      providerConfig,
+      scriptHash,
+    ].join("::");
+
+    return createHash("sha256").update(payload).digest("hex").slice(0, 32);
   }
 
   /**
@@ -229,11 +285,25 @@ export class SeasonOrchestrator {
         break;
       }
 
+      // Compute specHash for versioned resume gating (PR6)
+      const currentSpecHash = this.computeEpisodeSpecHash(
+        seriesId,
+        planId,
+        plannedEp,
+        options,
+        epOutputDir
+      );
+
       // Check Resumability: if episode was already completed and resume is true
       if (resume) {
         const existingCheckpoint = await this.pipeline.loadCheckpoint(epOutputDir);
+        const specMatches =
+          !existingCheckpoint?.specHash ||
+          existingCheckpoint.specHash === currentSpecHash;
+
         if (
           existingCheckpoint &&
+          specMatches &&
           (existingCheckpoint.status === "completed" ||
             (options.skipRender && existingCheckpoint.status === "unrendered"))
         ) {
@@ -246,19 +316,35 @@ export class SeasonOrchestrator {
             : null;
 
           if (finalVideo || options.skipRender) {
+            let measuredDuration = plannedEp.target_duration_sec;
+            if (finalVideo) {
+              try {
+                const probe = await probeVideoFile(finalVideo);
+                if (probe.isValid && probe.durationSec > 0) {
+                  measuredDuration = Math.round(probe.durationSec);
+                }
+              } catch {
+                // Keep planned duration as fallback
+              }
+            }
+
             log.info(
-              `⚡ [SEASON RESUME] Tập ${epNum} ('${plannedEp.title}') đã hoàn thành trước đó. Bỏ qua và tái sử dụng artifact.`
+              `⚡ [SEASON RESUME] Tập ${epNum} ('${plannedEp.title}') đã hoàn thành trước đó (specHash khớp). Bỏ qua và tái sử dụng artifact.`
             );
             epStatus.status = "skipped";
             epStatus.outputPath = finalVideo || join(epOutputDir, "script-normalized.json");
-            epStatus.durationSec = plannedEp.target_duration_sec;
+            epStatus.durationSec = measuredDuration;
             epStatus.completedAt = existingCheckpoint.updatedAt;
             skippedCount++;
             completedCount++;
-            totalDurationSec += plannedEp.target_duration_sec;
+            totalDurationSec += measuredDuration;
             if (options.onEpisodeComplete) options.onEpisodeComplete(epStatus);
             continue;
           }
+        } else if (existingCheckpoint && !specMatches) {
+          log.warn(
+            `🔄 [SEASON RESUME MISMATCH] Tập ${epNum} specHash đã thay đổi (cũ: ${existingCheckpoint.specHash}, mới: ${currentSpecHash}). Re-run tập.`
+          );
         }
       }
 
@@ -283,6 +369,15 @@ export class SeasonOrchestrator {
           "utf8"
         );
 
+        // Compute specHash for pipeline checkpoint (including written screenplay)
+        const effectiveSpecHash = this.computeEpisodeSpecHash(
+          seriesId,
+          planId,
+          plannedEp,
+          options,
+          epOutputDir
+        );
+
         // Run Episodic Pipeline for this episode
         const pipelineOptions: EpisodicPipelineOptions = {
           seriesId,
@@ -298,6 +393,7 @@ export class SeasonOrchestrator {
           _testOnlyAllowMockCommit: options.commitCanon, // Allow test commit when requested
           useHierarchicalAssembly: options.useHierarchicalAssembly ?? true, // Default to true for multi-episode season assembly
           transitionDurationSec: options.transitionDurationSec,
+          specHash: effectiveSpecHash,
         };
 
         const epResult = await this.pipeline.produceEpisode(
@@ -305,12 +401,24 @@ export class SeasonOrchestrator {
           pipelineOptions
         );
 
+        let measuredDuration = plannedEp.target_duration_sec;
+        if (epResult.videoPath && existsSync(epResult.videoPath)) {
+          try {
+            const probe = await probeVideoFile(epResult.videoPath);
+            if (probe.isValid && probe.durationSec > 0) {
+              measuredDuration = Math.round(probe.durationSec);
+            }
+          } catch {
+            // Keep planned duration as fallback
+          }
+        }
+
         epStatus.status = "completed";
         epStatus.outputPath = epResult.videoPath;
-        epStatus.durationSec = plannedEp.target_duration_sec;
+        epStatus.durationSec = measuredDuration;
         epStatus.completedAt = new Date().toISOString();
         completedCount++;
-        totalDurationSec += plannedEp.target_duration_sec;
+        totalDurationSec += measuredDuration;
 
         log.info(
           `✅ [SEASON ORCHESTRATOR] Tập ${epNum} hoàn thành thành công: ${epResult.videoPath}`

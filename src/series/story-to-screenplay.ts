@@ -1,4 +1,4 @@
-import { BibleManager, type PlannedEpisodeRecord } from "../bible/bible-manager.js";
+import { BibleManager, type PlannedEpisodeRecord, type StoryBeatRecord } from "../bible/bible-manager.js";
 import { normalizeScript, parseRawScreenplay } from "./script-normalizer.js";
 import type { EpisodicScript } from "./series-schema.js";
 import { ContextBuilder, type EpisodeGenerationContext } from "../novel/context-builder.js";
@@ -224,7 +224,7 @@ export class StoryToScreenplayGenerator {
           : epContext.formattedPrompt;
         rawScreenplay = await options.customLlmInvoker(
           promptToSend,
-          this.buildSystemPrompt()
+          this.buildSystemPrompt(plannedEp.target_duration_sec)
         );
         generatorUsed = "llm";
       } catch (err: any) {
@@ -253,7 +253,8 @@ export class StoryToScreenplayGenerator {
             tone: options.tone,
           },
           epContext.formattedPrompt,
-          episodeNumber
+          episodeNumber,
+          epContext.mandatoryBeats
         );
         generatorUsed = "llm";
       } catch (err: any) {
@@ -323,72 +324,109 @@ export class StoryToScreenplayGenerator {
       if (allShotsWithScene.length > 0) {
         const recordedPairs = new Set<string>();
 
-        // First pass: ensure every beat in episodeBeats is linked to at least one shot
-        for (let bIdx = 0; bIdx < episodeBeats.length; bIdx++) {
-          const beat = episodeBeats[bIdx];
-          const shotTargetIdx = Math.min(
-            allShotsWithScene.length - 1,
-            Math.floor((bIdx / episodeBeats.length) * allShotsWithScene.length)
-          );
-          const { scene, sIdx, shot } = allShotsWithScene[shotTargetIdx];
-          const pairKey = `${beat.id}::${shot.shotId}`;
-          if (recordedPairs.has(pairKey)) continue;
-          recordedPairs.add(pairKey);
-
-          const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
+        // Evidenced Beat-to-Shot Matching (PR5: Replace arithmetic ratio mapping with evidence)
+        // Check explicit beatIds, [BEAT: id] markers, or key phrase evidence
+        for (const beat of episodeBeats) {
           const isMandatory = Boolean(beat.is_mandatory);
+          const beatNameClean = (beat.name || "").toLowerCase().trim();
+          const beatWords = beatNameClean.split(/\s+/).filter((w) => w.length >= 3);
 
-          try {
-            CoverageLedgerManager.recordEntry(this.bible, {
-              id: `cov_${planId}_ep${episodeNumber}_b_${beat.id}_sh_${shot.shotId}`,
-              plan_id: planId,
-              series_id: seriesId,
-              source_id: beat.source_id,
-              source_unit_id: beat.source_unit_id || sourceUnitIds[0] || "unknown",
-              episode_number: episodeNumber,
-              scene_number: scene.sceneNumber || sIdx + 1,
-              scene_id: sceneId,
-              shot_id: shot.shotId,
-              beat_id: beat.id,
-              mandatory_beat_id: isMandatory ? beat.id : null,
-              adaptation_decision: "kept",
-              rationale: `Chuyển thể beat '${beat.name}' thành Cảnh ${scene.sceneNumber || sIdx + 1}, Cú máy ${shot.shotId}.`,
-            });
-          } catch {}
-        }
+          // Find candidate shots with evidence
+          const matchingShots = allShotsWithScene.filter(({ scene, shot }) => {
+            // 1. Explicit beatId in shot or scene
+            if (Array.isArray(shot.beatIds) && shot.beatIds.includes(beat.id)) return true;
+            if (Array.isArray(scene.beatIds) && scene.beatIds.includes(beat.id)) return true;
 
-        // Second pass: link remaining shots proportionally
-        for (let shIdx = 0; shIdx < allShotsWithScene.length; shIdx++) {
-          const { scene, sIdx, shot } = allShotsWithScene[shIdx];
-          const beatIdx = Math.min(
-            episodeBeats.length - 1,
-            Math.floor((shIdx / allShotsWithScene.length) * episodeBeats.length)
-          );
-          const beat = episodeBeats[beatIdx];
-          const pairKey = `${beat.id}::${shot.shotId}`;
-          if (recordedPairs.has(pairKey)) continue;
-          recordedPairs.add(pairKey);
+            // 2. [BEAT: <id>] tag in visualPrompt
+            const promptText = (shot.visualPrompt || "").toLowerCase();
+            if (
+              promptText.includes(`[beat: ${beat.id.toLowerCase()}]`) ||
+              promptText.includes(`beat: ${beat.id.toLowerCase()}`) ||
+              promptText.includes(beat.id.toLowerCase())
+            ) {
+              return true;
+            }
 
-          const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
-          const isMandatory = Boolean(beat.is_mandatory);
+            // 3. Keyword/phrase match with beat name
+            if (beatNameClean.length > 5 && promptText.includes(beatNameClean)) {
+              return true;
+            }
+            if (beatWords.length >= 2) {
+              const matchedWordCount = beatWords.filter((w) => promptText.includes(w)).length;
+              if (matchedWordCount >= Math.min(2, beatWords.length)) {
+                return true;
+              }
+            }
 
-          try {
-            CoverageLedgerManager.recordEntry(this.bible, {
-              id: `cov_${planId}_ep${episodeNumber}_b_${beat.id}_sh_${shot.shotId}`,
-              plan_id: planId,
-              series_id: seriesId,
-              source_id: beat.source_id,
-              source_unit_id: beat.source_unit_id || sourceUnitIds[0] || "unknown",
-              episode_number: episodeNumber,
-              scene_number: scene.sceneNumber || sIdx + 1,
-              scene_id: sceneId,
-              shot_id: shot.shotId,
-              beat_id: beat.id,
-              mandatory_beat_id: isMandatory ? beat.id : null,
-              adaptation_decision: "kept",
-              rationale: `Chuyển thể beat '${beat.name}' thành Cảnh ${scene.sceneNumber || sIdx + 1}, Cú máy ${shot.shotId}.`,
-            });
-          } catch {}
+            // 4. Check dialogues in shot
+            for (const d of shot.dialogues || []) {
+              const diagText = (d.text || "").toLowerCase();
+              if (diagText.includes(beat.id.toLowerCase())) return true;
+              if (beatNameClean.length > 5 && diagText.includes(beatNameClean)) return true;
+            }
+
+            return false;
+          });
+
+          if (matchingShots.length > 0) {
+            // Found evidenced shots! Link them
+            for (const { scene, sIdx, shot } of matchingShots) {
+              if (!Array.isArray(shot.beatIds)) (shot as any).beatIds = [];
+              if (!shot.beatIds.includes(beat.id)) shot.beatIds.push(beat.id);
+
+              const pairKey = `${beat.id}::${shot.shotId}`;
+              if (recordedPairs.has(pairKey)) continue;
+              recordedPairs.add(pairKey);
+
+              const sceneId = `ep${episodeNumber}_sc${scene.sceneNumber || sIdx + 1}`;
+              try {
+                CoverageLedgerManager.recordEntry(this.bible, {
+                  id: `cov_${planId}_ep${episodeNumber}_b_${beat.id}_sh_${shot.shotId}`,
+                  plan_id: planId,
+                  series_id: seriesId,
+                  source_id: beat.source_id,
+                  source_unit_id: beat.source_unit_id || sourceUnitIds[0] || "unknown",
+                  episode_number: episodeNumber,
+                  scene_number: scene.sceneNumber || sIdx + 1,
+                  scene_id: sceneId,
+                  shot_id: shot.shotId,
+                  beat_id: beat.id,
+                  mandatory_beat_id: isMandatory ? beat.id : null,
+                  adaptation_decision: "kept",
+                  stage: "scripted",
+                  rationale: `Khớp có bằng chứng: Cú máy ${shot.shotId} thể hiện tình tiết '${beat.name}' (${beat.id}).`,
+                });
+              } catch {}
+            }
+          } else {
+            // No evidenced shot found in script for this beat!
+            // If mandatory, mark omitted to trigger audit violation and log warning
+            try {
+              CoverageLedgerManager.recordEntry(this.bible, {
+                id: `cov_${planId}_ep${episodeNumber}_b_${beat.id}_omitted`,
+                plan_id: planId,
+                series_id: seriesId,
+                source_id: beat.source_id,
+                source_unit_id: beat.source_unit_id || sourceUnitIds[0] || "unknown",
+                episode_number: episodeNumber,
+                scene_number: null,
+                scene_id: null,
+                shot_id: null,
+                beat_id: beat.id,
+                mandatory_beat_id: isMandatory ? beat.id : null,
+                adaptation_decision: "omitted",
+                stage: "scripted",
+                rationale: isMandatory
+                  ? `Tình tiết bắt buộc '${beat.name}' (${beat.id}) không có bằng chứng xuất hiện trong bất kỳ cú máy nào của kịch bản đã sinh.`
+                  : `Tình tiết phụ '${beat.name}' (${beat.id}) được lược bỏ để phù hợp với thời lượng tập.`,
+              });
+            } catch {}
+            if (isMandatory) {
+              log.warn(
+                `⚠️ [COVERAGE AUDIT WARNING] Tình tiết bắt buộc '${beat.name}' (${beat.id}) không xuất hiện trong kịch bản Tập ${episodeNumber}. Đã ghi nhận omitted.`
+              );
+            }
+          }
         }
       }
     }
@@ -440,6 +478,11 @@ export class StoryToScreenplayGenerator {
     lines.push(`TẬP ${plannedEp.episode_number}: ${titleUpper.replace(/^TẬP\s*\d+:\s*/i, "")}`);
     lines.push(`Logline: ${logline}\n`);
 
+    const mBeats = epContext.mandatoryBeats || [];
+    const b1Tag = mBeats[0] ? ` [BEAT: ${mBeats[0].id}]` : "";
+    const b2Tag = mBeats[1] ? ` [BEAT: ${mBeats[1].id}]` : "";
+    const b3Tag = mBeats[2] ? ` [BEAT: ${mBeats[2].id}]` : "";
+
     // Scene 1: Opening & Goal
     lines.push(`CẢNH 1: KHÔNG GIAN KHỞI ĐẦU - NGÀY`);
     lines.push(`Nhân vật: ${leadChar}, ${secondChar}`);
@@ -452,7 +495,7 @@ export class StoryToScreenplayGenerator {
     lines.push(
       `CÚ MÁY 2 (medium, 4s): ${leadChar} xuất hiện, tập trung vào mục tiêu: ${
         plannedEp.goal || "Khám phá chân tướng sự việc."
-      }`
+      }${b1Tag}`
     );
     lines.push(
       `${leadChar.toUpperCase()}: ${
@@ -469,7 +512,7 @@ export class StoryToScreenplayGenerator {
     lines.push(
       `CÚ MÁY 1 (medium, 4s): ${
         plannedEp.development || "Tình thế xoay chuyển nhanh chóng khi xung đột bùng phát."
-      }`
+      }${b2Tag}`
     );
     lines.push(
       `CÚ MÁY 2 (action, 4s): ${leadChar} phản ứng mau lẹ trước nguy cơ rình rập, giữ vững vị trí.`
@@ -484,7 +527,7 @@ export class StoryToScreenplayGenerator {
     lines.push(
       `CÚ MÁY 1 (action, 4s): ${
         plannedEp.climax || "Cao trào kịch tính đẩy mọi mâu thuẫn lên đỉnh điểm."
-      }`
+      }${b3Tag}`
     );
     lines.push(`${leadChar.toUpperCase()}: Kết thúc mọi chuyện tại đây!`);
     lines.push(
@@ -495,6 +538,14 @@ export class StoryToScreenplayGenerator {
         plannedEp.ending || "Một cái kết mở đầy kịch tính báo hiệu chặng đường chông gai phía trước."
       }`
     );
+    if (mBeats.length > 3) {
+      for (let i = 3; i < mBeats.length; i++) {
+        const extraBeat = mBeats[i];
+        lines.push(
+          `CÚ MÁY ${i + 1} (action, 4s): Diễn biến bổ sung cho tình tiết ${extraBeat.name}. [BEAT: ${extraBeat.id}]`
+        );
+      }
+    }
     lines.push("");
 
     return lines.join("\n").trim();
@@ -562,10 +613,11 @@ export class StoryToScreenplayGenerator {
   private async generateViaCustomInvoker(
     options: StoryToScreenplayOptions,
     canonSummary: string,
-    episodeNumber: number
+    episodeNumber: number,
+    mandatoryBeats?: StoryBeatRecord[]
   ): Promise<string> {
-    const prompt = this.buildLlmPrompt(options, canonSummary, episodeNumber);
-    const systemPrompt = this.buildSystemPrompt();
+    const prompt = this.buildLlmPrompt(options, canonSummary, episodeNumber, mandatoryBeats);
+    const systemPrompt = this.buildSystemPrompt(options.targetScenes ? options.targetScenes * 60 : undefined);
     return options.customLlmInvoker!(prompt, systemPrompt);
   }
 
@@ -575,10 +627,11 @@ export class StoryToScreenplayGenerator {
   private async generateViaLlmApi(
     options: StoryToScreenplayOptions,
     canonSummary: string,
-    episodeNumber: number
+    episodeNumber: number,
+    mandatoryBeats?: StoryBeatRecord[]
   ): Promise<string> {
-    const prompt = this.buildLlmPrompt(options, canonSummary, episodeNumber);
-    const systemPrompt = this.buildSystemPrompt();
+    const prompt = this.buildLlmPrompt(options, canonSummary, episodeNumber, mandatoryBeats);
+    const systemPrompt = this.buildSystemPrompt(options.targetScenes ? options.targetScenes * 60 : undefined);
 
     return StoryAnalysisEngine.callLlmApi(prompt, systemPrompt, {
       llmProvider: options.llmProvider,
@@ -591,8 +644,14 @@ export class StoryToScreenplayGenerator {
 
   /**
    * Builds system prompt for screenplay generation.
+   * Scales dynamically based on target episode duration.
    */
-  private buildSystemPrompt(): string {
+  private buildSystemPrompt(targetDurationSec?: number): string {
+    const isLongForm = (targetDurationSec ?? 0) >= 600; // >= 10 mins
+    const pacingRule = isLongForm
+      ? `3. Cấu trúc kịch bản dài tập (Multi-Scene / Multi-Act): Chia câu chuyện thành nhiều phân cảnh nối tiếp nhau (theo 3 hồi hoặc 5 hồi) với nhịp độ điện ảnh, thời lượng mỗi cú máy linh hoạt từ 3s đến 10s.`
+      : `3. Đảm bảo cấu trúc cảnh rõ ràng: Cảnh 1 (Khởi đầu/Setup), Cảnh 2 (Xung đột/Confrontation), Cảnh 3 (Cao trào/Cliffhanger) hoặc mở rộng thêm phân cảnh nếu số cảnh mục tiêu yêu cầu. Thời lượng cú máy từ 3s đến 8s.`;
+
     return `Bạn là một Nhà Biên Kịch Điện Ảnh Chuyên Nghiệp (Showrunner & Screenwriter).
 Nhiệm vụ của bạn là chuyển thể ý tưởng, cốt truyện hoặc chương truyện thành Kịch Bản Phân Cảnh Điện Ảnh Đa Cảnh (Episodic Screenplay) tuân thủ định dạng chuẩn sau:
 
@@ -603,15 +662,16 @@ Logline: <Câu tóm tắt cốt truyện 1 câu>
 CẢNH 1: <TÊN BỐI CẢNH - THỜI GIAN>
 Nhân vật: <Tên nhân vật 1>, <Tên nhân vật 2>
 Đạo cụ: <Tên đạo cụ nếu có>
-CÚ MÁY 1 (establishing, 4s): <Mô tả hình ảnh chi tiết phục vụ AI Video Generator>
+CÚ MÁY 1 (establishing, 4s): <Mô tả hình ảnh chi tiết phục vụ AI Video Generator> [BEAT: <mã_tình_tiết_nếu_có>]
 CÚ MÁY 2 (medium, 4s): <Mô tả hành động của nhân vật>
 <TÊN NHÂN VẬT>: <Lời thoại của nhân vật>
 CÚ MÁY 3 (close_up, 4s): <Mô tả biểu cảm cận cảnh>
 
 QUY TẮC BẤT DI BẤT DỊCH:
 1. Luôn tuân thủ tuyệt đối Story Bible: Nhân vật đang bị thương ('injured') không được vận động thể lực cường độ cao nếu không có phân cảnh chữa trị; nhân vật đã chết ('deceased') chỉ xuất hiện trong [HỒI TƯỞNG]; đạo cụ thuộc về đúng người đang giữ.
-2. Mỗi cú máy phải có loại cú máy hợp lệ (establishing, wide, medium, close_up, action) và thời lượng (3s - 6s).
-3. Đảm bảo cấu trúc 3 cảnh rõ ràng: Cảnh 1 (Khởi đầu/Setup), Cảnh 2 (Xung đột/Confrontation), Cảnh 3 (Cao trào/Cliffhanger).`;
+2. Mỗi cú máy phải có loại cú máy hợp lệ (establishing, wide, medium, close_up, action) và thời lượng (3s - 10s).
+${pacingRule}
+4. GẮN NHÃN TÌNH TIẾT BẮT BUỘC (MANDATORY BEATS): Mọi cú máy thể hiện tình tiết từ danh sách Story Beats được giao PHẢI gắn nhãn trực tiếp trong mô tả bằng cú pháp: [BEAT: <beat_id>].`;
   }
 
   /**
@@ -620,7 +680,8 @@ QUY TẮC BẤT DI BẤT DỊCH:
   private buildLlmPrompt(
     options: StoryToScreenplayOptions,
     canonSummary: string,
-    episodeNumber: number
+    episodeNumber: number,
+    mandatoryBeats?: StoryBeatRecord[]
   ): string {
     const rawInput = (options.prompt || options.storyText || "").trim();
     const hasCustomInput = rawInput.length > 0 && rawInput !== canonSummary.trim();
@@ -631,11 +692,19 @@ QUY TẮC BẤT DI BẤT DỊCH:
       ? `\n=== ĐẦU VÀO CỐT TRUYỆN / Ý TƯỞNG CỦA ĐẠO DIỄN ===\n${inputContent}\n`
       : "";
 
+    let beatsSection = "";
+    if (mandatoryBeats && mandatoryBeats.length > 0) {
+      beatsSection =
+        `\n=== CÁC TÌNH TIẾT BẮT BUỘC PHẢI CHUYỂN THỂ (MANDATORY BEATS) ===\n` +
+        mandatoryBeats.map((b) => `- [BEAT: ${b.id}]: ${b.name} - ${b.description}`).join("\n") +
+        `\nLƯU Ý QUAN TRỌNG: Bạn PHẢI thể hiện đầy đủ các tình tiết bắt buộc trên trong kịch bản và gắn nhãn [BEAT: <beat_id>] vào cú máy tương ứng.\n`;
+    }
+
     return `Hãy viết kịch bản điện ảnh Tập ${episodeNumber} cho Series với các thông tin sau:
 
 === KÝ ỨC VÀ BỘ NHỚ CANON (STORY BIBLE) ===
 ${canonSummary}
-${inputSection}
+${inputSection}${beatsSection}
 YÊU CẦU:
 - Số cảnh mục tiêu: ${targetScenes} cảnh.
 - Nhịp phim: ${options.tone || "Kịch tính, điện ảnh, giàu cảm xúc"}.

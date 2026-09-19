@@ -238,36 +238,79 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
   ]
 }`;
 
-    // Cap and sample units to prevent overflowing context limits for large novels (e.g. 100+ chapters)
-    const MAX_PROMPT_UNITS = 12;
-    const unitsToPrompt =
-      units.length <= MAX_PROMPT_UNITS
-        ? units
-        : units.filter(
-            (_, idx) =>
-              idx < 4 ||
-              idx >= units.length - 3 ||
-              idx % Math.ceil(units.length / 8) === 0
-          );
+    // Process units with windowing to cover 100% of chapters without skipping or context overflow
+    const WINDOW_SIZE = 10;
+    const validatedOutputs: LlmStoryAnalysisOutput[] = [];
 
-    const unitSummaries = unitsToPrompt
-      .map((u, i) => `=== PHẦN ${u.order_index + 1} (Chỉ số: ${i}, Chương: ${u.order_index + 1}): ${u.title} (vị trí ký tự: ${u.char_start}..${u.char_end}) ===\n${u.raw_text.slice(0, 3000)}`)
-      .join("\n\n");
-    const userPrompt = `Hãy phân tích toàn bộ tác phẩm sau để xây dựng Story Bible cho series "${seriesId}":\nTác phẩm: ${work.title}\n\nNội dung các chương:\n${unitSummaries}`;
+    if (units.length <= WINDOW_SIZE) {
+      const unitSummaries = units
+        .map(
+          (u) =>
+            `=== CHƯƠNG ${u.order_index + 1} (order_index: ${u.order_index}, ID: "${u.id}"): ${u.title} (vị trí ký tự: ${u.char_start}..${u.char_end}) ===\n${u.raw_text}`
+        )
+        .join("\n\n");
+      const userPrompt = `Hãy phân tích toàn bộ tác phẩm sau để xây dựng Story Bible cho series "${seriesId}":\nTác phẩm: ${work.title}\n\nNội dung các chương:\n${unitSummaries}`;
 
-    let rawOutput = "";
-    if (options.customLlmInvoker) {
-      rawOutput = await options.customLlmInvoker(userPrompt, systemPrompt);
-    } else if (typeof options.llmProvider === "function") {
-      rawOutput = await options.llmProvider(userPrompt, systemPrompt);
+      let rawOutput = "";
+      if (options.customLlmInvoker) {
+        rawOutput = await options.customLlmInvoker(userPrompt, systemPrompt);
+      } else if (typeof options.llmProvider === "function") {
+        rawOutput = await options.llmProvider(userPrompt, systemPrompt);
+      } else {
+        rawOutput = await StoryAnalysisEngine.callLlmApi(userPrompt, systemPrompt, options);
+      }
+
+      const cleanJson = StoryAnalysisEngine.stripMarkdownFences(rawOutput);
+      const parsed = JSON.parse(cleanJson);
+      validatedOutputs.push(LlmStoryAnalysisOutputSchema.parse(parsed));
     } else {
-      rawOutput = await StoryAnalysisEngine.callLlmApi(userPrompt, systemPrompt, options);
+      // Process all chapters sequentially across 100% of source units
+      for (let w = 0; w < units.length; w += WINDOW_SIZE) {
+        const windowUnits = units.slice(w, w + WINDOW_SIZE);
+        const unitSummaries = windowUnits
+          .map(
+            (u) =>
+              `=== CHƯƠNG ${u.order_index + 1} (order_index: ${u.order_index}, ID: "${u.id}"): ${u.title} (vị trí ký tự: ${u.char_start}..${u.char_end}) ===\n${u.raw_text}`
+          )
+          .join("\n\n");
+        const userPrompt = `Hãy phân tích cụm chương từ Chương ${windowUnits[0].order_index + 1} đến Chương ${windowUnits[windowUnits.length - 1].order_index + 1} của tác phẩm "${work.title}" để xây dựng Story Bible cho series "${seriesId}":\n\n${unitSummaries}`;
+
+        let rawOutput = "";
+        if (options.customLlmInvoker) {
+          rawOutput = await options.customLlmInvoker(userPrompt, systemPrompt);
+        } else if (typeof options.llmProvider === "function") {
+          rawOutput = await options.llmProvider(userPrompt, systemPrompt);
+        } else {
+          rawOutput = await StoryAnalysisEngine.callLlmApi(userPrompt, systemPrompt, options);
+        }
+
+        const cleanJson = StoryAnalysisEngine.stripMarkdownFences(rawOutput);
+        const parsed = JSON.parse(cleanJson);
+        validatedOutputs.push(LlmStoryAnalysisOutputSchema.parse(parsed));
+      }
     }
 
-    // Strip markdown formatting if any
-    const cleanJson = StoryAnalysisEngine.stripMarkdownFences(rawOutput);
-    const parsed = JSON.parse(cleanJson);
-    const validated: LlmStoryAnalysisOutput = LlmStoryAnalysisOutputSchema.parse(parsed);
+    // Merge outputs across all windows
+    const validated: LlmStoryAnalysisOutput = {
+      characters: [],
+      beats: [],
+      threads: [],
+      knowledgeStates: [],
+    };
+    const seenCharNames = new Set<string>();
+    for (const out of validatedOutputs) {
+      for (const c of out.characters) {
+        if (!seenCharNames.has(c.name.toLowerCase())) {
+          seenCharNames.add(c.name.toLowerCase());
+          validated.characters.push(c);
+        }
+      }
+      validated.beats.push(...out.beats);
+      validated.threads.push(...out.threads);
+      if (out.knowledgeStates) {
+        validated.knowledgeStates.push(...out.knowledgeStates);
+      }
+    }
 
     // Process Characters
     const characters: CharacterRecord[] = [];
@@ -314,16 +357,23 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         relationship_graph_json: JSON.stringify(relations),
       };
 
+      let isApproved = true;
       if (options.reviewQueue) {
-        options.reviewQueue.enqueue("character", seriesId, char, {
+        const qItem = options.reviewQueue.enqueue("character", seriesId, char, {
           id: `rev_${id}`,
           sourceId,
           confidenceScore: char.confidenceScore,
         });
+        isApproved = qItem.status === "approved" || qItem.status === "modified";
+      } else if (char.confidenceScore !== undefined && char.confidenceScore < 0.75) {
+        isApproved = false;
       }
 
-      bible.upsertCharacter(record);
-      characters.push(record);
+      // Hard gate: pending/unapproved items must NOT enter Story Bible
+      if (isApproved) {
+        bible.upsertCharacter(record);
+        characters.push(record);
+      }
     }
 
     // Process Beats
@@ -335,15 +385,14 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         (name) => charNameToIdMap.get(name) || name
       );
 
-      // Determine corresponding source unit across multi-chapter novels
+      // Stable source unit lookup: match order_index or ID accurately
       let assignedUnit = units[0];
       if (typeof beat.chapterIndex === "number") {
-        if (units[beat.chapterIndex]) {
+        const byOrder = units.find((u) => u.order_index === beat.chapterIndex);
+        if (byOrder) {
+          assignedUnit = byOrder;
+        } else if (units[beat.chapterIndex]) {
           assignedUnit = units[beat.chapterIndex];
-        } else if (units.find((u) => u.order_index === beat.chapterIndex)) {
-          assignedUnit = units.find((u) => u.order_index === beat.chapterIndex)!;
-        } else if (unitsToPrompt[beat.chapterIndex]) {
-          assignedUnit = unitsToPrompt[beat.chapterIndex];
         }
       } else if (beat.sourceSpanStart !== undefined) {
         const found = units.find(
@@ -385,6 +434,19 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         spanEnd = Math.min(assignedUnit.char_end, spanStart + Math.max(300, beat.description.length * 2));
       }
 
+      // Verbatim citation: extract exact raw text excerpt from assigned source unit
+      let verbatimExcerpt = "";
+      if (assignedUnit && assignedUnit.raw_text) {
+        const relStart = Math.max(0, spanStart - assignedUnit.char_start);
+        const relEnd = Math.min(assignedUnit.raw_text.length, spanEnd - assignedUnit.char_start);
+        if (relEnd > relStart) {
+          verbatimExcerpt = assignedUnit.raw_text.slice(relStart, relEnd).trim();
+        }
+      }
+      if (!verbatimExcerpt) {
+        verbatimExcerpt = assignedUnit?.raw_text?.slice(0, 200)?.trim() || beat.description.slice(0, 150);
+      }
+
       const record: StoryBeatRecord = {
         id: beatId,
         source_id: sourceId,
@@ -403,24 +465,32 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         source_span_end: spanEnd,
         source_citations_json: JSON.stringify([
           {
+            unitId: assignedUnit?.id || units[0]?.id || "",
             charStart: spanStart,
             charEnd: spanEnd,
-            excerpt: beat.description.slice(0, 150),
+            excerpt: verbatimExcerpt,
           },
         ]),
         is_mandatory: beat.importanceLevel === "mandatory" ? 1 : 0,
         created_at: new Date().toISOString(),
       };
 
+      let isApproved = true;
       if (options.reviewQueue) {
-        options.reviewQueue.enqueue("beat", seriesId, beat, {
+        const qItem = options.reviewQueue.enqueue("beat", seriesId, beat, {
           id: `rev_${beatId}`,
           sourceId,
           confidenceScore: beat.confidenceScore,
         });
+        isApproved = qItem.status === "approved" || qItem.status === "modified";
+      } else if (beat.confidenceScore !== undefined && beat.confidenceScore < 0.75) {
+        isApproved = false;
       }
 
-      beats.push(record);
+      // Hard gate: unapproved beats do not enter Story Bible
+      if (isApproved) {
+        beats.push(record);
+      }
     }
     bible.batchUpsertStoryBeats(beats);
 
@@ -450,16 +520,22 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         created_at: new Date().toISOString(),
       };
 
+      let isApproved = true;
       if (options.reviewQueue) {
-        options.reviewQueue.enqueue("thread", seriesId, t, {
+        const qItem = options.reviewQueue.enqueue("thread", seriesId, t, {
           id: `rev_${record.id}`,
           sourceId,
           confidenceScore: t.confidenceScore,
         });
+        isApproved = qItem.status === "approved" || qItem.status === "modified";
+      } else if (t.confidenceScore !== undefined && t.confidenceScore < 0.75) {
+        isApproved = false;
       }
 
-      bible.upsertStoryThread(record);
-      threads.push(record);
+      if (isApproved) {
+        bible.upsertStoryThread(record);
+        threads.push(record);
+      }
     }
 
     // Process Knowledge States

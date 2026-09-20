@@ -2474,13 +2474,11 @@ export function extractNarrativeDeltaFromScript(
     }
   }
 
-  const allSceneText = (script.scenes || [])
+  const visualActionText = (script.scenes || [])
     .flatMap((sc: any) => [
       sc.locationName || "",
-      ...(sc.shots || []).flatMap((sh: any) => [
-        sh.visualPrompt || "",
-        ...(sh.dialogues || []).map((d: any) => `${d.speaker || ""}: ${d.text || ""}`),
-      ]),
+      sc.description || "",
+      ...(sc.shots || []).map((sh: any) => sh.visualPrompt || ""),
     ])
     .join(" ")
     .toLowerCase();
@@ -2503,29 +2501,44 @@ export function extractNarrativeDeltaFromScript(
         if (ov.notes) notes = ov.notes;
       } else {
         const charNameLower = (existing.name || "").toLowerCase();
-        if (
-          allSceneText.includes(`${charNameLower} hy sinh`) ||
-          allSceneText.includes(`${charNameLower} tử vong`) ||
-          allSceneText.includes(`${charNameLower} đã chết`)
-        ) {
-          determinedStatus = "deceased";
-          notes = `Hy sinh trong tập ${script.episodeNumber ?? "?"}`;
-        } else if (
-          allSceneText.includes(`${charNameLower} bị thương`) ||
-          allSceneText.includes(`${charNameLower} trúng đạn`) ||
-          allSceneText.includes(`${charNameLower} gãy tay`) ||
-          allSceneText.includes(`${charNameLower} bất tỉnh`)
-        ) {
-          determinedStatus = "injured";
-          notes = `Bị thương trong tập ${script.episodeNumber ?? "?"}`;
-        } else if (
-          existing.status === "injured" &&
-          (allSceneText.includes(`${charNameLower} hồi phục`) ||
-            allSceneText.includes(`${charNameLower} đã khỏi`) ||
-            allSceneText.includes(`chữa lành cho ${charNameLower}`))
-        ) {
-          determinedStatus = "alive";
-          notes = `Hồi phục trong tập ${script.episodeNumber ?? "?"}`;
+
+        // Fix #1: Global check prevents actual death detection in the same episode.
+        // E.g. if the script says "Lan tưởng Minh đã chết" but later "Minh hy sinh",
+        // the global `isHypotheticalOrNegated` blocked the actual death status.
+        // Instead, we check for explicit positive death keywords first, and only
+        // override them if they appear *exclusively* in a hypothetical context.
+        const isHypotheticalOnly =
+          (visualActionText.includes(`tưởng ${charNameLower} đã chết`) ||
+            visualActionText.includes(`${charNameLower} thoát chết`) ||
+            visualActionText.includes(`${charNameLower} không chết`)) &&
+          !visualActionText.includes(`${charNameLower} hy sinh`) &&
+          !visualActionText.includes(`${charNameLower} tử vong`);
+
+        if (!isHypotheticalOnly) {
+          if (
+            visualActionText.includes(`${charNameLower} hy sinh`) ||
+            visualActionText.includes(`${charNameLower} tử vong`) ||
+            visualActionText.includes(`${charNameLower} đã chết`)
+          ) {
+            determinedStatus = "deceased";
+            notes = `Hy sinh trong tập ${script.episodeNumber ?? "?"}`;
+          } else if (
+            visualActionText.includes(`${charNameLower} bị thương`) ||
+            visualActionText.includes(`${charNameLower} trúng đạn`) ||
+            visualActionText.includes(`${charNameLower} gãy tay`) ||
+            visualActionText.includes(`${charNameLower} bất tỉnh`)
+          ) {
+            determinedStatus = "injured";
+            notes = `Bị thương trong tập ${script.episodeNumber ?? "?"}`;
+          } else if (
+            existing.status === "injured" &&
+            (visualActionText.includes(`${charNameLower} hồi phục`) ||
+              visualActionText.includes(`${charNameLower} đã khỏi`) ||
+              visualActionText.includes(`chữa lành cho ${charNameLower}`))
+          ) {
+            determinedStatus = "alive";
+            notes = `Hồi phục trong tập ${script.episodeNumber ?? "?"}`;
+          }
         }
       }
 
@@ -2581,32 +2594,67 @@ export function extractNarrativeDeltaFromScript(
         scene.charactersPresent &&
         scene.charactersPresent.length > 0
       ) {
+        // Fix #3: scText is computed once per scene, outside the props loop,
+        // preventing redundant string concatenation for every prop.
+        const scText = (scene.shots || [])
+          .map((s: any) => s.visualPrompt || "")
+          .join(" ")
+          .toLowerCase();
+
         for (const pId of scene.propsPresent) {
           const prop = bible.getKeyProp(pId);
           if (prop) {
-            const primaryChar =
-              typeof scene.charactersPresent[0] === "string"
-                ? scene.charactersPresent[0]
-                : scene.charactersPresent[0]?.characterId;
-            if (primaryChar && prop.current_holder_id && prop.current_holder_id !== primaryChar) {
-              const scText = (scene.shots || [])
-                .map((s: any) => s.visualPrompt || "")
-                .join(" ")
-                .toLowerCase();
-              if (
-                scText.includes("trao") ||
-                scText.includes("chuyển giao") ||
-                scText.includes("cầm lấy") ||
-                scText.includes("nhận lấy") ||
-                scText.includes("giữ lấy")
-              ) {
-                propTransfers.push({
-                  prop_id: pId,
-                  new_holder_id: primaryChar,
-                  from_holder_id: prop.current_holder_id,
-                  reason: `Chuyển giao cho ${primaryChar} trong Cảnh ${scene.sceneNumber || 1}`,
-                });
+            const currentHolder = prop.current_holder_id;
+            const presentIds = (scene.charactersPresent || [])
+              .map((c: any) => (typeof c === "string" ? c : c?.characterId))
+              .filter(Boolean);
+
+            let recipientCharId: string | null = null;
+
+            // 1. Look for specific recipient character in visual prompts
+            for (const sh of scene.shots || []) {
+              const prompt = (sh.visualPrompt || "").toLowerCase();
+              for (const cId of presentIds) {
+                if (cId === currentHolder) continue;
+                const cRec = targetSeriesId ? bible.getCharacter(cId, targetSeriesId) : bible.getCharacter(cId);
+                const cName = (cRec?.name || cId).toLowerCase();
+                if (
+                  prompt.includes(`cho ${cName}`) ||
+                  prompt.includes(`đến ${cName}`) ||
+                  prompt.includes(`${cName} nhận`) ||
+                  prompt.includes(`${cName} cầm`) ||
+                  prompt.includes(`${cName} giữ`) ||
+                  prompt.includes(`${cName} cất`)
+                ) {
+                  recipientCharId = cId;
+                  break;
+                }
               }
+              if (recipientCharId) break;
+            }
+
+            // 2. Fallback: If transfer keyword exists in scene, pick first character who is NOT the current holder
+            // Fix #2: removed "cầm lấy", "nhận lấy", "giữ lấy" which the current holder could do themselves,
+            // preventing accidental transfer to a bystander when the holder just pockets their own prop.
+            if (!recipientCharId) {
+              const hasTransferKeyword =
+                scText.includes("trao") ||
+                scText.includes("đưa") ||
+                scText.includes("giao") ||
+                scText.includes("chuyển giao");
+
+              if (hasTransferKeyword) {
+                recipientCharId = presentIds.find((cId: string) => cId !== currentHolder) || null;
+              }
+            }
+
+            if (recipientCharId && recipientCharId !== currentHolder) {
+              propTransfers.push({
+                prop_id: pId,
+                new_holder_id: recipientCharId,
+                from_holder_id: currentHolder || undefined,
+                reason: `Chuyển giao cho ${recipientCharId} trong Cảnh ${scene.sceneNumber || 1}`,
+              });
             }
           }
         }

@@ -86,8 +86,20 @@ export async function finalizeEpisodeProduction(
         unapprovedShots.push(
           `${shot.shotId} (file take không tồn tại trên đĩa: ${approved.local_path || "rỗng"})`
         );
-      } else if (!options.allowMockMedia && approved.provider === "mock") {
-        mockTakesDetected.push(`${shot.shotId} (provider: mock)`);
+      } else if (!options.allowMockMedia) {
+        if (approved.provider === "mock") {
+          mockTakesDetected.push(`${shot.shotId} (provider: mock)`);
+        } else if (approved.qa_report_json) {
+          try {
+            const parsedQa = JSON.parse(approved.qa_report_json);
+            // isMockVector === true: explicit mock vector flag.
+            // isMockVector === undefined in a QA report from a non-mock backend is treated as real.
+            // But if the take itself came from the 'mock' provider path, we already caught it above.
+            if (parsedQa.isMockVector === true) {
+              mockTakesDetected.push(`${shot.shotId} (mock face vector detected in QA report)`);
+            }
+          } catch {}
+        }
       }
     }
   }
@@ -136,7 +148,10 @@ export async function finalizeEpisodeProduction(
           takeId: approved?.id || `take_${sh.shotId}`,
           sourceClipPath: approved?.local_path || "",
           rawDurationSec: sh.durationSec,
-          trimStartSec: 0,
+          trimStartSec: sh.trimStartSec ?? 0,
+          trimEndSec: sh.trimEndSec,
+          transitionIn: sh.transitionIn,
+          transitionOut: sh.transitionOut,
           isApproved: Boolean(approved ? approved.is_approved : false),
         };
       }),
@@ -162,10 +177,15 @@ export async function finalizeEpisodeProduction(
       const rawTl = await readFile(timelinePath, "utf8");
       const tl = JSON.parse(rawTl);
       dialogueCues = tl.dialogueTrack;
-      sfxCues = tl.sfxTracks;
+      // Fix: avoid short-circuiting on empty array — an empty sfxTrack should
+      // still fall through to sfxTracks if that has actual content.
+      sfxCues =
+        Array.isArray(tl.sfxTrack) && tl.sfxTrack.length > 0
+          ? tl.sfxTrack
+          : tl.sfxTracks ?? tl.sfxTrack;
       ambienceCues = tl.ambienceTrack;
       bgmTrack = tl.bgmTrack;
-      subtitleCues = tl.subtitleCues;
+      subtitleCues = tl.subtitleTrack || tl.subtitleCues;
     } catch (err: any) {
       log.warn(`[FINALIZE SERVICE] Không thể nạp timeline.json: ${err.message}`);
     }
@@ -196,9 +216,16 @@ export async function finalizeEpisodeProduction(
     );
   }
 
-  // 4. Ensure master video has combined audio if external audio.wav exists and master audio is silent
-  const candidateAudio = join(baseEpDir, "audio.wav");
-  if (existsSync(candidateAudio)) {
+  // 4. Ensure master video has combined audio if external soundtrack exists
+  const candidateAudioWav = join(baseEpDir, "audio.wav");
+  const candidateAudioMp3 = join(baseEpDir, "audio", "master-soundtrack.mp3");
+  const candidateAudio = existsSync(candidateAudioMp3)
+    ? candidateAudioMp3
+    : existsSync(candidateAudioWav)
+    ? candidateAudioWav
+    : null;
+
+  if (candidateAudio) {
     try {
       if (await isFfmpegAvailable()) {
         const remuxedMaster = join(assemblyOutputDir, "master_with_audio.mp4");
@@ -270,14 +297,28 @@ export async function finalizeEpisodeProduction(
     created_at: new Date().toISOString(),
   };
 
-  // Transition lifecycle to approved by director prior to canon commit
-  bible.setEpisodeLifecycle({
-    seriesId,
-    episodeNumber,
-    status: "approved",
-    reviewNotes: "director_approval",
-    needsReview: false,
-  });
+  // Transition lifecycle to approved by director prior to canon commit.
+  // Only promotable statuses (pre-commit states) may advance to 'approved'.
+  // Rejected or failed episodes must be explicitly reset by a human before re-finalization.
+  const currentLifecycle = bible.getEpisodeLifecycle(seriesId, episodeNumber);
+  const promotableStatuses: (string | null | undefined)[] = [
+    null, undefined, "draft", "rendered", "unrendered", "script_generated",
+  ];
+  if (currentLifecycle?.status !== "committed") {
+    if (!promotableStatuses.includes(currentLifecycle?.status ?? null)) {
+      return {
+        success: false,
+        error: `[LIFECYCLE GATE] Không thể finalize: lifecycle của tập này đang là '${currentLifecycle?.status}'. Chỉ các trạng thái chưa commit (draft/rendered/unrendered/script_generated) mới có thể được duyệt. Trạng thái 'rejected'/'failed' cần được reset thủ công trước.`,
+      };
+    }
+    bible.setEpisodeLifecycle({
+      seriesId,
+      episodeNumber,
+      status: "approved",
+      reviewNotes: "director_approval",
+      needsReview: false,
+    });
+  }
 
   const commitResult = bible.commitEpisode(summaryRecord, delta, {
     seriesId,

@@ -22,8 +22,9 @@ export interface NleExportResult {
 /**
  * Escapes XML special characters.
  */
-function escapeXml(str: string): string {
-  return str
+function escapeXml(str: any): string {
+  if (str === undefined || str === null) return "";
+  return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -103,12 +104,14 @@ export function generateFcp7Xml(options: {
     const startFrame = dia.startFrame ?? secToFrame(dia.startSec, fps);
     const durationFrames = dia.durationFrames ?? secToFrame(dia.durationSec, fps);
     const endFrame = startFrame + durationFrames;
-    const audioPath = dia.audioPath || `audio/dialogue_${dia.dialogueId}.mp3`;
+    const speaker = dia.speakerName || (dia as any).speaker || "Speaker";
+    const dialogueId = dia.dialogueId || (dia as any).id || "dia";
+    const audioPath = dia.audioPath || `audio/dialogue_${dialogueId}.mp3`;
     const absPath = resolve(audioPath);
     const fileUrl = pathToFileURL(absPath).href;
 
     dialogueClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
-          <name>${escapeXml(dia.speakerName)}: ${escapeXml(dia.dialogueId)}</name>
+          <name>${escapeXml(speaker)}: ${escapeXml(dialogueId)}</name>
           <duration>${durationFrames}</duration>
           <rate>
             <timebase>${fps}</timebase>
@@ -119,7 +122,7 @@ export function generateFcp7Xml(options: {
           <in>0</in>
           <out>${durationFrames}</out>
           <file id="file-${fileCounter++}">
-            <name>dia_${escapeXml(dia.dialogueId)}.mp3</name>
+            <name>dia_${escapeXml(dialogueId)}.mp3</name>
             <pathurl>${fileUrl}</pathurl>
             <rate>
               <timebase>${fps}</timebase>
@@ -135,12 +138,14 @@ export function generateFcp7Xml(options: {
     const startFrame = sfx.startFrame ?? secToFrame(sfx.startSec, fps);
     const durationFrames = sfx.durationFrames ?? secToFrame(sfx.durationSec, fps);
     const endFrame = startFrame + durationFrames;
-    const audioPath = sfx.audioPath || `audio/sfx_${sfx.cueId}.mp3`;
+    const cueId = sfx.cueId || (sfx as any).id || "sfx";
+    const sfxName = sfx.name || cueId;
+    const audioPath = sfx.audioPath || `audio/sfx_${cueId}.mp3`;
     const absPath = resolve(audioPath);
     const fileUrl = pathToFileURL(absPath).href;
 
     sfxClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
-          <name>SFX: ${escapeXml(sfx.name)}</name>
+          <name>SFX: ${escapeXml(sfxName)}</name>
           <duration>${durationFrames}</duration>
           <rate>
             <timebase>${fps}</timebase>
@@ -151,7 +156,7 @@ export function generateFcp7Xml(options: {
           <in>0</in>
           <out>${durationFrames}</out>
           <file id="file-${fileCounter++}">
-            <name>sfx_${escapeXml(sfx.cueId)}.mp3</name>
+            <name>sfx_${escapeXml(cueId)}.mp3</name>
             <pathurl>${fileUrl}</pathurl>
             <rate>
               <timebase>${fps}</timebase>
@@ -328,12 +333,14 @@ export function generateOtioJson(options: {
       diaCursorFrame = startFrame;
     }
 
-    const audioPath = dia.audioPath || `audio/dialogue_${dia.dialogueId}.mp3`;
+    const speaker = dia.speakerName || (dia as any).speaker || "Speaker";
+    const dialogueId = dia.dialogueId || (dia as any).id || "dia";
+    const audioPath = dia.audioPath || `audio/dialogue_${dialogueId}.mp3`;
     const fileUrl = pathToFileURL(resolve(audioPath)).href;
 
     dialogueChildren.push({
       OTIO_SCHEMA: "Clip.1",
-      name: `${dia.speakerName}: ${dia.dialogueId}`,
+      name: `${speaker}: ${dialogueId}`,
       source_range: {
         OTIO_SCHEMA: "TimeRange.1",
         start_time: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: 0 },
@@ -344,10 +351,10 @@ export function generateOtioJson(options: {
         target_url: fileUrl,
       },
       metadata: {
-        speaker: dia.speakerName,
-        characterId: dia.characterId,
-        rawText: dia.rawText,
-        displayText: dia.subtitleText,
+        speaker: speaker,
+        characterId: dia.characterId || "",
+        rawText: dia.rawText || (dia as any).text || "",
+        displayText: dia.subtitleText || (dia as any).text || "",
       },
     });
 
@@ -375,12 +382,14 @@ export function generateOtioJson(options: {
       sfxCursorFrame = startFrame;
     }
 
-    const audioPath = sfx.audioPath || `audio/sfx_${sfx.cueId}.mp3`;
+    const cueId = sfx.cueId || (sfx as any).id || "sfx";
+    const sfxName = sfx.name || cueId;
+    const audioPath = sfx.audioPath || `audio/sfx_${cueId}.mp3`;
     const fileUrl = pathToFileURL(resolve(audioPath)).href;
 
     sfxChildren.push({
       OTIO_SCHEMA: "Clip.1",
-      name: `SFX: ${sfx.name}`,
+      name: `SFX: ${sfxName}`,
       source_range: {
         OTIO_SCHEMA: "TimeRange.1",
         start_time: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: 0 },
@@ -398,10 +407,22 @@ export function generateOtioJson(options: {
   // Ambience Audio Track
   const ambienceChildren: object[] = [];
   let ambCursorFrame = 0;
+  const ambList = Array.isArray(timeline.ambienceTrack)
+    ? timeline.ambienceTrack
+    : timeline.ambienceTrack
+    ? [timeline.ambienceTrack]
+    : [];
 
-  for (const amb of timeline.ambienceTrack) {
-    const startFrame = amb.startFrame ?? secToFrame(amb.startSec, fps);
-    const durationFrames = amb.durationFrames ?? secToFrame(amb.durationSec, fps);
+  for (const amb of ambList) {
+    const startFrame = amb.startFrame ?? secToFrame(amb.startSec ?? 0, fps);
+    // Fix: an ambience object without durationSec/durationFrames (common for
+    // session-wide ambience like { name: "neon_hum", volume: 0.3 }) should
+    // span the full episode rather than produce a zero-duration clip.
+    const durationFrames =
+      amb.durationFrames ??
+      (amb.durationSec !== undefined
+        ? secToFrame(amb.durationSec, fps)
+        : totalFrames - startFrame);
 
     if (startFrame > ambCursorFrame) {
       ambienceChildren.push({
@@ -416,12 +437,14 @@ export function generateOtioJson(options: {
       ambCursorFrame = startFrame;
     }
 
-    const audioPath = amb.audioPath || `audio/ambience_${amb.cueId}.mp3`;
+    const cueId = amb.cueId || (amb as any).id || "ambience";
+    const ambName = amb.name || cueId;
+    const audioPath = amb.audioPath || `audio/ambience_${cueId}.mp3`;
     const fileUrl = pathToFileURL(resolve(audioPath)).href;
 
     ambienceChildren.push({
       OTIO_SCHEMA: "Clip.1",
-      name: `Ambience: ${amb.name}`,
+      name: `Ambience: ${ambName}`,
       source_range: {
         OTIO_SCHEMA: "TimeRange.1",
         start_time: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: 0 },

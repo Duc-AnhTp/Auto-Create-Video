@@ -102,7 +102,8 @@ export class AnalysisReviewQueue {
     if (this.bible) {
       const records = this.bible.getPendingReviewItems(seriesId);
       for (const r of records) {
-        if (!this.items.has(r.id)) {
+        let item = this.items.get(r.id);
+        if (!item) {
           let parsedData = {};
           let parsedReasons: string[] = [];
           try {
@@ -111,7 +112,7 @@ export class AnalysisReviewQueue {
           try {
             parsedReasons = JSON.parse(r.reasons_json || "[]");
           } catch {}
-          this.items.set(r.id, {
+          item = {
             id: r.id,
             type: r.type as ReviewItemType,
             seriesId: r.series_id,
@@ -123,7 +124,12 @@ export class AnalysisReviewQueue {
             reviewedAt: r.reviewed_at || undefined,
             reviewNotes: r.review_notes || undefined,
             createdAt: r.created_at || new Date().toISOString(),
-          });
+          };
+          this.items.set(r.id, item);
+        } else {
+          item.status = r.status;
+          item.reviewedAt = r.reviewed_at || undefined;
+          item.reviewNotes = r.review_notes || undefined;
         }
       }
     }
@@ -137,7 +143,8 @@ export class AnalysisReviewQueue {
     if (this.bible) {
       const records = this.bible.listReviewItems(seriesId);
       for (const r of records) {
-        if (!this.items.has(r.id)) {
+        let item = this.items.get(r.id);
+        if (!item) {
           let parsedData = {};
           let parsedReasons: string[] = [];
           try {
@@ -146,7 +153,7 @@ export class AnalysisReviewQueue {
           try {
             parsedReasons = JSON.parse(r.reasons_json || "[]");
           } catch {}
-          this.items.set(r.id, {
+          item = {
             id: r.id,
             type: r.type as ReviewItemType,
             seriesId: r.series_id,
@@ -158,7 +165,12 @@ export class AnalysisReviewQueue {
             reviewedAt: r.reviewed_at || undefined,
             reviewNotes: r.review_notes || undefined,
             createdAt: r.created_at || new Date().toISOString(),
-          });
+          };
+          this.items.set(r.id, item);
+        } else {
+          item.status = r.status;
+          item.reviewedAt = r.reviewed_at || undefined;
+          item.reviewNotes = r.review_notes || undefined;
         }
       }
     }
@@ -171,34 +183,44 @@ export class AnalysisReviewQueue {
   public approve(id: string, notes?: string): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
+    let bibleUpdated = false;
+    if (this.bible) {
+      bibleUpdated = this.bible.approveReviewItem(id, notes);
+    }
     if (item) {
       item.status = "approved";
       item.reviewedAt = now;
       if (notes) item.reviewNotes = notes;
+      // Return true only when the DB write also succeeded (or no DB is wired).
+      // This prevents masking a failed DB write when in-memory item exists.
+      return this.bible ? bibleUpdated : true;
     }
-    if (this.bible) {
-      this.bible.approveReviewItem(id, notes);
-    }
-    return Boolean(item || this.bible);
+    return bibleUpdated;
   }
 
   public reject(id: string, notes?: string): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
+    let bibleUpdated = false;
+    if (this.bible) {
+      bibleUpdated = this.bible.rejectReviewItem(id, notes);
+    }
     if (item) {
       item.status = "rejected";
       item.reviewedAt = now;
       if (notes) item.reviewNotes = notes;
+      // Same pattern: surface DB failure even when in-memory item exists.
+      return this.bible ? bibleUpdated : true;
     }
-    if (this.bible) {
-      this.bible.rejectReviewItem(id, notes);
-    }
-    return Boolean(item || this.bible);
+    return bibleUpdated;
   }
 
   public modify<T>(id: string, modifiedData: T, notes?: string): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
+    let bibleUpdated = false;
+    // Fix: update in-memory state BEFORE writing to DB so callers always see
+    // a consistent view regardless of whether the DB write succeeds.
     if (item) {
       item.data = modifiedData;
       item.status = "modified";
@@ -215,9 +237,13 @@ export class AnalysisReviewQueue {
           reviewed_at: now,
           review_notes: notes || existing.review_notes,
         });
+        bibleUpdated = true;
       }
     }
-    return Boolean(item || this.bible);
+    if (item) {
+      return this.bible ? bibleUpdated : true;
+    }
+    return bibleUpdated;
   }
 
   public getApprovedData<T>(type: ReviewItemType, seriesId?: string): T[] {

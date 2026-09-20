@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import axios from "axios";
 import { BibleManager } from "../bible/bible-manager.js";
+import { log } from "../utils/logger.js";
 
 export interface ConceptArtOptions {
   seriesId: string;
@@ -15,6 +16,8 @@ export interface ConceptArtOptions {
   comfyHost?: string;
   width?: number;
   height?: number;
+  allowMock?: boolean;
+  negativePrompt?: string;
 }
 
 export interface ConceptArtResult {
@@ -126,12 +129,24 @@ export class ConceptArtGenerator {
 
     if (provider === "local_comfyui") {
       try {
-        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost);
+        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt);
         providerUsed = "local_comfyui";
-      } catch (err) {
-        // Fallback to mock if ComfyUI is offline
+      } catch (err: any) {
+        if (options.allowMock) {
+          await this.generateMockArt(char.name, imagePath);
+          providerUsed = "mock";
+        } else {
+          throw new Error(
+            `[CONCEPT ART] Tạo ảnh qua ComfyUI thất bại và không cho phép fallback mock (allowMock = false): ${err.message}`
+          );
+        }
+      }
+    } else if (provider === "cloud") {
+      if (options.allowMock) {
         await this.generateMockArt(char.name, imagePath);
         providerUsed = "mock";
+      } else {
+        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình.");
       }
     } else {
       await this.generateMockArt(char.name, imagePath);
@@ -197,11 +212,24 @@ export class ConceptArtGenerator {
 
     if (provider === "local_comfyui") {
       try {
-        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost);
+        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt);
         providerUsed = "local_comfyui";
-      } catch {
+      } catch (err: any) {
+        if (options.allowMock) {
+          await this.generateMockArt(loc.name, imagePath);
+          providerUsed = "mock";
+        } else {
+          throw new Error(
+            `[CONCEPT ART] Tạo ảnh qua ComfyUI thất bại và không cho phép fallback mock (allowMock = false): ${err.message}`
+          );
+        }
+      }
+    } else if (provider === "cloud") {
+      if (options.allowMock) {
         await this.generateMockArt(loc.name, imagePath);
         providerUsed = "mock";
+      } else {
+        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình.");
       }
     } else {
       await this.generateMockArt(loc.name, imagePath);
@@ -242,13 +270,134 @@ export class ConceptArtGenerator {
   private async generateViaComfyUi(
     prompt: string,
     outPath: string,
-    host = "http://127.0.0.1:8188"
+    host = "http://127.0.0.1:8188",
+    negativePrompt?: string
   ): Promise<void> {
     const res = await axios.get(`${host}/system_stats`, { timeout: 2500 });
     if (!res.data) {
       throw new Error(`Cannot connect to ComfyUI at ${host}`);
     }
-    // If responding, write valid mock image to disk for now
-    await this.generateMockArt(prompt, outPath);
+
+    // Determine available checkpoint or use fallback.
+    // Fix: surface a warning when falling back to the hardcoded checkpoint name
+    // so operators know the auto-detection failed and may be using the wrong model.
+    const DEFAULT_CKPT = "v1-5-pruned-emaonly.ckpt";
+    let ckptName = DEFAULT_CKPT;
+    let ckptAutoDetected = false;
+    try {
+      const objInfo = await axios.get(`${host}/object_info/CheckpointLoaderSimple`, { timeout: 3000 });
+      const ckpts = objInfo?.data?.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0];
+      if (Array.isArray(ckpts) && ckpts.length > 0) {
+        ckptName = ckpts[0];
+        ckptAutoDetected = true;
+      }
+    } catch {
+      // /object_info is optional — warn but do not fail the generation.
+    }
+    if (!ckptAutoDetected) {
+      log.warn(
+        `[COMFYUI] Không thể tự động phát hiện checkpoint từ ComfyUI. Sử dụng fallback: '${ckptName}'. Nếu model này không tồn tại trong ComfyUI, job sẽ thất bại.`
+      );
+    }
+
+    const promptWorkflow = {
+      "3": {
+        inputs: {
+          seed: Math.floor(Math.random() * 1000000000),
+          steps: 20,
+          cfg: 7.0,
+          sampler_name: "euler",
+          scheduler: "normal",
+          denoise: 1.0,
+          model: ["4", 0],
+          positive: ["6", 0],
+          negative: ["7", 0],
+          latent_image: ["5", 0],
+        },
+        class_type: "KSampler",
+      },
+      "4": {
+        inputs: { ckpt_name: ckptName },
+        class_type: "CheckpointLoaderSimple",
+      },
+      "5": {
+        inputs: { width: 768, height: 1024, batch_size: 1 },
+        class_type: "EmptyLatentImage",
+      },
+      "6": {
+        inputs: { text: prompt, clip: ["4", 1] },
+        class_type: "CLIPTextEncode",
+      },
+      "7": {
+        inputs: {
+          text: negativePrompt || "ugly, deformed, blurry, bad anatomy, low quality",
+          clip: ["4", 1],
+        },
+        class_type: "CLIPTextEncode",
+      },
+      "8": {
+        inputs: { samples: ["3", 0], vae: ["4", 2] },
+        class_type: "VAEDecode",
+      },
+      "9": {
+        inputs: { filename_prefix: "concept_art", images: ["8", 0] },
+        class_type: "SaveImage",
+      },
+    };
+
+    const clientId = `auto_art_${Date.now()}`;
+    const promptRes = await axios.post(
+      `${host}/prompt`,
+      { prompt: promptWorkflow, client_id: clientId },
+      { headers: { "Content-Type": "application/json" }, timeout: 5000 }
+    );
+    const promptId = promptRes.data?.prompt_id;
+    if (!promptId) {
+      throw new Error(`ComfyUI did not return a prompt_id: ${JSON.stringify(promptRes.data)}`);
+    }
+
+    const maxWaitMs = 60000;
+    const pollIntervalMs = 1000;
+    const startTime = Date.now();
+    let imageInfo: { filename: string; subfolder?: string; type?: string } | null = null;
+
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      try {
+        const histRes = await axios.get(`${host}/history/${promptId}`, { timeout: 3000 });
+        const histData = histRes.data?.[promptId];
+        if (histData?.outputs) {
+          for (const nodeId of Object.keys(histData.outputs)) {
+            const images = histData.outputs[nodeId]?.images;
+            if (Array.isArray(images) && images.length > 0) {
+              imageInfo = images[0];
+              break;
+            }
+          }
+          if (imageInfo) break;
+        }
+        if (histData?.status?.status_str === "error") {
+          throw new Error(`ComfyUI job failed: ${JSON.stringify(histData.status)}`);
+        }
+      } catch (err: any) {
+        // Re-throw ComfyUI job failure immediately — these are definitive errors.
+        // For transient network errors (ECONNRESET, timeout, etc.), log and
+        // continue polling rather than silently swallowing every error.
+        if (err.message?.includes("ComfyUI job failed")) throw err;
+        // Transient errors (network glitch, 503, etc.) — surface a warning but
+        // keep polling until maxWaitMs so we don't miss a successful completion.
+        log.warn(`[COMFYUI POLL] Transient error while polling history for ${promptId}: ${err.message}`);
+      }
+    }
+
+    if (!imageInfo) {
+      throw new Error(`ComfyUI timed out waiting for image generation (${promptId})`);
+    }
+
+    const viewUrl = `${host}/view?filename=${encodeURIComponent(imageInfo.filename)}&subfolder=${encodeURIComponent(
+      imageInfo.subfolder || ""
+    )}&type=${encodeURIComponent(imageInfo.type || "output")}`;
+    const imgRes = await axios.get(viewUrl, { responseType: "arraybuffer", timeout: 10000 });
+    await writeFile(outPath, Buffer.from(imgRes.data));
   }
 }

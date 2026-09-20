@@ -2365,6 +2365,19 @@ export class BibleManager {
         const factKey = k.factKey || k.fact_key;
         this.addKnowledge(charId, factKey, episodeNumber, k.notes);
 
+        try {
+          this.recordKnowledgeState({
+            series_id: seriesId,
+            fact_key: factKey,
+            fact_type: k.factType || k.fact_type || "secret",
+            entity_id: charId,
+            revealed_at_episode: episodeNumber,
+            notes: k.notes,
+          });
+        } catch {
+          // ignore duplicate or non-fatal knowledge state record errors
+        }
+
         this.recordStateEvent({
           series_id: seriesId,
           episode_number: episodeNumber,
@@ -5450,6 +5463,10 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
   }
 
   public approveSeriesPlan(planId: string): SeriesPlanRecord | null {
+    return this.setSeriesPlanStatus(planId, "approved");
+  }
+
+  public activateSeriesPlan(planId: string): SeriesPlanRecord | null {
     return this.setSeriesPlanStatus(planId, "active");
   }
 
@@ -5491,11 +5508,22 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
   public upsertPlannedEpisode(ep: PlannedEpisodeRecord): void {
     const now = ep.created_at || new Date().toISOString();
     const raw = ep as any;
+    const planId = raw.plan_id ?? raw.planId;
+    const inferredSeriesId = raw.series_id ?? raw.seriesId ?? (planId ? this.getSeriesPlan(planId)?.series_id : null) ?? "";
+
+    // Fix: an empty series_id causes a silent DB corruption (episodes stored
+    // without a series association). Throw early so callers fix their input.
+    if (!inferredSeriesId) {
+      throw new Error(
+        `[BIBLE] upsertPlannedEpisode: series_id is required but could not be resolved for episode '${raw.id ?? "(unknown)"}'. ` +
+          `Pass series_id explicitly or ensure the parent plan '${planId ?? "(unknown)"}' exists in the Bible first.`
+      );
+    }
     const clean: PlannedEpisodeRecord = {
       ...ep,
       id: raw.id,
-      plan_id: raw.plan_id ?? raw.planId,
-      series_id: raw.series_id ?? raw.seriesId,
+      plan_id: planId,
+      series_id: inferredSeriesId,
       episode_number: raw.episode_number ?? raw.episodeNumber,
       title: raw.title,
       logline: raw.logline,
@@ -5562,18 +5590,28 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     }
   }
 
-  public getPlannedEpisode(planId: string, episodeNumber: number): PlannedEpisodeRecord | null {
+  public getPlannedEpisode(planIdOrId: string, episodeNumber?: number): PlannedEpisodeRecord | null {
     if (this.db && !this.isFallback) {
-      const row = this.db
-        .prepare("SELECT * FROM planned_episodes WHERE plan_id = ? AND episode_number = ?")
-        .get(planId, episodeNumber);
-      return (row as PlannedEpisodeRecord) ?? null;
+      if (episodeNumber !== undefined) {
+        const row = this.db
+          .prepare("SELECT * FROM planned_episodes WHERE plan_id = ? AND episode_number = ?")
+          .get(planIdOrId, episodeNumber);
+        return (row as PlannedEpisodeRecord) ?? null;
+      } else {
+        const row = this.db
+          .prepare("SELECT * FROM planned_episodes WHERE id = ?")
+          .get(planIdOrId);
+        return (row as PlannedEpisodeRecord) ?? null;
+      }
     }
-    return (
-      Array.from(this.memoryStore.planned_episodes.values()).find(
-        (e) => e.plan_id === planId && e.episode_number === episodeNumber
-      ) ?? null
-    );
+    if (episodeNumber !== undefined) {
+      return (
+        Array.from(this.memoryStore.planned_episodes.values()).find(
+          (e) => e.plan_id === planIdOrId && e.episode_number === episodeNumber
+        ) ?? null
+      );
+    }
+    return this.memoryStore.planned_episodes.get(planIdOrId) ?? null;
   }
 
   public listPlannedEpisodes(planId: string): PlannedEpisodeRecord[] {

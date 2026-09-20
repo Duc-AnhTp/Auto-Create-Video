@@ -290,7 +290,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       }
     }
 
-    // Merge outputs across all windows
+    // Merge outputs across all windows with index rebasing
     const validated: LlmStoryAnalysisOutput = {
       characters: [],
       beats: [],
@@ -298,18 +298,49 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       knowledgeStates: [],
     };
     const seenCharNames = new Set<string>();
-    for (const out of validatedOutputs) {
+    let accumulatedBeatOffset = 0;
+
+    for (let wIdx = 0; wIdx < validatedOutputs.length; wIdx++) {
+      const out = validatedOutputs[wIdx];
       for (const c of out.characters) {
         if (!seenCharNames.has(c.name.toLowerCase())) {
           seenCharNames.add(c.name.toLowerCase());
           validated.characters.push(c);
         }
       }
-      validated.beats.push(...out.beats);
-      validated.threads.push(...out.threads);
-      if (out.knowledgeStates) {
-        validated.knowledgeStates.push(...out.knowledgeStates);
+
+      // Rebase thread beat indices
+      for (const t of out.threads) {
+        const rebasedThread = {
+          ...t,
+          setupBeatIndex:
+            t.setupBeatIndex !== undefined
+              ? t.setupBeatIndex + accumulatedBeatOffset
+              : undefined,
+          payoffBeatIndex:
+            t.payoffBeatIndex !== undefined
+              ? t.payoffBeatIndex + accumulatedBeatOffset
+              : undefined,
+        };
+        validated.threads.push(rebasedThread);
       }
+
+      // Rebase knowledge states beat indices
+      if (out.knowledgeStates) {
+        for (const ks of out.knowledgeStates) {
+          const rebasedKs = {
+            ...ks,
+            revealedAtBeatIndex:
+              ks.revealedAtBeatIndex !== undefined
+                ? ks.revealedAtBeatIndex + accumulatedBeatOffset
+                : undefined,
+          };
+          validated.knowledgeStates.push(rebasedKs);
+        }
+      }
+
+      validated.beats.push(...out.beats);
+      accumulatedBeatOffset += out.beats.length;
     }
 
     // Process Characters
@@ -378,6 +409,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
     // Process Beats
     const beats: StoryBeatRecord[] = [];
+    const originalIndexToBeatIdMap = new Map<number, string>();
     for (let i = 0; i < validated.beats.length; i++) {
       const beat = validated.beats[i];
       const beatId = `beat_${sourceId}_b${String(i + 1).padStart(3, "0")}`;
@@ -490,6 +522,16 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       // Hard gate: unapproved beats do not enter Story Bible
       if (isApproved) {
         beats.push(record);
+        originalIndexToBeatIdMap.set(i, beatId);
+      }
+      // NOTE: We always map the original index regardless of approval status.
+      // This prevents null-anchor gaps when a thread's setupBeatIndex points
+      // to a beat that was rejected: the map will carry the ID and callers
+      // can decide what to do with a reference to a non-approved beat.
+      if (!isApproved) {
+        // Still register in the map so thread/knowledge lookups don't get null.
+        // Callers that need only approved beats should filter beats[] directly.
+        originalIndexToBeatIdMap.set(i, beatId);
       }
     }
     bible.batchUpsertStoryBeats(beats);
@@ -499,12 +541,13 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
     for (let i = 0; i < validated.threads.length; i++) {
       const t = validated.threads[i];
       const setupBeatId =
-        t.setupBeatIndex !== undefined && beats[t.setupBeatIndex]
-          ? beats[t.setupBeatIndex].id
-          : beats[0]?.id || null;
+        t.setupBeatIndex !== undefined
+          ? (originalIndexToBeatIdMap.get(t.setupBeatIndex) ?? null)
+          : // Fallback: anchor to the first *approved* beat if no explicit setup index.
+            beats[0]?.id || null;
       const payoffBeatId =
-        t.payoffBeatIndex !== undefined && beats[t.payoffBeatIndex]
-          ? beats[t.payoffBeatIndex].id
+        t.payoffBeatIndex !== undefined
+          ? originalIndexToBeatIdMap.get(t.payoffBeatIndex) ?? null
           : null;
 
       const record: StoryThreadRecord = {
@@ -543,8 +586,8 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
     for (const ks of validated.knowledgeStates) {
       const charId = charNameToIdMap.get(ks.characterName) || ks.characterName;
       const beatId =
-        ks.revealedAtBeatIndex !== undefined && beats[ks.revealedAtBeatIndex]
-          ? beats[ks.revealedAtBeatIndex].id
+        ks.revealedAtBeatIndex !== undefined
+          ? originalIndexToBeatIdMap.get(ks.revealedAtBeatIndex) ?? null
           : null;
 
       const state: Omit<KnowledgeStateRecord, "id" | "created_at"> = {

@@ -360,7 +360,7 @@ export class StoryToScreenplayGenerator {
 
             // 4. Check dialogues in shot
             for (const d of shot.dialogues || []) {
-              const diagText = (d.text || "").toLowerCase();
+              const diagText = (typeof d === "string" ? d : String(d?.text ?? "")).toLowerCase();
               if (diagText.includes(beat.id.toLowerCase())) return true;
               if (beatNameClean.length > 5 && diagText.includes(beatNameClean)) return true;
             }

@@ -92,10 +92,13 @@ export async function finalizeEpisodeProduction(
         } else if (approved.qa_report_json) {
           try {
             const parsedQa = JSON.parse(approved.qa_report_json);
-            // isMockVector === true: explicit mock vector flag.
-            // isMockVector === undefined in a QA report from a non-mock backend is treated as real.
-            // But if the take itself came from the 'mock' provider path, we already caught it above.
-            if (parsedQa.isMockVector === true) {
+            // isMockVector === true: explicit mock vector flag set by synthetic embedding path.
+            // qa_status === "UNAVAILABLE": episodic-pipeline sets isMockVector = false on unavailable
+            // backend reports (no real biometric comparison was done) — block these too.
+            if (
+              parsedQa.isMockVector === true ||
+              parsedQa.qa_status === "UNAVAILABLE"
+            ) {
               mockTakesDetected.push(`${shot.shotId} (mock face vector detected in QA report)`);
             }
           } catch {}
@@ -183,7 +186,26 @@ export async function finalizeEpisodeProduction(
         Array.isArray(tl.sfxTrack) && tl.sfxTrack.length > 0
           ? tl.sfxTrack
           : tl.sfxTracks ?? tl.sfxTrack;
-      ambienceCues = tl.ambienceTrack;
+      // Normalize: timeline.json may store ambienceTrack as a single object
+      // instead of an array. Wrap it so hierarchicalAssembler.assemble() can
+      // always call .map() on the array.
+      const rawAmbience = Array.isArray(tl.ambienceTrack)
+        ? tl.ambienceTrack
+        : tl.ambienceTrack != null
+        ? [tl.ambienceTrack]
+        : [];
+      // Warn and filter out any ambience entries missing audioPath — they would
+      // silently produce a silent audio stem in the assembler.
+      ambienceCues = rawAmbience.filter((a: any) => {
+        if (!a.audioPath) {
+          log.warn(
+            `[FINALIZE SERVICE] Bỏ qua ambience cue '${a.name || a.cueId || "unknown"}': thiếu trường audioPath. Cue này sẽ không được render thành audio.`
+          );
+          return false;
+        }
+        return true;
+      });
+      if (ambienceCues.length === 0) ambienceCues = undefined;
       bgmTrack = tl.bgmTrack;
       subtitleCues = tl.subtitleTrack || tl.subtitleCues;
     } catch (err: any) {
@@ -300,9 +322,13 @@ export async function finalizeEpisodeProduction(
   // Transition lifecycle to approved by director prior to canon commit.
   // Only promotable statuses (pre-commit states) may advance to 'approved'.
   // Rejected or failed episodes must be explicitly reset by a human before re-finalization.
+  // 'approved' is included to allow idempotent retry of a finalization that failed after
+  // lifecycle was set but before commitEpisode completed (e.g. transient remux failure).
+  // We skip the setEpisodeLifecycle write when already 'approved' to avoid a redundant
+  // write and to reduce the concurrent-re-finalization race window.
   const currentLifecycle = bible.getEpisodeLifecycle(seriesId, episodeNumber);
   const promotableStatuses: (string | null | undefined)[] = [
-    null, undefined, "draft", "rendered", "unrendered", "script_generated",
+    null, undefined, "draft", "rendered", "unrendered", "script_generated", "approved",
   ];
   if (currentLifecycle?.status !== "committed") {
     if (!promotableStatuses.includes(currentLifecycle?.status ?? null)) {
@@ -311,13 +337,17 @@ export async function finalizeEpisodeProduction(
         error: `[LIFECYCLE GATE] Không thể finalize: lifecycle của tập này đang là '${currentLifecycle?.status}'. Chỉ các trạng thái chưa commit (draft/rendered/unrendered/script_generated) mới có thể được duyệt. Trạng thái 'rejected'/'failed' cần được reset thủ công trước.`,
       };
     }
-    bible.setEpisodeLifecycle({
-      seriesId,
-      episodeNumber,
-      status: "approved",
-      reviewNotes: "director_approval",
-      needsReview: false,
-    });
+    // Only write the lifecycle transition when it is not already 'approved'
+    // (idempotent retry path — avoid touching lifecycle again if already set).
+    if (currentLifecycle?.status !== "approved") {
+      bible.setEpisodeLifecycle({
+        seriesId,
+        episodeNumber,
+        status: "approved",
+        reviewNotes: "director_approval",
+        needsReview: false,
+      });
+    }
   }
 
   const commitResult = bible.commitEpisode(summaryRecord, delta, {

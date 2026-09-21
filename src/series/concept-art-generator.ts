@@ -129,7 +129,7 @@ export class ConceptArtGenerator {
 
     if (provider === "local_comfyui") {
       try {
-        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt);
+        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt, options.width, options.height);
         providerUsed = "local_comfyui";
       } catch (err: any) {
         if (options.allowMock) {
@@ -142,13 +142,21 @@ export class ConceptArtGenerator {
         }
       }
     } else if (provider === "cloud") {
+      // Cloud provider not yet implemented — fall through to mock only if explicitly allowed.
       if (options.allowMock) {
         await this.generateMockArt(char.name, imagePath);
         providerUsed = "mock";
       } else {
-        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình.");
+        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình. Đặt allowMock = true để dùng mock trong môi trường phát triển.");
       }
     } else {
+      // provider === 'mock' (or any unrecognized value falls through here).
+      // Unified check: allowMock must be explicitly true; undefined or false both block mock generation.
+      if (!options.allowMock) {
+        throw new Error(
+          `[CONCEPT ART] Provider '${provider}' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
+        );
+      }
       await this.generateMockArt(char.name, imagePath);
       providerUsed = "mock";
     }
@@ -212,7 +220,7 @@ export class ConceptArtGenerator {
 
     if (provider === "local_comfyui") {
       try {
-        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt);
+        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt, options.width, options.height);
         providerUsed = "local_comfyui";
       } catch (err: any) {
         if (options.allowMock) {
@@ -225,13 +233,21 @@ export class ConceptArtGenerator {
         }
       }
     } else if (provider === "cloud") {
+      // Cloud provider not yet implemented — fall through to mock only if explicitly allowed.
       if (options.allowMock) {
         await this.generateMockArt(loc.name, imagePath);
         providerUsed = "mock";
       } else {
-        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình.");
+        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình. Đặt allowMock = true để dùng mock trong môi trường phát triển.");
       }
     } else {
+      // provider === 'mock' (or any unrecognized value falls through here).
+      // Unified check: allowMock must be explicitly true; undefined or false both block mock generation.
+      if (!options.allowMock) {
+        throw new Error(
+          `[CONCEPT ART] Provider '${provider}' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
+        );
+      }
       await this.generateMockArt(loc.name, imagePath);
       providerUsed = "mock";
     }
@@ -271,7 +287,9 @@ export class ConceptArtGenerator {
     prompt: string,
     outPath: string,
     host = "http://127.0.0.1:8188",
-    negativePrompt?: string
+    negativePrompt?: string,
+    width = 768,
+    height = 1024
   ): Promise<void> {
     const res = await axios.get(`${host}/system_stats`, { timeout: 2500 });
     if (!res.data) {
@@ -321,7 +339,7 @@ export class ConceptArtGenerator {
         class_type: "CheckpointLoaderSimple",
       },
       "5": {
-        inputs: { width: 768, height: 1024, batch_size: 1 },
+        inputs: { width: width, height: height, batch_size: 1 },
         class_type: "EmptyLatentImage",
       },
       "6": {

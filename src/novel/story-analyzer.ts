@@ -314,11 +314,11 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         const rebasedThread = {
           ...t,
           setupBeatIndex:
-            t.setupBeatIndex !== undefined
+            t.setupBeatIndex != null
               ? t.setupBeatIndex + accumulatedBeatOffset
               : undefined,
           payoffBeatIndex:
-            t.payoffBeatIndex !== undefined
+            t.payoffBeatIndex != null
               ? t.payoffBeatIndex + accumulatedBeatOffset
               : undefined,
         };
@@ -331,7 +331,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
           const rebasedKs = {
             ...ks,
             revealedAtBeatIndex:
-              ks.revealedAtBeatIndex !== undefined
+              ks.revealedAtBeatIndex != null
                 ? ks.revealedAtBeatIndex + accumulatedBeatOffset
                 : undefined,
           };
@@ -522,33 +522,36 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       // Hard gate: unapproved beats do not enter Story Bible
       if (isApproved) {
         beats.push(record);
-        originalIndexToBeatIdMap.set(i, beatId);
       }
-      // NOTE: We always map the original index regardless of approval status.
-      // This prevents null-anchor gaps when a thread's setupBeatIndex points
-      // to a beat that was rejected: the map will carry the ID and callers
-      // can decide what to do with a reference to a non-approved beat.
-      if (!isApproved) {
-        // Still register in the map so thread/knowledge lookups don't get null.
-        // Callers that need only approved beats should filter beats[] directly.
-        originalIndexToBeatIdMap.set(i, beatId);
-      }
+      // Always register the index → beatId mapping so thread/knowledge lookups
+      // can resolve references. Callers that need approved-only beats use
+      // approvedBeatIds below to guard against dangling FK references.
+      originalIndexToBeatIdMap.set(i, beatId);
     }
     bible.batchUpsertStoryBeats(beats);
 
+    // Build a set of approved beat IDs to guard thread/knowledge-state
+    // references — any beat index pointing to a rejected beat must resolve
+    // to null rather than a dangling foreign key.
+    const approvedBeatIds = new Set(beats.map((b) => b.id));
+
     // Process Threads
     const threads: StoryThreadRecord[] = [];
+    // Defined once outside the loop — captures approvedBeatIds and originalIndexToBeatIdMap
+    // which are never mutated during thread processing, so a single closure suffices.
+    const resolveApprovedBeat = (index: number | undefined | null): string | null => {
+      if (index == null) return null;
+      const id = originalIndexToBeatIdMap.get(index) ?? null;
+      return id && approvedBeatIds.has(id) ? id : null;
+    };
     for (let i = 0; i < validated.threads.length; i++) {
       const t = validated.threads[i];
       const setupBeatId =
         t.setupBeatIndex !== undefined
-          ? (originalIndexToBeatIdMap.get(t.setupBeatIndex) ?? null)
+          ? resolveApprovedBeat(t.setupBeatIndex)
           : // Fallback: anchor to the first *approved* beat if no explicit setup index.
             beats[0]?.id || null;
-      const payoffBeatId =
-        t.payoffBeatIndex !== undefined
-          ? originalIndexToBeatIdMap.get(t.payoffBeatIndex) ?? null
-          : null;
+      const payoffBeatId = resolveApprovedBeat(t.payoffBeatIndex);
 
       const record: StoryThreadRecord = {
         id: `thread_${seriesId}_${i + 1}`,
@@ -585,10 +588,12 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
     const knowledgeStates: KnowledgeStateRecord[] = [];
     for (const ks of validated.knowledgeStates) {
       const charId = charNameToIdMap.get(ks.characterName) || ks.characterName;
-      const beatId =
-        ks.revealedAtBeatIndex !== undefined
+      const rawBeatId =
+        ks.revealedAtBeatIndex != null
           ? originalIndexToBeatIdMap.get(ks.revealedAtBeatIndex) ?? null
           : null;
+      // Guard against dangling FK: only keep beatId if the beat was approved and persisted.
+      const beatId = rawBeatId && approvedBeatIds.has(rawBeatId) ? rawBeatId : null;
 
       const state: Omit<KnowledgeStateRecord, "id" | "created_at"> = {
         series_id: seriesId,

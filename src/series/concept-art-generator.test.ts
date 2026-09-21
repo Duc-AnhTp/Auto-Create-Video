@@ -126,4 +126,35 @@ describe("Character & Location Concept Art T2I Generator", () => {
       })
     ).rejects.toThrow(/không tồn tại/);
   });
+
+  it("5. ComfyUI Provenance Gate: Throws error when ComfyUI is offline and allowMock is false", async () => {
+    const generator = new ConceptArtGenerator(bible);
+
+    await expect(
+      generator.generateCharacterConceptArt({
+        seriesId,
+        characterId: "char_minh",
+        outputDir: join(testOutputDir, "characters"),
+        provider: "local_comfyui",
+        comfyHost: "http://127.0.0.1:9999", // non-existent host
+        allowMock: false,
+      })
+    ).rejects.toThrow(/Tạo ảnh qua ComfyUI thất bại và không cho phép fallback mock/);
+  });
+
+  it("6. ComfyUI Provenance Gate: Reports providerUsed as 'mock' when falling back with allowMock=true", async () => {
+    const generator = new ConceptArtGenerator(bible);
+
+    const result = await generator.generateCharacterConceptArt({
+      seriesId,
+      characterId: "char_minh",
+      outputDir: join(testOutputDir, "characters"),
+      provider: "local_comfyui",
+      comfyHost: "http://127.0.0.1:9999", // non-existent host
+      allowMock: true,
+    });
+
+    expect(result.providerUsed).toBe("mock");
+    expect(existsSync(result.imagePath)).toBe(true);
+  });
 });

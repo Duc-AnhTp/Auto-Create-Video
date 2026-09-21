@@ -197,6 +197,54 @@ export function generateFcp7Xml(options: {
         </clipitem>`);
   }
 
+  // Build Ambience Track Items (A4)
+  const ambienceClipItems: string[] = [];
+  const ambienceList = Array.isArray(timeline.ambienceTrack)
+    ? timeline.ambienceTrack
+    : timeline.ambienceTrack
+    ? [timeline.ambienceTrack]
+    : [];
+  for (const amb of ambienceList) {
+    // Skip entries without an explicit audioPath — fabricating a CWD-relative
+    // path would produce broken <pathurl> references in the NLE import.
+    if (!amb.audioPath) continue;
+
+    const startFrame = amb.startFrame ?? secToFrame(amb.startSec ?? 0, fps);
+    const rawDuration =
+      amb.durationFrames ??
+      (amb.durationSec !== undefined
+        ? secToFrame(amb.durationSec, fps)
+        : totalFrames - startFrame);
+    // Guard against zero or negative duration (e.g. cue starting at episode end).
+    const durationFrames = Math.max(rawDuration, 1);
+    const endFrame = startFrame + durationFrames;
+    const cueId = amb.cueId || (amb as any).id || "ambience";
+    const ambName = amb.name || cueId;
+    const absPath = resolve(amb.audioPath);
+    const fileUrl = pathToFileURL(absPath).href;
+
+    ambienceClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
+          <name>Ambience: ${escapeXml(ambName)}</name>
+          <duration>${durationFrames}</duration>
+          <rate>
+            <timebase>${fps}</timebase>
+            <ntsc>FALSE</ntsc>
+          </rate>
+          <start>${startFrame}</start>
+          <end>${endFrame}</end>
+          <in>0</in>
+          <out>${durationFrames}</out>
+          <file id="file-${fileCounter++}">
+            <name>ambience_${escapeXml(cueId)}.mp3</name>
+            <pathurl>${fileUrl}</pathurl>
+            <rate>
+              <timebase>${fps}</timebase>
+            </rate>
+            <duration>${durationFrames}</duration>
+          </file>
+        </clipitem>`);
+  }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
 <xmeml version="4">
@@ -243,6 +291,10 @@ ${sfxClipItems.join("\n")}
         <!-- BGM Track (A3) -->
         <track>
 ${bgmClipItems.join("\n")}
+        </track>
+        <!-- Ambience Track (A4) -->
+        <track>
+${ambienceClipItems.join("\n")}
         </track>
       </audio>
     </media>

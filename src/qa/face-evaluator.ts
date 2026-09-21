@@ -352,6 +352,7 @@ export class UninstalledVisualQaBackend implements VisualQaBackend {
  */
 export class MockVisualQaBackend implements VisualQaBackend {
   public name = "mock_visual_qa";
+  public isMockBackend = true;
   public hasCustomMockFrames = false;
   private mockFrames: FrameEvaluationSample[] = [];
 
@@ -526,6 +527,9 @@ export class FaceQaEvaluator {
     referenceAssetId?: string
   ): Promise<ShotQaReport> {
     const backendStatus = backendStatusOverride ?? (await this.backend.checkReadiness());
+    const isMockVector =
+      backendStatus.backendName === "mock_visual_qa" ||
+      Boolean((this.backend as any)?.isMockBackend);
     const profile = STYLE_CALIBRATION_PROFILES[this.styleCategory];
     const currentAttempt = this.reRollTracker.get(shotId) ?? 0;
 
@@ -543,6 +547,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         notes: `Visual QA Backend is UNAVAILABLE (${backendStatus.availability}): ${backendStatus.details || "Cannot evaluate shot without active backend."}`,
         reviewEscalation: {
           required: true,
@@ -567,6 +572,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         notes: "Missing or empty reference embedding. Cannot perform biometric face comparison.",
         reviewEscalation: {
           required: true,
@@ -592,6 +598,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         notes: "No frames extracted from video clip. Flagged for manual review.",
         reviewEscalation: {
           required: true,
@@ -707,6 +714,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         notes: `No face detected across all ${totalFrames} sampled frames. Escalated to manual director review.`,
         reviewEscalation: {
           required: true,
@@ -731,6 +739,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         notes: `Face size is extremely small (<1.5% frame area) across majority of frames. Biometric matching uncertain.`,
         reviewEscalation: {
           required: true,
@@ -755,6 +764,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         notes: `Multiple characters detected with ambiguous similarity distances (<0.05 margin). Escalated to director.`,
         reviewEscalation: {
           required: true,
@@ -814,6 +824,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         metrics,
         suspiciousIntervals,
         evidenceFrames,
@@ -853,6 +864,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         metrics,
         suspiciousIntervals,
         evidenceFrames,
@@ -886,6 +898,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         metrics,
         suspiciousIntervals,
         evidenceFrames,
@@ -913,6 +926,7 @@ export class FaceQaEvaluator {
         backendName: backendStatus.backendName,
         backendAvailability: backendStatus.availability,
         lipSyncStatus: backendStatus.lipSyncStatus,
+        isMockVector,
         metrics,
         suspiciousIntervals,
         evidenceFrames,
@@ -948,6 +962,7 @@ export class FaceQaEvaluator {
       backendName: backendStatus.backendName,
       backendAvailability: backendStatus.availability,
       lipSyncStatus: backendStatus.lipSyncStatus,
+      isMockVector,
       metrics,
       suspiciousIntervals,
       evidenceFrames,

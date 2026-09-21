@@ -21,6 +21,8 @@ export interface SeasonOrchestratorOptions {
   provider?: BackendProvider;
   dryRun?: boolean;
   mockTts?: boolean;
+  ttsProvider?: string;
+  allowMockMedia?: boolean;
   skipAudit?: boolean;
   skipRender?: boolean;
   resume?: boolean;
@@ -122,6 +124,12 @@ export class SeasonOrchestrator {
   /**
    * Computes composite specHash for an episode based on:
    * source hash + plan hash + script hash + prior canon version + provider config (PR6).
+   *
+   * NOTE: Adding new configuration dimensions to providerConfig (e.g. ttsProvider,
+   * allowMockMedia) intentionally invalidates any pre-existing cached specHashes.
+   * This is correct behaviour — cached episodes produced without those options
+   * cannot be assumed equivalent. On first run after an upgrade that adds new
+   * dimensions, all episodes will be re-generated, which is the safe default.
    */
   public computeEpisodeSpecHash(
     seriesId: string,
@@ -142,6 +150,9 @@ export class SeasonOrchestrator {
       options.dryRun ? "dryRun" : "live",
       options.transitionDurationSec ?? 0,
       options.useHierarchicalAssembly ?? true,
+      options.mockTts ? "mockTts" : "realTts",
+      options.ttsProvider || "default",
+      options.allowMockMedia ? "allowMockMedia" : "strictMedia",
     ].join("|");
 
     let scriptHash = "";
@@ -385,6 +396,8 @@ export class SeasonOrchestrator {
           provider: options.provider || "mock",
           dryRun: options.dryRun,
           mockTts: options.mockTts,
+          ttsProvider: options.ttsProvider,
+          allowMockMedia: options.allowMockMedia,
           skipAudit: options.skipAudit ?? false,
           skipRender: options.skipRender ?? false,
           resume: resume,

@@ -188,6 +188,8 @@ export interface EpisodicPipelineOptions {
   fps?: number;
   aspectRatio?: string;
   ttsEngine?: string;
+  ttsProvider?: string;
+  allowMockMedia?: boolean;
   voiceConfigs?: Record<string, any>;
   useHierarchicalAssembly?: boolean;
   specHash?: string;
@@ -2587,6 +2589,13 @@ export function extractNarrativeDeltaFromScript(
       }
     }
   } else {
+    // In-memory prop holder map: tracks the current holder within this episode
+    // without relying on mid-episode DB reads (which reflect only the pre-episode state).
+    const inMemoryPropHolder = new Map<string, string | null>();
+    // Episode-scoped character record cache: characters appearing across multiple scenes
+    // are looked up only once, reducing DB calls from O(scenes × chars) to O(unique chars).
+    const episodeCharCache = new Map<string, any>();
+
     for (const scene of script.scenes || []) {
       if (
         scene.propsPresent &&
@@ -2601,61 +2610,84 @@ export function extractNarrativeDeltaFromScript(
           .join(" ")
           .toLowerCase();
 
+        const presentIds = (scene.charactersPresent || [])
+          .map((c: any) => (typeof c === "string" ? c : c?.characterId))
+          .filter(Boolean) as string[];
+        // Populate episode-scoped cache for any character not yet seen this episode.
+        for (const cId of presentIds) {
+          if (!episodeCharCache.has(cId)) {
+            const cRec = targetSeriesId
+              ? bible.getCharacter(cId, targetSeriesId)
+              : bible.getCharacter(cId);
+            episodeCharCache.set(cId, cRec);
+          }
+        }
+
         for (const pId of scene.propsPresent) {
-          const prop = bible.getKeyProp(pId);
-          if (prop) {
-            const currentHolder = prop.current_holder_id;
-            const presentIds = (scene.charactersPresent || [])
-              .map((c: any) => (typeof c === "string" ? c : c?.characterId))
-              .filter(Boolean);
+          // Use in-memory holder if we already tracked a transfer this episode,
+          // otherwise fall back to the database value (pre-episode state).
+          let currentHolder: string | null;
+          if (inMemoryPropHolder.has(pId)) {
+            currentHolder = inMemoryPropHolder.get(pId) ?? null;
+          } else {
+            const prop = bible.getKeyProp(pId);
+            currentHolder = prop?.current_holder_id ?? null;
+            inMemoryPropHolder.set(pId, currentHolder);
+          }
 
-            let recipientCharId: string | null = null;
+          let recipientCharId: string | null = null;
 
-            // 1. Look for specific recipient character in visual prompts
-            for (const sh of scene.shots || []) {
-              const prompt = (sh.visualPrompt || "").toLowerCase();
-              for (const cId of presentIds) {
-                if (cId === currentHolder) continue;
-                const cRec = targetSeriesId ? bible.getCharacter(cId, targetSeriesId) : bible.getCharacter(cId);
-                const cName = (cRec?.name || cId).toLowerCase();
-                if (
-                  prompt.includes(`cho ${cName}`) ||
-                  prompt.includes(`đến ${cName}`) ||
-                  prompt.includes(`${cName} nhận`) ||
-                  prompt.includes(`${cName} cầm`) ||
-                  prompt.includes(`${cName} giữ`) ||
-                  prompt.includes(`${cName} cất`)
-                ) {
-                  recipientCharId = cId;
-                  break;
-                }
-              }
-              if (recipientCharId) break;
-            }
-
-            // 2. Fallback: If transfer keyword exists in scene, pick first character who is NOT the current holder
-            // Fix #2: removed "cầm lấy", "nhận lấy", "giữ lấy" which the current holder could do themselves,
-            // preventing accidental transfer to a bystander when the holder just pockets their own prop.
-            if (!recipientCharId) {
-              const hasTransferKeyword =
-                scText.includes("trao") ||
-                scText.includes("đưa") ||
-                scText.includes("giao") ||
-                scText.includes("chuyển giao");
-
-              if (hasTransferKeyword) {
-                recipientCharId = presentIds.find((cId: string) => cId !== currentHolder) || null;
+          // 1. Look for specific recipient character in visual prompts
+          for (const sh of scene.shots || []) {
+            const prompt = (sh.visualPrompt || "").toLowerCase();
+            for (const cId of presentIds) {
+              if (cId === currentHolder) continue;
+              const cRec = episodeCharCache.get(cId);
+              const cName = (cRec?.name || cId).toLowerCase();
+              if (
+                prompt.includes(`cho ${cName}`) ||
+                prompt.includes(`đến ${cName}`) ||
+                prompt.includes(`${cName} nhận`) ||
+                prompt.includes(`${cName} cầm`) ||
+                prompt.includes(`${cName} giữ`) ||
+                prompt.includes(`${cName} cất`)
+              ) {
+                recipientCharId = cId;
+                break;
               }
             }
+            if (recipientCharId) break;
+          }
 
-            if (recipientCharId && recipientCharId !== currentHolder) {
-              propTransfers.push({
-                prop_id: pId,
-                new_holder_id: recipientCharId,
-                from_holder_id: currentHolder || undefined,
-                reason: `Chuyển giao cho ${recipientCharId} trong Cảnh ${scene.sceneNumber || 1}`,
-              });
+          // 2. Fallback: only trigger on unambiguous compound transfer phrases.
+          // Single-syllable words like "đưa" and "giao" are too common in Vietnamese
+          // non-transfer contexts (e.g. "đưa mắt", "giao tiếp"). Require more specific
+          // compound forms: "đưa cho", "đưa tay", "đưa ra", "giao cho", "giao tay",
+          // "chuyển giao", or standalone "trao" which is unambiguous.
+          if (!recipientCharId) {
+            const hasTransferKeyword =
+              scText.includes("trao") ||
+              scText.includes("đưa cho") ||
+              scText.includes("đưa tay") ||
+              scText.includes("đưa ra") ||
+              scText.includes("giao cho") ||
+              scText.includes("giao tay") ||
+              scText.includes("chuyển giao");
+
+            if (hasTransferKeyword) {
+              recipientCharId = presentIds.find((cId: string) => cId !== currentHolder) || null;
             }
+          }
+
+          if (recipientCharId && recipientCharId !== currentHolder) {
+            propTransfers.push({
+              prop_id: pId,
+              new_holder_id: recipientCharId,
+              from_holder_id: currentHolder || undefined,
+              reason: `Chuyển giao cho ${recipientCharId} trong Cảnh ${scene.sceneNumber || 1}`,
+            });
+            // Update in-memory holder so subsequent scenes in this episode see the new state.
+            inMemoryPropHolder.set(pId, recipientCharId);
           }
         }
       }

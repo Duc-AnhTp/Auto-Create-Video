@@ -220,12 +220,14 @@ export class StudioServer {
             const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
             const gen = new ConceptArtGenerator(bible);
             let result;
+            const allowMock = body.allowMock !== undefined ? Boolean(body.allowMock) : true;
             if (body.type === "location") {
               result = await gen.generateLocationConceptArt({
                 seriesId,
                 locationId: body.id,
                 promptOverride: body.promptOverride,
                 provider: body.provider || "mock",
+                allowMock,
               });
             } else {
               result = await gen.generateCharacterConceptArt({
@@ -233,6 +235,7 @@ export class StudioServer {
                 characterId: body.id,
                 promptOverride: body.promptOverride,
                 provider: body.provider || "mock",
+                allowMock,
               });
             }
             res.writeHead(200, { "Content-Type": "application/json" });

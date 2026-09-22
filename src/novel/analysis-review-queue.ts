@@ -100,38 +100,7 @@ export class AnalysisReviewQueue {
 
   public getPending(seriesId?: string): ReviewQueueItem[] {
     if (this.bible) {
-      const records = this.bible.getPendingReviewItems(seriesId);
-      for (const r of records) {
-        let item = this.items.get(r.id);
-        if (!item) {
-          let parsedData = {};
-          let parsedReasons: string[] = [];
-          try {
-            parsedData = JSON.parse(r.data_json);
-          } catch {}
-          try {
-            parsedReasons = JSON.parse(r.reasons_json || "[]");
-          } catch {}
-          item = {
-            id: r.id,
-            type: r.type as ReviewItemType,
-            seriesId: r.series_id,
-            sourceId: r.source_id || undefined,
-            data: parsedData,
-            confidenceScore: r.confidence_score,
-            reasons: parsedReasons,
-            status: r.status,
-            reviewedAt: r.reviewed_at || undefined,
-            reviewNotes: r.review_notes || undefined,
-            createdAt: r.created_at || new Date().toISOString(),
-          };
-          this.items.set(r.id, item);
-        } else {
-          item.status = r.status;
-          item.reviewedAt = r.reviewed_at || undefined;
-          item.reviewNotes = r.review_notes || undefined;
-        }
-      }
+      this.syncRecords(this.bible.getPendingReviewItems(seriesId));
     }
 
     return Array.from(this.items.values()).filter(
@@ -141,38 +110,7 @@ export class AnalysisReviewQueue {
 
   public getAll(seriesId?: string): ReviewQueueItem[] {
     if (this.bible) {
-      const records = this.bible.listReviewItems(seriesId);
-      for (const r of records) {
-        let item = this.items.get(r.id);
-        if (!item) {
-          let parsedData = {};
-          let parsedReasons: string[] = [];
-          try {
-            parsedData = JSON.parse(r.data_json);
-          } catch {}
-          try {
-            parsedReasons = JSON.parse(r.reasons_json || "[]");
-          } catch {}
-          item = {
-            id: r.id,
-            type: r.type as ReviewItemType,
-            seriesId: r.series_id,
-            sourceId: r.source_id || undefined,
-            data: parsedData,
-            confidenceScore: r.confidence_score,
-            reasons: parsedReasons,
-            status: r.status,
-            reviewedAt: r.reviewed_at || undefined,
-            reviewNotes: r.review_notes || undefined,
-            createdAt: r.created_at || new Date().toISOString(),
-          };
-          this.items.set(r.id, item);
-        } else {
-          item.status = r.status;
-          item.reviewedAt = r.reviewed_at || undefined;
-          item.reviewNotes = r.review_notes || undefined;
-        }
-      }
+      this.syncRecords(this.bible.listReviewItems(seriesId));
     }
 
     return Array.from(this.items.values()).filter(
@@ -180,74 +118,208 @@ export class AnalysisReviewQueue {
     );
   }
 
+  private syncRecords(records: AnalysisReviewItemRecord[]): void {
+    for (const r of records) {
+      const item = this.items.get(r.id);
+      if (!item) {
+        this.items.set(r.id, this.hydrateRecord(r));
+      } else {
+        item.status = r.status;
+        item.reviewedAt = r.reviewed_at || undefined;
+        item.reviewNotes = r.review_notes || undefined;
+        if (r.data_json) {
+          try {
+            item.data = JSON.parse(r.data_json);
+          } catch {}
+        }
+      }
+    }
+  }
+
+  private hydrateRecord(r: AnalysisReviewItemRecord): ReviewQueueItem {
+    let parsedData = {};
+    let parsedReasons: string[] = [];
+    try {
+      parsedData = JSON.parse(r.data_json);
+    } catch {}
+    try {
+      parsedReasons = JSON.parse(r.reasons_json || "[]");
+    } catch {}
+    return {
+      id: r.id,
+      type: r.type as ReviewItemType,
+      seriesId: r.series_id,
+      sourceId: r.source_id || undefined,
+      data: parsedData,
+      confidenceScore: r.confidence_score,
+      reasons: parsedReasons,
+      status: r.status,
+      reviewedAt: r.reviewed_at || undefined,
+      reviewNotes: r.review_notes || undefined,
+      createdAt: r.created_at || new Date().toISOString(),
+    };
+  }
+
+  private persistApprovedToDomainBible(type: ReviewItemType, data: any): void {
+    if (!this.bible || !data) return;
+    try {
+      if (type === "character" && data.id) {
+        this.bible.upsertCharacter(data);
+      } else if (type === "beat" && data.id) {
+        this.bible.upsertStoryBeat(data);
+      } else if (type === "thread" && data.id) {
+        this.bible.upsertStoryThread(data);
+      }
+    } catch {}
+  }
+
   public approve(id: string, notes?: string): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
-    let dbWriteOk = true;
+    let dbWriteOk = false;
+    let inDb = false;
+
     if (this.bible) {
-      dbWriteOk = this.bible.approveReviewItem(id, notes);
+      const dbItem = this.bible.getReviewItem(id);
+      if (dbItem) {
+        inDb = true;
+        dbWriteOk = this.bible.approveReviewItem(id, notes);
+        if (dbWriteOk) {
+          dbItem.status = "approved";
+          dbItem.reviewed_at = now;
+          if (notes !== undefined) dbItem.review_notes = notes;
+          if (!item) {
+            this.items.set(id, this.hydrateRecord(dbItem));
+          }
+        }
+      }
     }
-    // Always update in-memory state when the item exists there.
-    // When a DB is wired but the item was never persisted (in-memory-only queue),
-    // approveReviewItem() returns false (item not found in DB) which is not a write
-    // failure — we still update in-memory. Only skip in-memory update if the DB
-    // actively rejected a write for an item that IS in the DB.
+
+    if (!item && !inDb) {
+      return false;
+    }
+
+    // Do not mutate in-memory cache if the database write failed
+    if (inDb && !dbWriteOk) {
+      return false;
+    }
+
     if (item) {
       item.status = "approved";
       item.reviewedAt = now;
-      if (notes) item.reviewNotes = notes;
+      if (notes !== undefined) item.reviewNotes = notes;
     }
-    // Return false only when the DB write actively failed (item existed in DB but write rejected).
-    // Return true when: no bible (in-memory only), or item not in DB (in-memory only mode), or DB wrote OK.
-    return dbWriteOk;
+
+    const currentItem = item || this.items.get(id);
+    if (currentItem) {
+      this.persistApprovedToDomainBible(currentItem.type, currentItem.data);
+    }
+
+    return inDb ? dbWriteOk : true;
   }
 
   public reject(id: string, notes?: string): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
-    let dbWriteOk = true;
+    let dbWriteOk = false;
+    let inDb = false;
+
     if (this.bible) {
-      dbWriteOk = this.bible.rejectReviewItem(id, notes);
+      const dbItem = this.bible.getReviewItem(id);
+      if (dbItem) {
+        inDb = true;
+        dbWriteOk = this.bible.rejectReviewItem(id, notes);
+        if (dbWriteOk) {
+          dbItem.status = "rejected";
+          dbItem.reviewed_at = now;
+          if (notes !== undefined) dbItem.review_notes = notes;
+          if (!item) {
+            this.items.set(id, this.hydrateRecord(dbItem));
+          }
+        }
+      }
     }
+
+    if (!item && !inDb) {
+      return false;
+    }
+
+    // Do not mutate in-memory cache if the database write failed
+    if (inDb && !dbWriteOk) {
+      return false;
+    }
+
     if (item) {
       item.status = "rejected";
       item.reviewedAt = now;
-      if (notes) item.reviewNotes = notes;
+      if (notes !== undefined) item.reviewNotes = notes;
     }
-    return dbWriteOk;
+
+    return inDb ? dbWriteOk : true;
   }
 
   public modify<T>(id: string, modifiedData: T, notes?: string): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
-    let dbWriteOk = true;
+    let dbWriteOk = false;
+    let inDb = false;
+
     if (this.bible) {
       const existing = this.bible.getReviewItem(id);
       if (existing) {
-        this.bible.enqueueReviewItem({
-          ...existing,
-          data_json: JSON.stringify(modifiedData),
-          status: "modified",
-          reviewed_at: now,
-          review_notes: notes || existing.review_notes,
-        });
-        // enqueueReviewItem does not return a bool; assume success if no throw.
+        inDb = true;
+        try {
+          this.bible.enqueueReviewItem({
+            ...existing,
+            data_json: JSON.stringify(modifiedData),
+            status: "modified",
+            reviewed_at: now,
+            review_notes: notes !== undefined ? notes : existing.review_notes,
+          });
+          dbWriteOk = true;
+          existing.data_json = JSON.stringify(modifiedData);
+          existing.status = "modified";
+          existing.reviewed_at = now;
+          if (notes !== undefined) existing.review_notes = notes;
+          if (!item) {
+            this.items.set(id, this.hydrateRecord(existing));
+          }
+        } catch {
+          dbWriteOk = false;
+        }
       }
-      // If item not in DB (in-memory only), dbWriteOk stays true — not a write failure.
     }
-    // Always update in-memory if the item is there — same rationale as approve()/reject().
+
+    if (!item && !inDb) {
+      return false;
+    }
+
+    // Do not mutate in-memory cache if the database write failed
+    if (inDb && !dbWriteOk) {
+      return false;
+    }
+
     if (item) {
       item.data = modifiedData;
       item.status = "modified";
       item.reviewedAt = now;
-      if (notes) item.reviewNotes = notes;
+      if (notes !== undefined) item.reviewNotes = notes;
     }
-    return dbWriteOk;
+
+    const currentItem = item || this.items.get(id);
+    if (currentItem) {
+      this.persistApprovedToDomainBible(currentItem.type, currentItem.data);
+    }
+
+    return inDb ? dbWriteOk : true;
   }
 
   public getApprovedData<T>(type: ReviewItemType, seriesId?: string): T[] {
-    // Refresh from bible if available
-    this.getAll(seriesId);
+    // Selectively refresh approved and modified records from Bible
+    if (this.bible) {
+      this.syncRecords(this.bible.listReviewItems(seriesId, "approved"));
+      this.syncRecords(this.bible.listReviewItems(seriesId, "modified"));
+    }
 
     return Array.from(this.items.values())
       .filter(

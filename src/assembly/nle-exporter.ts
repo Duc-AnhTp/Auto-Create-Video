@@ -1,5 +1,5 @@
 import { writeFile, mkdir } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { UnifiedTimeline } from "../series/timeline-schema.js";
 import { secToFrame } from "../series/timeline-schema.js";
@@ -204,11 +204,13 @@ export function generateFcp7Xml(options: {
     : timeline.ambienceTrack
     ? [timeline.ambienceTrack]
     : [];
+  let ambIdx = 0;
   for (const amb of ambienceList) {
     // Skip entries without an explicit audioPath — fabricating a CWD-relative
     // path would produce broken <pathurl> references in the NLE import.
     if (!amb.audioPath) continue;
 
+    ambIdx++;
     const startFrame = amb.startFrame ?? secToFrame(amb.startSec ?? 0, fps);
     const rawDuration =
       amb.durationFrames ??
@@ -218,10 +220,18 @@ export function generateFcp7Xml(options: {
     // Guard against zero or negative duration (e.g. cue starting at episode end).
     const durationFrames = Math.max(rawDuration, 1);
     const endFrame = startFrame + durationFrames;
-    const cueId = amb.cueId || (amb as any).id || "ambience";
+    const cueId =
+      amb.cueId || (amb as any).id || (ambienceList.length > 1 ? `ambience_${ambIdx}` : "ambience");
     const ambName = amb.name || cueId;
     const absPath = resolve(amb.audioPath);
     const fileUrl = pathToFileURL(absPath).href;
+    const rawFileDurationFrames =
+      (amb as any).fileDurationFrames ??
+      ((amb as any).fileDurationSec !== undefined
+        ? secToFrame((amb as any).fileDurationSec, fps)
+        : durationFrames);
+    const effectiveFileDuration = Math.max(rawFileDurationFrames, durationFrames);
+    const fileName = basename(amb.audioPath) || `ambience_${cueId}.mp3`;
 
     ambienceClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
           <name>Ambience: ${escapeXml(ambName)}</name>
@@ -235,12 +245,12 @@ export function generateFcp7Xml(options: {
           <in>0</in>
           <out>${durationFrames}</out>
           <file id="file-${fileCounter++}">
-            <name>ambience_${escapeXml(cueId)}.mp3</name>
+            <name>${escapeXml(fileName)}</name>
             <pathurl>${fileUrl}</pathurl>
             <rate>
               <timebase>${fps}</timebase>
             </rate>
-            <duration>${durationFrames}</duration>
+            <duration>${effectiveFileDuration}</duration>
           </file>
         </clipitem>`);
   }
@@ -456,16 +466,21 @@ export function generateOtioJson(options: {
     sfxCursorFrame = startFrame + durationFrames;
   }
 
-  // Ambience Audio Track
-  const ambienceChildren: object[] = [];
-  let ambCursorFrame = 0;
+  // Ambience Audio Track(s)
   const ambList = Array.isArray(timeline.ambienceTrack)
     ? timeline.ambienceTrack
     : timeline.ambienceTrack
     ? [timeline.ambienceTrack]
     : [];
 
-  for (const amb of ambList) {
+  const validAmbs = ambList.filter((a) => a.audioPath);
+  interface AmbTrackBucket {
+    cursorFrame: number;
+    children: object[];
+  }
+  const ambBuckets: AmbTrackBucket[] = [];
+
+  for (const amb of validAmbs) {
     const startFrame = amb.startFrame ?? secToFrame(amb.startSec ?? 0, fps);
     // Fix: an ambience object without durationSec/durationFrames (common for
     // session-wide ambience like { name: "neon_hum", volume: 0.3 }) should
@@ -476,25 +491,30 @@ export function generateOtioJson(options: {
         ? secToFrame(amb.durationSec, fps)
         : totalFrames - startFrame);
 
-    if (startFrame > ambCursorFrame) {
-      ambienceChildren.push({
+    let bucket = ambBuckets.find((b) => b.cursorFrame <= startFrame);
+    if (!bucket) {
+      bucket = { cursorFrame: 0, children: [] };
+      ambBuckets.push(bucket);
+    }
+
+    if (startFrame > bucket.cursorFrame) {
+      bucket.children.push({
         OTIO_SCHEMA: "Gap.1",
         name: "Ambience_Gap",
         source_range: {
           OTIO_SCHEMA: "TimeRange.1",
           start_time: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: 0 },
-          duration: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: startFrame - ambCursorFrame },
+          duration: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: startFrame - bucket.cursorFrame },
         },
       });
-      ambCursorFrame = startFrame;
+      bucket.cursorFrame = startFrame;
     }
 
     const cueId = amb.cueId || (amb as any).id || "ambience";
     const ambName = amb.name || cueId;
-    const audioPath = amb.audioPath || `audio/ambience_${cueId}.mp3`;
-    const fileUrl = pathToFileURL(resolve(audioPath)).href;
+    const fileUrl = pathToFileURL(resolve(amb.audioPath)).href;
 
-    ambienceChildren.push({
+    bucket.children.push({
       OTIO_SCHEMA: "Clip.1",
       name: `Ambience: ${ambName}`,
       source_range: {
@@ -508,8 +528,25 @@ export function generateOtioJson(options: {
       },
     });
 
-    ambCursorFrame = startFrame + durationFrames;
+    bucket.cursorFrame = startFrame + durationFrames;
   }
+
+  const ambienceTracks: object[] =
+    ambBuckets.length === 0
+      ? [
+          {
+            OTIO_SCHEMA: "Track.1",
+            name: "Ambience Track (A3)",
+            kind: "Audio",
+            children: [],
+          },
+        ]
+      : ambBuckets.map((bucket, idx) => ({
+          OTIO_SCHEMA: "Track.1",
+          name: ambBuckets.length === 1 ? "Ambience Track (A3)" : `Ambience Track ${idx + 1} (A${3 + idx})`,
+          kind: "Audio",
+          children: bucket.children,
+        }));
 
   // BGM Audio Track
   const bgmChildren: object[] = [];
@@ -562,12 +599,7 @@ export function generateOtioJson(options: {
           kind: "Audio",
           children: sfxChildren,
         },
-        {
-          OTIO_SCHEMA: "Track.1",
-          name: "Ambience Track (A3)",
-          kind: "Audio",
-          children: ambienceChildren,
-        },
+        ...ambienceTracks,
         {
           OTIO_SCHEMA: "Track.1",
           name: "BGM Track (A4)",

@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { BibleManager } from "../bible/bible-manager.js";
 import { finalizeEpisodeProduction } from "./finalize-service.js";
 import { SeasonOrchestrator } from "../orchestration/season-orchestrator.js";
-import { createValidMockMp4File } from "../assets/mock-media-generator.js";
+import {
+  createValidMockMp4File,
+  createValidMockMp3File,
+} from "../assets/mock-media-generator.js";
 
 describe("Milestone: 2 Consecutive Episodes Real Production Pipeline", () => {
   const testDbPath = join("data", "test-milestone-2eps.db");
@@ -156,6 +159,9 @@ describe("Milestone: 2 Consecutive Episodes Real Production Pipeline", () => {
     });
 
     // Write Episode 1 Timeline with stems
+    const ep1AmbienceAudio = join(ep1Dir, "neon_hum.mp3");
+    await createValidMockMp3File(ep1AmbienceAudio, 6);
+
     const ep1Timeline = {
       dialogueTrack: [
         {
@@ -176,6 +182,7 @@ describe("Milestone: 2 Consecutive Episodes Real Production Pipeline", () => {
       ],
       ambienceTrack: {
         name: "neon_hum",
+        audioPath: ep1AmbienceAudio,
         volume: 0.3,
       },
       bgmTrack: {
@@ -284,6 +291,9 @@ describe("Milestone: 2 Consecutive Episodes Real Production Pipeline", () => {
       created_at: new Date().toISOString(),
     });
 
+    const ep2AmbienceAudio = join(ep2Dir, "server_room_hum.mp3");
+    await createValidMockMp3File(ep2AmbienceAudio, 6);
+
     const ep2Timeline = {
       dialogueTrack: [
         {
@@ -302,7 +312,11 @@ describe("Milestone: 2 Consecutive Episodes Real Production Pipeline", () => {
           durationSec: 0.8,
         },
       ],
-      ambienceTrack: { name: "server_room_hum", volume: 0.2 },
+      ambienceTrack: {
+        name: "server_room_hum",
+        audioPath: ep2AmbienceAudio,
+        volume: 0.2,
+      },
       bgmTrack: { name: "revelation_synth", volume: 0.5 },
       subtitleTrack: [
         {

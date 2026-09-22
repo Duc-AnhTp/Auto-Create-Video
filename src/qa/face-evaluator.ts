@@ -141,6 +141,7 @@ export interface VisualQaBackendStatus {
 
 export interface VisualQaBackend {
   name: string;
+  isMockBackend?: boolean;
   checkReadiness(): Promise<VisualQaBackendStatus>;
   checkLipSyncSupport?(): Promise<{ status: string; isAvailable: boolean; modelName: string; notes: string }>;
   extractFramesAndEmbeddings(
@@ -529,7 +530,7 @@ export class FaceQaEvaluator {
     const backendStatus = backendStatusOverride ?? (await this.backend.checkReadiness());
     const isMockVector =
       backendStatus.backendName === "mock_visual_qa" ||
-      Boolean((this.backend as any)?.isMockBackend);
+      Boolean(this.backend.isMockBackend);
     const profile = STYLE_CALIBRATION_PROFILES[this.styleCategory];
     const currentAttempt = this.reRollTracker.get(shotId) ?? 0;
 

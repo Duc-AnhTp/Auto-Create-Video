@@ -2597,6 +2597,38 @@ export function extractNarrativeDeltaFromScript(
     const episodeCharCache = new Map<string, any>();
 
     for (const scene of script.scenes || []) {
+      // 2a. Support structured scene-level propTransfers or events (Finding 15)
+      const sceneStructuredTransfers: any[] = [];
+      if (Array.isArray((scene as any).propTransfers)) {
+        sceneStructuredTransfers.push(...(scene as any).propTransfers);
+      }
+      if (Array.isArray((scene as any).events)) {
+        for (const ev of (scene as any).events) {
+          if (ev?.type === "prop_transfer" || ev?.eventType === "prop_transfer") {
+            sceneStructuredTransfers.push(ev);
+          }
+        }
+      }
+
+      if (sceneStructuredTransfers.length > 0) {
+        for (const st of sceneStructuredTransfers) {
+          const pId = st.propId || st.prop_id;
+          const newHolder = st.newHolderId || st.new_holder_id || st.recipientId;
+          if (pId && newHolder) {
+            const currentHolder = inMemoryPropHolder.get(pId) ?? (bible.getKeyProp(pId)?.current_holder_id ?? null);
+            if (newHolder !== currentHolder) {
+              propTransfers.push({
+                prop_id: pId,
+                new_holder_id: newHolder,
+                from_holder_id: currentHolder || undefined,
+                reason: st.reason || `Chuyển giao có cấu trúc trong Cảnh ${scene.sceneNumber || 1}`,
+              });
+              inMemoryPropHolder.set(pId, newHolder);
+            }
+          }
+        }
+      }
+
       if (
         scene.propsPresent &&
         scene.propsPresent.length > 0 &&
@@ -2624,6 +2656,11 @@ export function extractNarrativeDeltaFromScript(
         }
 
         for (const pId of scene.propsPresent) {
+          // If already transferred in structured events for this scene, skip heuristic
+          if (sceneStructuredTransfers.some((st: any) => (st.propId || st.prop_id) === pId)) {
+            continue;
+          }
+
           // Use in-memory holder if we already tracked a transfer this episode,
           // otherwise fall back to the database value (pre-episode state).
           let currentHolder: string | null;
@@ -2635,11 +2672,29 @@ export function extractNarrativeDeltaFromScript(
             inMemoryPropHolder.set(pId, currentHolder);
           }
 
+          // Finding 6: Check for specific prop name mentions in shots to prevent false positives
+          const prop = bible.getKeyProp(pId);
+          const pName = (prop?.name || "").toLowerCase();
+          const isSinglePropInScene = scene.propsPresent.length === 1;
+          const propMentionedInScene =
+            isSinglePropInScene ||
+            (pName && scText.includes(pName)) ||
+            scText.includes(pId.toLowerCase());
+
+          if (!propMentionedInScene) {
+            continue;
+          }
+
           let recipientCharId: string | null = null;
 
           // 1. Look for specific recipient character in visual prompts
           for (const sh of scene.shots || []) {
             const prompt = (sh.visualPrompt || "").toLowerCase();
+            // If multiple props are present in the scene, ensure this shot mentions this prop
+            if (!isSinglePropInScene && pName && !prompt.includes(pName) && !prompt.includes(pId.toLowerCase())) {
+              continue;
+            }
+
             for (const cId of presentIds) {
               if (cId === currentHolder) continue;
               const cRec = episodeCharCache.get(cId);
@@ -2659,22 +2714,15 @@ export function extractNarrativeDeltaFromScript(
             if (recipientCharId) break;
           }
 
-          // 2. Fallback: only trigger on unambiguous compound transfer phrases.
-          // Single-syllable words like "đưa" and "giao" are too common in Vietnamese
-          // non-transfer contexts (e.g. "đưa mắt", "giao tiếp"). Require more specific
-          // compound forms: "đưa cho", "đưa tay", "đưa ra", "giao cho", "giao tay",
-          // "chuyển giao", or standalone "trao" which is unambiguous.
+          // 2. Fallback: only trigger on unambiguous transfer phrases.
+          // Finding 5: Exclude non-transfer idioms like "đưa ra quyết định", "đưa mắt", "đưa tin".
           if (!recipientCharId) {
-            const hasTransferKeyword =
-              scText.includes("trao") ||
-              scText.includes("đưa cho") ||
-              scText.includes("đưa tay") ||
-              scText.includes("đưa ra") ||
-              scText.includes("giao cho") ||
-              scText.includes("giao tay") ||
-              scText.includes("chuyển giao");
+            const isNonTransferPhrase = /(?:đưa ra|đưa mắt|đưa tin|đưa tiễn|đưa đón|trao đổi)/i.test(scText);
+            const hasUnambiguousTransfer =
+              /(?:trao|bàn giao|chuyển giao|tặng|giao lại|chuyền).{0,30}(?:cho|tận tay|lại)?/i.test(scText) ||
+              /(?:đưa).{0,30}(?:cho|tận tay|tay cho|qua cho)/i.test(scText);
 
-            if (hasTransferKeyword) {
+            if (hasUnambiguousTransfer && (!isNonTransferPhrase || /(?:đưa|trao).{0,30}cho/i.test(scText))) {
               recipientCharId = presentIds.find((cId: string) => cId !== currentHolder) || null;
             }
           }

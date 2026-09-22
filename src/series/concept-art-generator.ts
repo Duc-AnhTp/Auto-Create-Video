@@ -124,42 +124,7 @@ export class ConceptArtGenerator {
     const imagePath = join(destDir, `${characterId}_ref.jpg`);
 
     // 3. Generate Image
-    const provider = options.provider || "mock";
-    let providerUsed: "local_comfyui" | "cloud" | "mock" = "mock";
-
-    if (provider === "local_comfyui") {
-      try {
-        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt, options.width, options.height);
-        providerUsed = "local_comfyui";
-      } catch (err: any) {
-        if (options.allowMock) {
-          await this.generateMockArt(char.name, imagePath);
-          providerUsed = "mock";
-        } else {
-          throw new Error(
-            `[CONCEPT ART] Tạo ảnh qua ComfyUI thất bại và không cho phép fallback mock (allowMock = false): ${err.message}`
-          );
-        }
-      }
-    } else if (provider === "cloud") {
-      // Cloud provider not yet implemented — fall through to mock only if explicitly allowed.
-      if (options.allowMock) {
-        await this.generateMockArt(char.name, imagePath);
-        providerUsed = "mock";
-      } else {
-        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình. Đặt allowMock = true để dùng mock trong môi trường phát triển.");
-      }
-    } else {
-      // provider === 'mock' (or any unrecognized value falls through here).
-      // Unified check: allowMock must be explicitly true; undefined or false both block mock generation.
-      if (!options.allowMock) {
-        throw new Error(
-          `[CONCEPT ART] Provider '${provider}' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
-        );
-      }
-      await this.generateMockArt(char.name, imagePath);
-      providerUsed = "mock";
-    }
+    const providerUsed = await this.generateArtWithProvider(prompt, imagePath, char.name, options);
 
     // 4. Extract or derive 512-D Face Feature Embedding
     const faceEmbedding = generateSyntheticFaceEmbedding(`${seriesId}_${characterId}_${char.name}`);
@@ -215,42 +180,7 @@ export class ConceptArtGenerator {
     const imagePath = join(destDir, `${locationId}_ref.jpg`);
 
     // 3. Generate Image
-    const provider = options.provider || "mock";
-    let providerUsed: "local_comfyui" | "cloud" | "mock" = "mock";
-
-    if (provider === "local_comfyui") {
-      try {
-        await this.generateViaComfyUi(prompt, imagePath, options.comfyHost, options.negativePrompt, options.width, options.height);
-        providerUsed = "local_comfyui";
-      } catch (err: any) {
-        if (options.allowMock) {
-          await this.generateMockArt(loc.name, imagePath);
-          providerUsed = "mock";
-        } else {
-          throw new Error(
-            `[CONCEPT ART] Tạo ảnh qua ComfyUI thất bại và không cho phép fallback mock (allowMock = false): ${err.message}`
-          );
-        }
-      }
-    } else if (provider === "cloud") {
-      // Cloud provider not yet implemented — fall through to mock only if explicitly allowed.
-      if (options.allowMock) {
-        await this.generateMockArt(loc.name, imagePath);
-        providerUsed = "mock";
-      } else {
-        throw new Error("[CONCEPT ART] Cloud provider chưa được cấu hình. Đặt allowMock = true để dùng mock trong môi trường phát triển.");
-      }
-    } else {
-      // provider === 'mock' (or any unrecognized value falls through here).
-      // Unified check: allowMock must be explicitly true; undefined or false both block mock generation.
-      if (!options.allowMock) {
-        throw new Error(
-          `[CONCEPT ART] Provider '${provider}' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
-        );
-      }
-      await this.generateMockArt(loc.name, imagePath);
-      providerUsed = "mock";
-    }
+    const providerUsed = await this.generateArtWithProvider(prompt, imagePath, loc.name, options);
 
     // 4. Update Story Bible location record
     this.bible.upsertLocation({
@@ -270,6 +200,58 @@ export class ConceptArtGenerator {
       providerUsed,
       updatedBible: true,
     };
+  }
+
+  /**
+   * Dispatches image generation to the specified provider with graceful fallback.
+   */
+  private async generateArtWithProvider(
+    prompt: string,
+    imagePath: string,
+    label: string,
+    options: ConceptArtOptions
+  ): Promise<"local_comfyui" | "cloud" | "mock"> {
+    const provider = options.provider || "mock";
+
+    if (provider === "local_comfyui") {
+      try {
+        await this.generateViaComfyUi(
+          prompt,
+          imagePath,
+          options.comfyHost,
+          options.negativePrompt,
+          options.width,
+          options.height
+        );
+        return "local_comfyui";
+      } catch (err: any) {
+        if (options.allowMock) {
+          await this.generateMockArt(label, imagePath);
+          return "mock";
+        }
+        throw new Error(
+          `[CONCEPT ART] Tạo ảnh qua ComfyUI thất bại và không cho phép fallback mock (allowMock = false): ${err.message}`
+        );
+      }
+    } else if (provider === "cloud") {
+      if (options.allowMock) {
+        await this.generateMockArt(label, imagePath);
+        return "mock";
+      }
+      throw new Error(
+        "[CONCEPT ART] Cloud provider chưa được cấu hình. Đặt allowMock = true để dùng mock trong môi trường phát triển."
+      );
+    } else {
+      // provider === 'mock' (or any unrecognized value falls through here).
+      // P0 Provenance Gate: allowMock must be explicitly true; undefined or false both block mock generation.
+      if (!options.allowMock) {
+        throw new Error(
+          `[CONCEPT ART] Provider '${provider}' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
+        );
+      }
+      await this.generateMockArt(label, imagePath);
+      return "mock";
+    }
   }
 
   /**

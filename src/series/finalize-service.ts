@@ -89,17 +89,23 @@ export async function finalizeEpisodeProduction(
       } else if (!options.allowMockMedia) {
         if (approved.provider === "mock") {
           mockTakesDetected.push(`${shot.shotId} (provider: mock)`);
+        } else if (approved.qa_status === "UNAVAILABLE" || approved.qa_status === "FAIL") {
+          mockTakesDetected.push(`${shot.shotId} (QA status is ${approved.qa_status} - cannot commit to canon)`);
         } else if (approved.qa_report_json) {
           try {
             const parsedQa = JSON.parse(approved.qa_report_json);
             // isMockVector === true: explicit mock vector flag set by synthetic embedding path.
-            // qa_status === "UNAVAILABLE": episodic-pipeline sets isMockVector = false on unavailable
-            // backend reports (no real biometric comparison was done) — block these too.
+            // status === "UNAVAILABLE" or "FAIL": no real biometric comparison or failed test.
+            // 0 frames extracted: empty or unreadable video.
             if (
               parsedQa.isMockVector === true ||
-              parsedQa.qa_status === "UNAVAILABLE"
+              parsedQa.status === "UNAVAILABLE" ||
+              parsedQa.qa_status === "UNAVAILABLE" ||
+              parsedQa.status === "FAIL" ||
+              parsedQa.qa_status === "FAIL" ||
+              (parsedQa.status === "WARN" && parsedQa.notes?.includes("No frames extracted"))
             ) {
-              mockTakesDetected.push(`${shot.shotId} (mock face vector detected in QA report)`);
+              mockTakesDetected.push(`${shot.shotId} (mock or unverified frames detected in QA report)`);
             }
           } catch {}
         }
@@ -196,7 +202,7 @@ export async function finalizeEpisodeProduction(
         : [];
       // Warn and filter out any ambience entries missing audioPath — they would
       // silently produce a silent audio stem in the assembler.
-      ambienceCues = rawAmbience.filter((a: any) => {
+      const filteredAmbience = rawAmbience.filter((a: any) => {
         if (!a.audioPath) {
           log.warn(
             `[FINALIZE SERVICE] Bỏ qua ambience cue '${a.name || a.cueId || "unknown"}': thiếu trường audioPath. Cue này sẽ không được render thành audio.`
@@ -205,7 +211,7 @@ export async function finalizeEpisodeProduction(
         }
         return true;
       });
-      if (ambienceCues.length === 0) ambienceCues = undefined;
+      ambienceCues = filteredAmbience.length > 0 ? filteredAmbience : undefined;
       bgmTrack = tl.bgmTrack;
       subtitleCues = tl.subtitleTrack || tl.subtitleCues;
     } catch (err: any) {

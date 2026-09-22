@@ -390,7 +390,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
       let isApproved = true;
       if (options.reviewQueue) {
-        const qItem = options.reviewQueue.enqueue("character", seriesId, char, {
+        const qItem = options.reviewQueue.enqueue("character", seriesId, record, {
           id: `rev_${id}`,
           sourceId,
           confidenceScore: char.confidenceScore,
@@ -509,7 +509,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
       let isApproved = true;
       if (options.reviewQueue) {
-        const qItem = options.reviewQueue.enqueue("beat", seriesId, beat, {
+        const qItem = options.reviewQueue.enqueue("beat", seriesId, record, {
           id: `rev_${beatId}`,
           sourceId,
           confidenceScore: beat.confidenceScore,
@@ -547,7 +547,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
     for (let i = 0; i < validated.threads.length; i++) {
       const t = validated.threads[i];
       const setupBeatId =
-        t.setupBeatIndex !== undefined
+        t.setupBeatIndex != null
           ? resolveApprovedBeat(t.setupBeatIndex)
           : // Fallback: anchor to the first *approved* beat if no explicit setup index.
             beats[0]?.id || null;
@@ -568,7 +568,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
       let isApproved = true;
       if (options.reviewQueue) {
-        const qItem = options.reviewQueue.enqueue("thread", seriesId, t, {
+        const qItem = options.reviewQueue.enqueue("thread", seriesId, record, {
           id: `rev_${record.id}`,
           sourceId,
           confidenceScore: t.confidenceScore,

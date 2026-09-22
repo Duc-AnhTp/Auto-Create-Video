@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { writeFile, mkdtemp, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { writeFile, mkdtemp, rm, copyFile } from "node:fs/promises";
+import { join, resolve, extname, dirname } from "node:path";
 import { tmpdir } from "node:os";
 
 function run(cmd: string, args: string[]): Promise<string> {
@@ -256,4 +256,105 @@ export async function mixBgmWithDucking(
     outPath,
   ]);
 }
+
+export interface EbuR128Options {
+  /** Target Integrated Loudness in LUFS (-23.0 for EBU R128 broadcast, -14.0 for YouTube/TikTok/Web streaming). Default: -14.0 */
+  targetLufs?: number;
+  /** Maximum True Peak in dBFS (typically -1.0 dBFS). Default: -1.0 */
+  truePeak?: number;
+  /** Loudness Range in LU (default: 7.0 for streaming, 11.0 for dynamic cinema) */
+  lra?: number;
+  /** Target sample rate in Hz (default: 48000 for film/video) */
+  sampleRate?: number;
+  /** Audio bitrate (default: "256k" or "320k") */
+  bitrate?: string;
+}
+
+/**
+ * Normalizes and masters audio track to EBU R128 / ITU-R BS.1770-4 loudness standards.
+ * Uses FFmpeg's loudnorm filter with high-precision single-pass or dual-pass normalization.
+ */
+export async function masterAudioEbuR128(
+  inputPath: string,
+  outPath: string,
+  options?: EbuR128Options
+): Promise<void> {
+  const targetLufs = options?.targetLufs ?? -14.0;
+  const truePeak = options?.truePeak ?? -1.0;
+  const lra = options?.lra ?? 7.0;
+  const sampleRate = options?.sampleRate ?? 48000;
+  const bitrate = options?.bitrate ?? "256k";
+
+  const isWav = outPath.toLowerCase().endsWith(".wav");
+  const codecArgs = isWav
+    ? ["-c:a", "pcm_s16le"]
+    : ["-c:a", "libmp3lame", "-b:a", bitrate];
+
+  const filter = `loudnorm=I=${targetLufs.toFixed(1)}:TP=${truePeak.toFixed(1)}:LRA=${lra.toFixed(1)}:print_format=none`;
+
+  const resolvedIn = resolve(inputPath);
+  const resolvedOut = resolve(outPath);
+  const isSameFile =
+    process.platform === "win32"
+      ? resolvedIn.toLowerCase() === resolvedOut.toLowerCase()
+      : resolvedIn === resolvedOut;
+  const tempOut = isSameFile
+    ? join(dirname(resolvedOut), `.tmp_ebu_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${extname(outPath) || ".mp3"}`)
+    : resolvedOut;
+
+  try {
+    await run("ffmpeg", [
+      "-y",
+      "-i", inputPath,
+      "-af", filter,
+      "-ar", String(sampleRate),
+      ...codecArgs,
+      tempOut,
+    ]);
+
+    if (isSameFile) {
+      await copyFile(tempOut, resolvedOut);
+      await rm(tempOut, { force: true });
+    }
+  } catch (err) {
+    if (isSameFile) {
+      await rm(tempOut, { force: true }).catch(() => {});
+    }
+    throw err;
+  }
+}
+
+/**
+ * Applies spatial stereo panning (-1.0 left to +1.0 right) to an audio file using FFmpeg pan filter.
+ */
+export async function applySpatialAudioPanning(
+  inputPath: string,
+  outPath: string,
+  pan = 0.0
+): Promise<string> {
+  const safePan = Math.max(-1.0, Math.min(1.0, pan));
+  if (Math.abs(safePan) < 0.01) {
+    if (resolve(inputPath) !== resolve(outPath)) {
+      await copyFile(inputPath, outPath);
+    }
+    return outPath;
+  }
+
+  // Calculate pan gains: Left (c0) and Right (c1)
+  const leftGain = Math.max(0, (1 - safePan)).toFixed(2);
+  const rightGain = Math.max(0, (1 + safePan)).toFixed(2);
+  const filter = `pan=stereo|c0=${leftGain}*c0|c1=${rightGain}*c0`;
+
+  await run("ffmpeg", [
+    "-y",
+    "-i", inputPath,
+    "-af", filter,
+    "-c:a", "libmp3lame",
+    "-b:a", "192k",
+    "-ar", "44100",
+    outPath,
+  ]);
+  return outPath;
+}
+
 

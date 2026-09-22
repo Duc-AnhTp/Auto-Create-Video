@@ -14,7 +14,7 @@ describe("Full-Flow Web Studio Server & REST/SSE API", () => {
   beforeAll(async () => {
     // Pick an ephemeral port for testing
     const testPort = 3987;
-    studio = new StudioServer({ port: testPort });
+    studio = new StudioServer({ port: testPort, settingsPath: join("output", "test-studio-settings.env") });
     baseUrl = await studio.start();
   });
 
@@ -127,12 +127,12 @@ describe("Full-Flow Web Studio Server & REST/SSE API", () => {
   it("7. Updates provider settings and persists them to running environment", async () => {
     const res = await axios.post(`${baseUrl}/api/settings/models`, {
       updates: {
-        TEST_CUSTOM_MODEL_KEY: "custom-secret-key-1234",
+        ANTHROPIC_API_KEY: "custom-secret-key-1234",
       },
     });
     expect(res.status).toBe(200);
     expect(res.data.success).toBe(true);
-    expect(process.env.TEST_CUSTOM_MODEL_KEY).toBe("custom-secret-key-1234");
+    expect(process.env.ANTHROPIC_API_KEY).toBe("custom-secret-key-1234");
   });
 
   it("8. Runs test probe on model provider via /api/settings/test-connection", async () => {
@@ -146,5 +146,22 @@ describe("Full-Flow Web Studio Server & REST/SSE API", () => {
     expect(probeRes.data.success).toBe(true);
     expect(probeRes.data.latencyMs).toBeGreaterThanOrEqual(0);
     expect(probeRes.data.message).toContain("thành công");
+  });
+
+  it("9. Media stream security: Rejects unauthorized access to sensitive files or path traversal", async () => {
+    // Attempt to access .env file
+    await expect(axios.get(`${baseUrl}/api/media/stream?path=.env`)).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+
+    // Attempt to access package.json
+    await expect(axios.get(`${baseUrl}/api/media/stream?path=package.json`)).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+
+    // Attempt directory traversal
+    await expect(axios.get(`${baseUrl}/api/media/stream?path=../../windows/win.ini`)).rejects.toMatchObject({
+      response: { status: 403 },
+    });
   });
 });

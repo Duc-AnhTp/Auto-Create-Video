@@ -244,43 +244,49 @@ export async function finalizeEpisodeProduction(
     );
   }
 
-  // 4. Ensure master video has combined audio if external soundtrack exists
-  const candidateAudioWav = join(baseEpDir, "audio.wav");
-  const candidateAudioMp3 = join(baseEpDir, "audio", "master-soundtrack.mp3");
-  const candidateAudio = existsSync(candidateAudioMp3)
-    ? candidateAudioMp3
-    : existsSync(candidateAudioWav)
-    ? candidateAudioWav
-    : null;
+  // 4. Ensure master video has combined audio if assembler did not produce a master audio stem
+  const hasAssembledAudio =
+    Boolean(manifest.masterOutputs?.masterAudioPath) &&
+    existsSync(manifest.masterOutputs.masterAudioPath);
 
-  if (candidateAudio) {
-    try {
-      if (await isFfmpegAvailable()) {
-        const remuxedMaster = join(assemblyOutputDir, "master_with_audio.mp4");
-        await runFfmpeg([
-          "-y",
-          "-i",
-          masterPath,
-          "-i",
-          candidateAudio,
-          "-map",
-          "0:v:0",
-          "-map",
-          "1:a:0",
-          "-c:v",
-          "copy",
-          "-c:a",
-          "aac",
-          "-b:a",
-          "192k",
-          remuxedMaster,
-        ]);
-        if (existsSync(remuxedMaster)) {
-          masterPath = remuxedMaster;
+  if (!hasAssembledAudio) {
+    const candidateAudioWav = join(baseEpDir, "audio.wav");
+    const candidateAudioMp3 = join(baseEpDir, "audio", "master-soundtrack.mp3");
+    const candidateAudio = existsSync(candidateAudioMp3)
+      ? candidateAudioMp3
+      : existsSync(candidateAudioWav)
+      ? candidateAudioWav
+      : null;
+
+    if (candidateAudio) {
+      try {
+        if (await isFfmpegAvailable()) {
+          const remuxedMaster = join(assemblyOutputDir, "master_with_audio.mp4");
+          await runFfmpeg([
+            "-y",
+            "-i",
+            masterPath,
+            "-i",
+            candidateAudio,
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            remuxedMaster,
+          ]);
+          if (existsSync(remuxedMaster)) {
+            masterPath = remuxedMaster;
+          }
         }
+      } catch (muxErr: any) {
+        log.warn(`[FINALIZE SERVICE] Audio muxing warning: ${muxErr.message}`);
       }
-    } catch (muxErr: any) {
-      log.warn(`[FINALIZE SERVICE] Audio muxing warning: ${muxErr.message}`);
     }
   }
 

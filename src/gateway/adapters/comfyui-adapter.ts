@@ -2,6 +2,7 @@ import axios from "axios";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
+import { log } from "../../utils/logger.js";
 import type { VideoProviderAdapter, ShotExecutionSpec, VideoJobStatus } from "../video-gateway.js";
 import { PROVIDER_CAPABILITY_REGISTRY, type ProviderCapabilities } from "../provider-capabilities.js";
 
@@ -69,12 +70,45 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
   }
 
   /**
-   * Builds standard Wan 2.1 / Wan 2.2 ComfyUI workflow graph.
+   * Builds standard Wan 2.1 / Wan 2.2 ComfyUI workflow graph with optional IP-Adapter FaceID and regional conditioning.
    */
-  public buildPromptWorkflow(spec: ShotExecutionSpec, inputImageName?: string): Record<string, unknown> {
+  public buildPromptWorkflow(
+    spec: ShotExecutionSpec,
+    inputImageName?: string,
+    charFaceImageName?: string,
+    secondaryCharFaceImageName?: string
+  ): Record<string, unknown> {
     if (this.workflowTemplate) {
-      // Clone custom template and dynamically inject prompt and input image
+      // Clone custom template and dynamically inject prompt, input image, and face reference
       const graph = JSON.parse(JSON.stringify(this.workflowTemplate));
+
+      // Pre-pass: trace node graph connections to distinguish face conditioning vs scene input image nodes
+      const faceLoadImageIds = new Set<string>();
+      const sceneLoadImageIds = new Set<string>();
+      for (const nodeKey of Object.keys(graph)) {
+        const n = graph[nodeKey];
+        if (n && typeof n === "object" && n.inputs) {
+          const classType = String(n.class_type || "").toLowerCase();
+          if (classType.includes("ipadapter") || classType.includes("insightface") || classType.includes("faceid")) {
+            for (const inputVal of Object.values(n.inputs)) {
+              if (Array.isArray(inputVal) && typeof inputVal[0] === "string") {
+                faceLoadImageIds.add(inputVal[0]);
+              }
+            }
+          }
+          if (classType.includes("vaeencode") || classType.includes("imagetovideo") || classType.includes("sampler")) {
+            for (const inputVal of Object.values(n.inputs)) {
+              if (Array.isArray(inputVal) && typeof inputVal[0] === "string") {
+                sceneLoadImageIds.add(inputVal[0]);
+              }
+            }
+          }
+        }
+      }
+
+      let faceAssigned = false;
+      let sceneAssigned = false;
+
       for (const nodeKey of Object.keys(graph)) {
         const node = graph[nodeKey];
         if (node && typeof node === "object" && node.inputs) {
@@ -92,18 +126,89 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
               node.inputs.text = spec.prompt;
             }
           }
-          if (inputImageName && node.class_type === "LoadImage" && node.inputs.image !== undefined) {
-            node.inputs.image = inputImageName;
+          if (node.class_type === "LoadImage" && node.inputs.image !== undefined) {
+            const title = String(node._meta?.title || node.title || "").toLowerCase();
+            const isExplicitFace =
+              title.includes("face") ||
+              title.includes("character") ||
+              title.includes("ipadapter") ||
+              title.includes("portrait") ||
+              faceLoadImageIds.has(nodeKey);
+            const isExplicitScene =
+              title.includes("input") ||
+              title.includes("init") ||
+              title.includes("scene") ||
+              title.includes("background") ||
+              title.includes("source") ||
+              sceneLoadImageIds.has(nodeKey);
+
+            if (charFaceImageName && isExplicitFace) {
+              node.inputs.image = charFaceImageName;
+              faceAssigned = true;
+            } else if (inputImageName && isExplicitScene) {
+              node.inputs.image = inputImageName;
+              sceneAssigned = true;
+            } else if (charFaceImageName && inputImageName) {
+              // Ambiguous LoadImage nodes: don't overwrite both with inputImageName!
+              if (!faceAssigned) {
+                node.inputs.image = charFaceImageName;
+                faceAssigned = true;
+              } else if (!sceneAssigned) {
+                node.inputs.image = inputImageName;
+                sceneAssigned = true;
+              }
+            } else if (inputImageName && !sceneAssigned) {
+              node.inputs.image = inputImageName;
+              sceneAssigned = true;
+            } else if (charFaceImageName && !faceAssigned) {
+              node.inputs.image = charFaceImageName;
+              faceAssigned = true;
+            }
+          }
+          if (node.class_type === "IPAdapterApply" || node.class_type === "ApplyIPAdapter") {
+            if (spec.ipAdapterWeight !== undefined && node.inputs.weight !== undefined) {
+              node.inputs.weight = spec.ipAdapterWeight;
+            }
           }
         }
       }
       return graph;
     }
 
-    // Default built-in Wan 2.1/2.2 standard nodes structure
+    // Default built-in Wan 2.1/2.2 standard nodes structure with optional Dual IP-Adapter and Regional conditioning
     const width = spec.aspectRatio === "16:9" ? 1280 : 720;
     const height = spec.aspectRatio === "16:9" ? 720 : 1280;
     const frames = Math.max(16, Math.round(spec.durationSec * 16)); // ~16 fps
+    const hasFaceConsistency = Boolean(charFaceImageName);
+    const hasSecondaryFace = Boolean(secondaryCharFaceImageName);
+    const hasDualConditioning = hasFaceConsistency && Boolean(inputImageName);
+    const ipWeight = spec.ipAdapterWeight ?? 0.8;
+    const isFp8 = process.env.COMFYUI_WAN_PRECISION === "fp8";
+    const t2vCkpt = isFp8 ? "wan2.1_t2v_720p_14B_fp8.safetensors" : "wan2.1_t2v_720p_14B.safetensors";
+    const i2vCkpt = isFp8 ? "wan2.1_i2v_720p_14B_fp8.safetensors" : "wan2.1_i2v_720p_14B.safetensors";
+    const isWan = t2vCkpt.toLowerCase().includes("wan");
+
+    // Determine final model conditioning chain
+    let finalModelInput: [string, number] = ["4", 0];
+    if (hasSecondaryFace) {
+      finalModelInput = ["18", 0]; // Primary face -> Secondary face conditioning
+    } else if (hasDualConditioning) {
+      finalModelInput = ["16", 0]; // Face ("14") -> Style/Costume ("16")
+    } else if (hasFaceConsistency) {
+      finalModelInput = ["14", 0]; // Face only
+    }
+
+    // Partition prompt with regional spatial attention if enabled
+    let promptText = spec.prompt;
+    if (spec.regionalConditioning?.enabled) {
+      const charAPrompt = spec.regionalConditioning.characterAPrompt || "";
+      const charBPrompt = spec.regionalConditioning.characterBPrompt || "";
+      const sideA = spec.regionalConditioning.characterASide || "left";
+      const sideB = spec.regionalConditioning.characterBSide || "right";
+      if (charAPrompt || charBPrompt) {
+        promptText = `${promptText}, [REGIONAL: ${sideA} side: ${charAPrompt}, ${sideB} side: ${charBPrompt}]`;
+      }
+    }
 
     return {
       "3": {
@@ -114,7 +219,7 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
           sampler_name: "uni_pc",
           scheduler: "simple",
           denoise: 1.0,
-          model: ["4", 0],
+          model: finalModelInput,
           positive: ["6", 0],
           negative: ["7", 0],
           latent_image: inputImageName ? ["11", 0] : ["5", 0],
@@ -123,7 +228,7 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
       },
       "4": {
         inputs: {
-          ckpt_name: inputImageName ? "wan2.1_i2v_720p_14B.safetensors" : "wan2.1_t2v_720p_14B.safetensors",
+          ckpt_name: inputImageName ? i2vCkpt : t2vCkpt,
         },
         class_type: "CheckpointLoaderSimple",
       },
@@ -138,7 +243,7 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
       },
       "6": {
         inputs: {
-          text: spec.prompt,
+          text: promptText,
           clip: ["4", 1],
         },
         class_type: "CLIPTextEncode",
@@ -183,6 +288,74 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
             },
           }
         : {}),
+      ...(hasFaceConsistency
+        ? {
+            "12": {
+              inputs: {
+                image: charFaceImageName!,
+                upload: "image",
+              },
+              class_type: "LoadImage",
+            },
+            "13": {
+              inputs: {
+                ipadapter_file: isWan ? "ip-adapter_wan2.1_face.safetensors" : "ip-adapter-plus-face_sdxl_vit-h.safetensors",
+              },
+              class_type: isWan ? "WanIPAdapterModelLoader" : "IPAdapterModelLoader",
+            },
+            "14": {
+              inputs: {
+                model: ["4", 0],
+                ipadapter: ["13", 0],
+                clip_vision: ["15", 0],
+                image: ["12", 0],
+                weight: ipWeight,
+              },
+              class_type: isWan ? "WanIPAdapterApply" : "IPAdapterApply",
+            },
+            "15": {
+              inputs: {
+                clip_name: isWan ? "clip_vision_wan2.1.safetensors" : "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors",
+              },
+              class_type: isWan ? "WanCLIPVisionLoader" : "CLIPVisionLoader",
+            },
+          }
+        : {}),
+      ...(hasDualConditioning
+        ? {
+            "16": {
+              inputs: {
+                model: ["14", 0],
+                ipadapter: ["13", 0],
+                clip_vision: ["15", 0],
+                image: ["10", 0],
+                weight: Math.min(0.6, ipWeight * 0.75),
+              },
+              class_type: isWan ? "WanIPAdapterApply" : "IPAdapterApply",
+            },
+          }
+        : {}),
+      ...(hasSecondaryFace
+        ? {
+            "17": {
+              inputs: {
+                image: secondaryCharFaceImageName!,
+                upload: "image",
+              },
+              class_type: "LoadImage",
+            },
+            "18": {
+              inputs: {
+                model: hasDualConditioning ? ["16", 0] : hasFaceConsistency ? ["14", 0] : ["4", 0],
+                ipadapter: ["13", 0],
+                clip_vision: ["15", 0],
+                image: ["17", 0],
+                weight: Math.min(0.7, ipWeight * 0.9),
+              },
+              class_type: isWan ? "WanIPAdapterApply" : "IPAdapterApply",
+            },
+          }
+        : {}),
     };
   }
 
@@ -209,7 +382,42 @@ export class ComfyUiAdapter implements VideoProviderAdapter {
         }
       }
 
-      const promptWorkflow = this.buildPromptWorkflow(spec, uploadedImage);
+      // Handle dedicated character face consistency image if provided
+      let uploadedFaceImage: string | undefined = undefined;
+      const charRefImg = spec.characterReferenceImage;
+      if (charRefImg && existsSync(charRefImg)) {
+        if (refImg && charRefImg === refImg && uploadedImage) {
+          uploadedFaceImage = uploadedImage;
+        } else {
+          try {
+            uploadedFaceImage = await this.uploadInputImage(charRefImg);
+          } catch (faceUploadErr: any) {
+            log.warn(
+              `[COMFYUI FACE] Không thể upload ảnh khuôn mặt nhân vật cho shot [${spec.shotId}]: ${faceUploadErr.message}`
+            );
+          }
+        }
+      }
+
+      // Handle secondary character face reference for multi-character 2-shot scenes
+      let uploadedSecondaryFaceImage: string | undefined = undefined;
+      const secRefImg = spec.secondaryCharacterReferenceImage;
+      if (secRefImg && existsSync(secRefImg)) {
+        try {
+          uploadedSecondaryFaceImage = await this.uploadInputImage(secRefImg);
+        } catch (secUploadErr: any) {
+          log.warn(
+            `[COMFYUI SECONDARY FACE] Không thể upload ảnh nhân vật thứ hai cho shot [${spec.shotId}]: ${secUploadErr.message}`
+          );
+        }
+      }
+
+      const promptWorkflow = this.buildPromptWorkflow(
+        spec,
+        uploadedImage,
+        uploadedFaceImage,
+        uploadedSecondaryFaceImage
+      );
       const payload = {
         prompt: promptWorkflow,
         client_id: this.clientId,

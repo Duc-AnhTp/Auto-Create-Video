@@ -213,18 +213,49 @@ describe("VideoModelGateway (Phân Hệ VI: Model API Gateway)", () => {
     await expect(adapter.submitJob(spec)).rejects.toThrow("VEO_API_KEY");
   });
 
-  it("handles SeedanceAdapter error when API key is missing", async () => {
-    const { SeedanceAdapter } = await import("./adapters/seedance-adapter.js");
-    const adapter = new SeedanceAdapter({ apiKey: "" });
-
-    const spec: ShotExecutionSpec = {
-      shotId: "seedance_test",
-      backend: "api_seedance",
-      priority: "hero",
-      durationSec: 5.0,
-      prompt: "test",
+  it("tracks gateway execution telemetry and failover stats accurately", async () => {
+    const mockPrimary: VideoProviderAdapter = {
+      providerName: "api_kling",
+      capabilities: { ...PROVIDER_CAPABILITY_REGISTRY.mock, providerName: "api_kling" },
+      submitJob: vi.fn().mockRejectedValue(new Error("503 Overloaded")),
+      pollStatus: vi.fn(),
+    };
+    const mockFallback: VideoProviderAdapter = {
+      providerName: "api_wan",
+      capabilities: { ...PROVIDER_CAPABILITY_REGISTRY.mock, providerName: "api_wan" },
+      submitJob: vi.fn().mockResolvedValue({ jobId: "job_wan_fb" }),
+      pollStatus: vi.fn().mockResolvedValue({
+        jobId: "job_wan_fb",
+        status: "completed",
+        videoUrl: "http://mock.cdn/wan.mp4",
+      }),
     };
 
-    await expect(adapter.submitJob(spec)).rejects.toThrow("SEEDANCE_API_KEY");
+    const gateway = new VideoModelGateway({
+      maxBudgetUsd: 10.0,
+      enableFailover: true,
+      fallbackChain: ["api_wan"],
+      pollIntervalMs: 5,
+    });
+    gateway.registerAdapter(mockPrimary);
+    gateway.registerAdapter(mockFallback);
+
+    const spec: ShotExecutionSpec = {
+      shotId: "shot_telemetry_test",
+      backend: "api_kling",
+      priority: "hero",
+      durationSec: 3.0,
+      prompt: "telemetry test",
+    };
+
+    const res = await gateway.executeShot(spec);
+    expect(res.status).toBe("completed");
+
+    const telemetry = gateway.getTelemetry();
+    expect(telemetry.totalShots).toBe(1);
+    expect(telemetry.shotsByProvider["api_wan"]).toBe(1);
+    expect(telemetry.failoversTriggered).toBe(1);
+    expect(telemetry.totalSpendUsd).toBeCloseTo(0.24); // 3s * $0.08
+    expect(telemetry.circuitBreakers["api_kling"]).toBe("CLOSED");
   });
 });

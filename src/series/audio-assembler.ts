@@ -5,24 +5,30 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import type { EpisodicScript, Shot, ShotType } from "./series-schema.js";
 import { BibleManager } from "../bible/bible-manager.js";
-import { loadConfig, type Config } from "../config.js";
+import { loadConfig, type Config, type TtsProvider } from "../config.js";
 import { LucylabClient } from "../tts/lucylab-client.js";
 import { ElevenLabsClient } from "../tts/elevenlabs-client.js";
+import { CosyVoiceClient } from "../tts/cosyvoice-client.js";
+import { F5TtsClient } from "../tts/f5tts-client.js";
 import {
   getDurationSec,
   concatWithSilence,
   mixSfxOntoVoice,
   mixBgmWithDucking,
+  masterAudioEbuR128,
+  applySpatialAudioPanning,
   type SfxMixSpec,
 } from "../assets/audio-tools.js";
-import { createValidMockMp3File } from "../assets/mock-media-generator.js";
+import { createValidMockMp3File, hasFfmpeg } from "../assets/mock-media-generator.js";
 import {
   type UnifiedTimeline,
   type DialogueOverflowPolicy,
   exportToSrt,
   exportToVtt,
 } from "./timeline-schema.js";
+import { exportToAss } from "../media/ass-subtitle-builder.js";
 import { TimelineScheduler, type MeasuredTtsDurations } from "./timeline-scheduler.js";
+import type { FoleyGenerator } from "../audio/foley-generator.js";
 import { log } from "../utils/logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -49,6 +55,7 @@ export interface TimelineDialogueCue {
   durationSec: number;
   audioPath: string;
   voiceProfileId?: string;
+  actingInstruction?: string;
 }
 
 export interface TimelineSfxCue {
@@ -57,6 +64,9 @@ export interface TimelineSfxCue {
   durationSec: number;
   audioPath: string;
   volume: number;
+  pan?: number;
+  shotId?: string;
+  actionPrompt?: string;
 }
 
 export interface MasterTimeline {
@@ -85,6 +95,7 @@ export interface DialogueAudioResult {
 }
 
 export interface AssembleAudioOptions {
+  checkpoint?: () => Promise<void>;
   script: EpisodicScript;
   bible: BibleManager;
   outputDir: string;
@@ -95,6 +106,8 @@ export interface AssembleAudioOptions {
   sfxDir?: string;
   bgmDir?: string;
   ambienceDir?: string;
+  foleyGenerator?: FoleyGenerator;
+  enableFoleySynthesis?: boolean;
   cfg?: Config;
 }
 
@@ -109,6 +122,7 @@ export interface AudioStems {
 export interface SubtitleFiles {
   srtPath: string;
   vttPath: string;
+  assPath?: string;
 }
 
 export interface AssembleAudioResult {
@@ -175,6 +189,7 @@ export function buildMasterTimeline(script: EpisodicScript, fps = 30): MasterTim
             durationSec: Number(cueDuration.toFixed(3)),
             audioPath: "",
             voiceProfileId: d.voiceProfileId,
+            actingInstruction: d.actingInstruction,
           });
           dialogueOffset += cueDuration + 0.15;
         }
@@ -188,6 +203,9 @@ export function buildMasterTimeline(script: EpisodicScript, fps = 30): MasterTim
           durationSec: 0,
           audioPath: "",
           volume: shot.sfxCue.volume ?? 0.7,
+          pan: shot.sfxCue.pan,
+          shotId: shot.shotId,
+          actionPrompt: shot.sfxCue.description || shot.visualPrompt,
         });
       }
 
@@ -205,6 +223,13 @@ export function buildMasterTimeline(script: EpisodicScript, fps = 30): MasterTim
   };
 }
 
+function parseVoiceProvider(provStr: string, fallback: TtsProvider): TtsProvider {
+  if (provStr === "elevenlabs" || provStr === "lucylab" || provStr === "cosyvoice" || provStr === "f5tts") {
+    return provStr;
+  }
+  return fallback;
+}
+
 /**
  * Resolves the effective voice ID and provider for a dialogue line.
  */
@@ -212,15 +237,19 @@ export function resolveVoiceForDialogue(
   shot: Shot,
   bible: BibleManager,
   defaultCfg: Config
-): { provider: "lucylab" | "elevenlabs"; voiceId: string } {
+): { provider: TtsProvider; voiceId: string } {
   const dialogue = shot.dialogue;
   if (!dialogue) {
     return {
       provider: defaultCfg.ttsProvider,
       voiceId:
         defaultCfg.ttsProvider === "lucylab"
-          ? defaultCfg.lucylabVoiceId!
-          : defaultCfg.elevenlabsVoiceId!,
+          ? defaultCfg.lucylabVoiceId || "default-voice"
+          : defaultCfg.ttsProvider === "elevenlabs"
+          ? defaultCfg.elevenlabsVoiceId || "default-voice"
+          : defaultCfg.ttsProvider === "cosyvoice"
+          ? defaultCfg.cosyvoiceVoiceId || "default"
+          : "default",
     };
   }
 
@@ -229,7 +258,7 @@ export function resolveVoiceForDialogue(
     if (dialogue.voiceProfileId.includes(":")) {
       const [prov, id] = dialogue.voiceProfileId.split(":");
       return {
-        provider: prov === "elevenlabs" ? "elevenlabs" : "lucylab",
+        provider: parseVoiceProvider(prov, defaultCfg.ttsProvider),
         voiceId: id,
       };
     }
@@ -246,7 +275,7 @@ export function resolveVoiceForDialogue(
       if (char.voice_profile_id.includes(":")) {
         const [prov, id] = char.voice_profile_id.split(":");
         return {
-          provider: prov === "elevenlabs" ? "elevenlabs" : "lucylab",
+          provider: parseVoiceProvider(prov, defaultCfg.ttsProvider),
           voiceId: id,
         };
       }
@@ -269,7 +298,11 @@ export function resolveVoiceForDialogue(
     voiceId:
       defaultCfg.ttsProvider === "lucylab"
         ? defaultCfg.lucylabVoiceId || "default-voice"
-        : defaultCfg.elevenlabsVoiceId || "default-voice",
+        : defaultCfg.ttsProvider === "elevenlabs"
+        ? defaultCfg.elevenlabsVoiceId || "default-voice"
+        : defaultCfg.ttsProvider === "cosyvoice"
+        ? defaultCfg.cosyvoiceVoiceId || "default"
+        : "default",
   };
 }
 
@@ -334,14 +367,22 @@ export class AudioAssembler {
   private sfxDir: string;
   private bgmDir: string;
   private ambienceDir: string;
+  private foleyGenerator?: FoleyGenerator;
 
   constructor(
-    options: { cfg?: Config; sfxDir?: string; bgmDir?: string; ambienceDir?: string } = {}
+    options: {
+      cfg?: Config;
+      sfxDir?: string;
+      bgmDir?: string;
+      ambienceDir?: string;
+      foleyGenerator?: FoleyGenerator;
+    } = {}
   ) {
     this.cfg = options.cfg ?? loadConfig({ validateProvider: false });
     this.sfxDir = options.sfxDir ?? join(__dirname, "..", "..", "assets", "sfx");
     this.bgmDir = options.bgmDir ?? join(__dirname, "..", "..", "assets", "bgm");
     this.ambienceDir = options.ambienceDir ?? join(__dirname, "..", "..", "assets", "ambience");
+    this.foleyGenerator = options.foleyGenerator;
   }
 
   public getCfg(): Config {
@@ -398,7 +439,29 @@ export class AudioAssembler {
             measuredDur = Math.max(1.0, Math.round((words / 2.6) * 10) / 10);
             await createValidMockMp3File(turnPath, measuredDur);
           } else {
-            if (provider === "lucylab") {
+            if (provider === "cosyvoice") {
+              const client = new CosyVoiceClient({
+                endpoint: this.cfg.cosyvoiceEndpoint || "http://localhost:50000",
+                apiKey: this.cfg.cosyvoiceApiKey,
+                defaultVoiceId: voiceId,
+                mockFallback: options.mockTts === true,
+              });
+              await options.checkpoint?.();
+              await client.generate(textToSpeak, turnPath, undefined, {
+                voiceProfileId: voiceId,
+                actingInstruction: dialogue.actingInstruction,
+              });
+            } else if (provider === "f5tts") {
+              const client = new F5TtsClient({
+                endpoint: this.cfg.f5ttsEndpoint || "http://localhost:50001",
+                apiKey: this.cfg.f5ttsApiKey,
+                mockFallback: this.cfg.ttsMockFallback ?? true,
+              });
+              await options.checkpoint?.();
+              await client.generate(textToSpeak, turnPath, undefined, {
+                actingInstruction: dialogue.actingInstruction,
+              });
+            } else if (provider === "lucylab") {
               const client = new LucylabClient({
                 apiKey: this.cfg.lucylabApiKey || "mock-key",
                 voiceId,
@@ -406,7 +469,10 @@ export class AudioAssembler {
                 pollIntervalMs: this.cfg.lucylabPollIntervalMs ?? 1000,
                 pollTimeoutMs: this.cfg.lucylabPollTimeoutMs ?? 60000,
               });
-              await client.generate(textToSpeak, turnPath);
+              await options.checkpoint?.();
+              await client.generate(textToSpeak, turnPath, undefined, {
+                actingInstruction: dialogue.actingInstruction,
+              });
             } else {
               const client = new ElevenLabsClient({
                 apiKey: this.cfg.elevenlabsApiKey || "mock-key",
@@ -414,7 +480,10 @@ export class AudioAssembler {
                 modelId: this.cfg.elevenlabsModelId || "eleven_multilingual_v2",
                 endpoint: this.cfg.elevenlabsEndpoint || "https://api.elevenlabs.io/v1",
               });
-              await client.generate(textToSpeak, turnPath);
+              await options.checkpoint?.();
+              await client.generate(textToSpeak, turnPath, undefined, {
+                actingInstruction: dialogue.actingInstruction,
+              });
             }
 
             try {
@@ -467,11 +536,36 @@ export class AudioAssembler {
       }
     }
 
+    // Apply Spatial Audio Panning to dialogue turn stems when pan is configured
+    if (!mockTts && (await hasFfmpeg())) {
+      for (const cue of unifiedTimeline.dialogueTrack) {
+        if (cue.pan && Math.abs(cue.pan) >= 0.05) {
+          const origAudio = dialogueAudioMap.get(cue.dialogueId) || cue.audioPath;
+          if (origAudio && existsSync(origAudio)) {
+            const pannedPath = origAudio.replace(/\.mp3$/, "_panned.mp3");
+            try {
+              await applySpatialAudioPanning(origAudio, pannedPath, cue.pan);
+              if (existsSync(pannedPath)) {
+                dialogueAudioMap.set(cue.dialogueId, pannedPath);
+                cue.audioPath = pannedPath;
+              }
+            } catch (panErr: any) {
+              log.warn(`[SPATIAL AUDIO] Không thể pan giọng thoại '${cue.dialogueId}': ${panErr.message}`);
+            }
+          }
+        }
+      }
+    }
+
     // ── STEP 3: Assemble Stem 1 - Dialogue Track ──────────────────────────────
     const shotDialoguePaddedPaths: string[] = [];
 
     for (const vShot of unifiedTimeline.videoTrack) {
-      const turnFiles = synthesizedFilesByShotId.get(vShot.shotId) || [];
+      const rawTurnFiles = synthesizedFilesByShotId.get(vShot.shotId) || [];
+      const turnFiles = rawTurnFiles.map((f) => {
+        const pannedCandidate = f.replace(/\.mp3$/, "_panned.mp3");
+        return existsSync(pannedCandidate) ? pannedCandidate : f;
+      });
       const shotCombinedPath = join(audioDir, `dialogue-${vShot.shotId}_combined.mp3`);
 
       if (turnFiles.length === 0) {
@@ -542,15 +636,72 @@ export class AudioAssembler {
     const stemSfxPath = join(stemsDir, "stem_sfx.mp3");
     const sfxList: SfxMixSpec[] = [];
 
+    // Map approved clip paths by shotId from videoTrack for Foley sync
+    const shotClipMap = new Map<string, string>();
+    for (const v of unifiedTimeline.videoTrack) {
+      if (v.approvedClipPath) {
+        shotClipMap.set(v.shotId, v.approvedClipPath);
+      }
+    }
+
+    const effectiveFoleyGen = options.foleyGenerator || this.foleyGenerator;
+
     for (const cue of unifiedTimeline.sfxTrack) {
+      let resolvedSfx: string | null = null;
       const sfxPath = join(this.sfxDir, cue.name.endsWith(".mp3") ? cue.name : `${cue.name}.mp3`);
       if (existsSync(sfxPath)) {
+        resolvedSfx = sfxPath;
+      } else {
+        const generatedSfxPath = join(audioDir, `sfx_${cue.name.replace(/[^a-zA-Z0-9_-]/g, "_")}.mp3`);
+        if (existsSync(generatedSfxPath)) {
+          resolvedSfx = generatedSfxPath;
+        } else if (effectiveFoleyGen) {
+          const videoClip = (cue.shotId ? shotClipMap.get(cue.shotId) : undefined) || "placeholder.mp4";
+          const actionText = cue.actionPrompt || cue.name;
+          try {
+            await options.checkpoint?.();
+            await effectiveFoleyGen.generateFoley(videoClip, actionText, generatedSfxPath, {
+              durationSec: cue.durationSec || 2.5,
+              volume: cue.volume,
+            });
+            if (existsSync(generatedSfxPath)) {
+              resolvedSfx = generatedSfxPath;
+            }
+          } catch (foleyErr: any) {
+            log.warn(`[FOLEY GENERATOR] Không thể sinh Foley cho '${cue.name}': ${foleyErr.message}`);
+          }
+        }
+
+        if (!resolvedSfx && (mockTts || !(await hasFfmpeg()))) {
+          await createValidMockMp3File(generatedSfxPath, cue.durationSec || 2.0);
+          resolvedSfx = generatedSfxPath;
+        }
+      }
+
+      if (resolvedSfx && existsSync(resolvedSfx)) {
+        let finalSfxPath = resolvedSfx;
+        // Check if cue has spatial pan
+        if (cue.pan && Math.abs(cue.pan) >= 0.05 && !mockTts) {
+          const pannedCandidate = finalSfxPath.replace(
+            /\.mp3$/,
+            `_panned_${cue.pan > 0 ? "r" : "l"}.mp3`
+          );
+          try {
+            await applySpatialAudioPanning(finalSfxPath, pannedCandidate, cue.pan);
+            if (existsSync(pannedCandidate)) {
+              finalSfxPath = pannedCandidate;
+            }
+          } catch (panErr: any) {
+            log.warn(`[SPATIAL AUDIO] Không thể pan SFX '${cue.name}': ${panErr.message}`);
+          }
+        }
+
         sfxList.push({
-          path: sfxPath,
+          path: finalSfxPath,
           startSec: cue.startSec,
           volume: cue.volume,
         });
-        cue.audioPath = sfxPath;
+        cue.audioPath = finalSfxPath;
       }
     }
 
@@ -629,10 +780,41 @@ export class AudioAssembler {
       await copyFile(voiceWithSfxPath, masterSoundtrackPath);
     }
 
+    // Apply EBU R128 mastering to master soundtrack
     const soundtrackMasterWav = join(audioDir, "soundtrack_master.wav");
-    try {
-      await copyFile(masterSoundtrackPath, soundtrackMasterWav);
-    } catch {}
+    if (!mockTts) {
+      try {
+        const masteredMp3 = join(audioDir, "master-soundtrack-ebu128.mp3");
+        await masterAudioEbuR128(masterSoundtrackPath, masteredMp3, {
+          targetLufs: -14.0,
+          truePeak: -1.0,
+          lra: 7.0,
+        });
+        if (existsSync(masteredMp3)) {
+          await copyFile(masteredMp3, masterSoundtrackPath);
+          await unlink(masteredMp3).catch(() => {});
+        }
+      } catch (masterErr: any) {
+        log.warn(`  [EBU R128] Không thể chuẩn hóa loudness MP3: ${masterErr?.message || masterErr}`);
+      }
+
+      try {
+        await masterAudioEbuR128(masterSoundtrackPath, soundtrackMasterWav, {
+          targetLufs: -23.0,
+          truePeak: -1.0,
+          lra: 11.0,
+        });
+      } catch (wavErr: any) {
+        log.warn(`  [EBU R128] Fallback copy cho broadcast WAV: ${wavErr?.message || wavErr}`);
+        try {
+          await copyFile(masterSoundtrackPath, soundtrackMasterWav);
+        } catch {}
+      }
+    } else {
+      try {
+        await copyFile(masterSoundtrackPath, soundtrackMasterWav);
+      } catch {}
+    }
 
     // Measure actual master audio duration
     let actualAudioDur = unifiedTimeline.targetTotalDurationSec;
@@ -642,13 +824,19 @@ export class AudioAssembler {
       actualAudioDur = unifiedTimeline.targetTotalDurationSec;
     }
 
-    // ── STEP 8: Subtitle Export (SRT & WebVTT) ────────────────────────────────
+    // ── STEP 8: Subtitle Export (SRT, WebVTT & Kinetic ASS) ─────────────────
     const srtPath = join(outputDir, "subtitles.srt");
     const vttPath = join(outputDir, "subtitles.vtt");
+    const assPath = join(outputDir, "subtitles.ass");
     const srtContent = exportToSrt(unifiedTimeline.subtitleTrack);
     const vttContent = exportToVtt(unifiedTimeline.subtitleTrack);
+    const assContent = exportToAss(unifiedTimeline.subtitleTrack, {
+      aspectRatio: script.aspectRatio === "16:9" ? "16:9" : "9:16",
+      style: "karaoke",
+    });
     await writeFile(srtPath, srtContent, "utf8");
     await writeFile(vttPath, vttContent, "utf8");
+    await writeFile(assPath, assContent, "utf8");
 
     // ── STEP 9: Finalize Timeline Stems & Metrics ─────────────────────────────
     unifiedTimeline.stems = {
@@ -687,6 +875,7 @@ export class AudioAssembler {
       subtitles: {
         srtPath,
         vttPath,
+        assPath,
       },
     };
   }

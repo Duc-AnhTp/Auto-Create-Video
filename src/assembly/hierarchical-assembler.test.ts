@@ -111,6 +111,26 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
 
       expect(filter.filterComplex).toContain("xfade=transition=fade:duration=0.500");
     });
+
+    it("injects 3D LUT filter and safely escapes Windows drive colons", () => {
+      const shots = [
+        {
+          shotId: "sc1_sh1",
+          sceneId: "scene_1",
+          takeId: "sc1_sh1_take1",
+          sourceClipPath: "clip1.mp4",
+        },
+      ];
+
+      const filter = buildSceneStitchFilter(shots, [4.0], {
+        width: 720,
+        height: 1280,
+        fps: 30,
+        lutPath: "D:\\ColorProfiles\\Cyberpunk_Neon.cube",
+      });
+
+      expect(filter.filterComplex).toContain("lut3d='D\\:/ColorProfiles/Cyberpunk_Neon.cube'");
+    });
   });
 
   describe("2. Dựng Phân Cấp (Hierarchical Assembly) & Scene Content Hash Caching", () => {
@@ -387,6 +407,12 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
         sfxCues,
         bgmTrack,
         subtitleCues,
+        pacingReport: {
+          overallAverageShotDurationSec: 4.0,
+          overallCutsPerMinute: 15.0,
+          pacingDynamismScore: 0.65,
+          warnings: [],
+        },
         outputDir: outDir,
       });
 
@@ -395,6 +421,8 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
       // 1. Check Master outputs
       expect(existsSync(manifest.masterOutputs.masterVideoPath)).toBe(true);
       expect(existsSync(manifest.masterOutputs.masterAudioPath)).toBe(true);
+      expect(manifest.pacingReport?.overallAverageShotDurationSec).toBe(4.0);
+      expect(manifest.pacingReport?.pacingDynamismScore).toBe(0.65);
 
       // 2. Check 4 Audio Stems
       expect(manifest.masterOutputs.stems.dialogue).toBeDefined();

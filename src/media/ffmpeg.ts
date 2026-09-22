@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 /**
  * Robust FFmpeg execution wrapper with stdout/stderr capture and timeout protection.
  */
-export function runFfmpeg(args: string[], options: { timeoutMs?: number } = {}): Promise<string> {
+export function runFfmpeg(args: string[], options: { timeoutMs?: number; captureStderr?: boolean } = {}): Promise<string> {
   const timeoutMs = options.timeoutMs ?? 120000;
 
   return new Promise((resolve, reject) => {
@@ -22,7 +22,7 @@ export function runFfmpeg(args: string[], options: { timeoutMs?: number } = {}):
     proc.on("close", (code) => {
       clearTimeout(timer);
       if (code === 0) {
-        resolve(stdout);
+        resolve(options.captureStderr ? stderr : stdout);
       } else {
         reject(new Error(`FFmpeg exited with code ${code}: ${stderr}`));
       }

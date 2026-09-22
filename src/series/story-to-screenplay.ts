@@ -3,7 +3,9 @@ import { normalizeScript, parseRawScreenplay } from "./script-normalizer.js";
 import type { EpisodicScript } from "./series-schema.js";
 import { ContextBuilder, type EpisodeGenerationContext } from "../novel/context-builder.js";
 import { StoryAnalysisEngine } from "../novel/story-analyzer.js";
+import { evaluateChekhovGuns, generateChekhovWarningsPrompt } from "../novel/chekhov-tracker.js";
 import { CoverageLedgerManager } from "./coverage-ledger.js";
+import { CinematicDirectorEngine } from "./cinematic-director.js";
 import { log } from "../utils/logger.js";
 
 export interface StoryToScreenplayOptions {
@@ -18,9 +20,12 @@ export interface StoryToScreenplayOptions {
   llmProvider?: "anthropic" | "openai" | "gemini" | "custom";
   customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
   skipAudit?: boolean;
+  /** Enable Hollywood 5-shot coverage grammar (establishing, two-shot, OTS A->B, OTS B->A, close-up reaction) */
+  cinematicCoverage?: boolean;
 }
 
 export interface PlanToScreenplayOptions {
+  useLlm?: boolean;
   seriesId: string;
   planId: string;
   episodeNumber: number;
@@ -32,6 +37,8 @@ export interface PlanToScreenplayOptions {
   llmProvider?: "anthropic" | "openai" | "gemini" | "custom";
   customLlmInvoker?: (prompt: string, systemPrompt?: string) => Promise<string>;
   tone?: string;
+  /** Enable Hollywood 5-shot coverage grammar (establishing, two-shot, OTS A->B, OTS B->A, close-up reaction) */
+  cinematicCoverage?: boolean;
 }
 
 export interface GeneratedScreenplayResult {
@@ -81,6 +88,7 @@ export class StoryToScreenplayGenerator {
     }
 
     const canonSummary = this.buildCanonContextSummary({
+      seriesId: options.seriesId,
       seriesMeta,
       existingChars,
       existingProps,
@@ -216,7 +224,7 @@ export class StoryToScreenplayGenerator {
     let generatorUsed: "llm" | "rule_based" = "rule_based";
     let fallbackReason: string | undefined = undefined;
 
-    if (options.customLlmInvoker) {
+    if (options.useLlm !== false && options.customLlmInvoker) {
       try {
         const steeringPrompt = (options.prompt || plannedEp.logline || "").trim();
         const promptToSend = steeringPrompt
@@ -232,7 +240,7 @@ export class StoryToScreenplayGenerator {
         log.warn(`⚠️ [FALLBACK WARNING] ${fallbackReason}. Chuyển sang sinh kịch bản plan rule-based.`);
         rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
       }
-    } else if (
+    } else if (options.useLlm !== false && (
       options.llmApiKey ||
       (options.llmProvider === "anthropic" && (options.llmApiKey || process.env.ANTHROPIC_API_KEY)) ||
       (options.llmProvider === "openai" && (options.llmApiKey || process.env.OPENAI_API_KEY)) ||
@@ -240,7 +248,7 @@ export class StoryToScreenplayGenerator {
       process.env.ANTHROPIC_API_KEY ||
       process.env.OPENAI_API_KEY ||
       process.env.GEMINI_API_KEY
-    ) {
+    )) {
       try {
         rawScreenplay = await this.generateViaLlmApi(
           {
@@ -555,6 +563,7 @@ export class StoryToScreenplayGenerator {
    * Builds rich context from Story Bible for canon memory continuity.
    */
   private buildCanonContextSummary(ctx: {
+    seriesId?: string;
     seriesMeta: any;
     existingChars: any[];
     existingProps: any[];
@@ -601,6 +610,19 @@ export class StoryToScreenplayGenerator {
         if (Array.isArray(ep.major_events) && ep.major_events.length > 0) {
           lines.push(`  Sự kiện chính: ${ep.major_events.join("; ")}`);
         }
+      }
+    }
+
+    // Long-Novel Continuity: Inject dormant Chekhov's Gun warnings
+    if (ctx.seriesId) {
+      try {
+        const chekhovReport = evaluateChekhovGuns(this.bible, ctx.seriesId, ctx.episodeNumber);
+        const chekhovWarnings = generateChekhovWarningsPrompt(chekhovReport);
+        if (chekhovWarnings) {
+          lines.push("\n" + chekhovWarnings);
+        }
+      } catch (err: any) {
+        log.warn(`[STORY TO SCREENPLAY] Không thể đánh giá Chekhov's guns: ${err.message}`);
       }
     }
 
@@ -652,8 +674,8 @@ export class StoryToScreenplayGenerator {
       ? `3. Cấu trúc kịch bản dài tập (Multi-Scene / Multi-Act): Chia câu chuyện thành nhiều phân cảnh nối tiếp nhau (theo 3 hồi hoặc 5 hồi) với nhịp độ điện ảnh, thời lượng mỗi cú máy linh hoạt từ 3s đến 10s.`
       : `3. Đảm bảo cấu trúc cảnh rõ ràng: Cảnh 1 (Khởi đầu/Setup), Cảnh 2 (Xung đột/Confrontation), Cảnh 3 (Cao trào/Cliffhanger) hoặc mở rộng thêm phân cảnh nếu số cảnh mục tiêu yêu cầu. Thời lượng cú máy từ 3s đến 8s.`;
 
-    return `Bạn là một Nhà Biên Kịch Điện Ảnh Chuyên Nghiệp (Showrunner & Screenwriter).
-Nhiệm vụ của bạn là chuyển thể ý tưởng, cốt truyện hoặc chương truyện thành Kịch Bản Phân Cảnh Điện Ảnh Đa Cảnh (Episodic Screenplay) tuân thủ định dạng chuẩn sau:
+    return `Bạn là một Nhà Biên Kịch & Đạo Diễn Hình Ảnh Điện Ảnh Chuyên Nghiệp (Showrunner, Director & Cinematographer/DP).
+Nhiệm vụ của bạn là chuyển thể ý tưởng, cốt truyện hoặc chương truyện thành Kịch Bản Phân Cảnh Điện Ảnh Đa Cảnh (Episodic Screenplay) chất lượng cao tuân thủ định dạng chuẩn sau:
 
 ĐỊNH DẠNG BẮT BUỘC:
 TẬP <số>: <TIÊU ĐỀ TẬP VIẾT HOA>
@@ -662,16 +684,17 @@ Logline: <Câu tóm tắt cốt truyện 1 câu>
 CẢNH 1: <TÊN BỐI CẢNH - THỜI GIAN>
 Nhân vật: <Tên nhân vật 1>, <Tên nhân vật 2>
 Đạo cụ: <Tên đạo cụ nếu có>
-CÚ MÁY 1 (establishing, 4s): <Mô tả hình ảnh chi tiết phục vụ AI Video Generator> [BEAT: <mã_tình_tiết_nếu_có>]
-CÚ MÁY 2 (medium, 4s): <Mô tả hành động của nhân vật>
-<TÊN NHÂN VẬT>: <Lời thoại của nhân vật>
-CÚ MÁY 3 (close_up, 4s): <Mô tả biểu cảm cận cảnh>
+CÚ MÁY 1 (establishing, 4s): <Mô tả hình ảnh chi tiết phục vụ AI Video Generator: góc máy, ống kính (ví dụ: 35mm wide lens, volumetric fog), ánh sáng (chiaroscuro/golden hour), chuyển động camera (slow dolly-in/pan)> [BEAT: <mã_tình_tiết_nếu_có>]
+CÚ MÁY 2 (medium, 4s): <Mô tả hành động của nhân vật, bố cục 50mm cinematic>
+<TÊN NHÂN VẬT>: [<chỉ đạo diễn xuất, ví dụ: thì thầm, lo lắng / giận dữ, dứt khoát / nghẹn ngào>] <Lời thoại của nhân vật>
+CÚ MÁY 3 (close_up, 4s): <Mô tả biểu cảm cận cảnh 85mm anamorphic, shallow depth of field>
 
 QUY TẮC BẤT DI BẤT DỊCH:
 1. Luôn tuân thủ tuyệt đối Story Bible: Nhân vật đang bị thương ('injured') không được vận động thể lực cường độ cao nếu không có phân cảnh chữa trị; nhân vật đã chết ('deceased') chỉ xuất hiện trong [HỒI TƯỞNG]; đạo cụ thuộc về đúng người đang giữ.
 2. Mỗi cú máy phải có loại cú máy hợp lệ (establishing, wide, medium, close_up, action) và thời lượng (3s - 10s).
 ${pacingRule}
-4. GẮN NHÃN TÌNH TIẾT BẮT BUỘC (MANDATORY BEATS): Mọi cú máy thể hiện tình tiết từ danh sách Story Beats được giao PHẢI gắn nhãn trực tiếp trong mô tả bằng cú pháp: [BEAT: <beat_id>].`;
+4. GẮN NHÃN TÌNH TIẾT BẮT BUỘC (MANDATORY BEATS): Mọi cú máy thể hiện tình tiết từ danh sách Story Beats được giao PHẢI gắn nhãn trực tiếp trong mô tả bằng cú pháp: [BEAT: <beat_id>].
+5. CHỈ ĐẠO DIỄN XUẤT CHO DIỄN VIÊN LỒNG TIẾNG: Mỗi câu thoại nên có chỉ đạo cảm xúc đặt trong ngoặc vuông đầu câu thoại (ví dụ: '[thì thầm, lo sợ]', '[nghiến răng, quyết liệt]') để bộ tổng hợp giọng nói AI (CosyVoice/Neural TTS) điều chỉnh ngữ điệu chính xác.`;
   }
 
   /**
@@ -776,7 +799,13 @@ YÊU CẦU:
       }
 
       // Generate shots for this scene
-      const sceneShots = this.generateShotsForScene(paraLines, matchedChars, sceneNum);
+      const sceneShots = this.generateShotsForScene(
+        paraLines,
+        matchedChars,
+        sceneNum,
+        options.targetShotsPerScene,
+        options.cinematicCoverage
+      );
       for (const s of sceneShots) {
         screenplayParts.push(s);
       }
@@ -813,11 +842,38 @@ YÊU CẦU:
   private generateShotsForScene(
     lines: string[],
     characters: string[],
-    sceneNumber: number
+    sceneNumber: number,
+    targetShots = 4,
+    cinematicCoverage = false
   ): string[] {
     const shots: string[] = [];
     const leadChar = characters[0] || "Minh";
     const secondChar = characters[1] || characters[0] || "An";
+
+    if ((cinematicCoverage || (targetShots && targetShots >= 5)) && characters.length >= 2) {
+      // 5-Shot Hollywood Coverage Grammar with 180° axis preservation
+      const quote1 = this.extractQuote(lines) || "Chúng ta cần hành động ngay trước khi quá muộn.";
+      const quote2 = "Tôi đã sẵn sàng, hãy theo sát mục tiêu.";
+
+      shots.push(
+        `CÚ MÁY 1 (establishing, 4.5s): Góc đại toàn cảnh (Extreme Wide Shot 24mm anamorphic lens). Toàn cảnh không gian tĩnh mịch với ánh sáng điện ảnh tương phản cao. Thiết lập bối cảnh và tương quan vị trí.`
+      );
+      shots.push(
+        `CÚ MÁY 2 (medium, 4s): Góc trung cảnh đôi (Two-Shot 35mm). ${leadChar} đứng bên trái đối diện với ${secondChar} ở bên phải. Duy trì trục máy quay 180 độ.`
+      );
+      shots.push(`${leadChar.toUpperCase()}: ${quote1}`);
+      shots.push(
+        `CÚ MÁY 3 (over_the_shoulder, 4s): Góc quay qua vai (Over-the-Shoulder 50mm lens). Máy quay đặt sau vai của ${leadChar} tiền cảnh bên trái, lấy nét sắc nét vào biểu cảm của ${secondChar} hậu cảnh bên phải.`
+      );
+      shots.push(`${secondChar.toUpperCase()}: ${quote2}`);
+      shots.push(
+        `CÚ MÁY 4 (over_the_shoulder, 4s): Góc quay đảo trục đối ứng qua vai (Reverse Over-the-Shoulder 50mm lens). Máy quay đặt sau vai ${secondChar} tiền cảnh bên phải, tập trung vào ánh mắt của ${leadChar} ở hậu cảnh bên trái. Tuyệt đối không nhảy trục 180 độ.`
+      );
+      shots.push(
+        `CÚ MÁY 5 (close_up, 3.5s): Góc cận cảnh đặc tả (Intense Close-Up 85mm portrait lens). Máy quay tiến sát gương mặt ${leadChar}, bắt trọn ánh mắt quyết liệt và phản ứng tâm lý cao trào.`
+      );
+      return shots;
+    }
 
     // Shot 1: Establishing
     shots.push(

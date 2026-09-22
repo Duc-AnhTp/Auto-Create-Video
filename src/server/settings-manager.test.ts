@@ -53,16 +53,16 @@ describe("SettingsManager Unit Tests", () => {
 
   it("3. Saves config updates to file and patches process.env dynamically", () => {
     manager.saveConfigUpdates({
-      TEST_API_KEY_FOO: "secret-value-12345678",
-      TEST_MODEL_NAME: "test-model-turbo",
+      ANTHROPIC_API_KEY: "secret-value-12345678",
+      ANTHROPIC_MODEL: "test-model-turbo",
     });
 
-    expect(process.env.TEST_API_KEY_FOO).toBe("secret-value-12345678");
-    expect(process.env.TEST_MODEL_NAME).toBe("test-model-turbo");
+    expect(process.env.ANTHROPIC_API_KEY).toBe("secret-value-12345678");
+    expect(process.env.ANTHROPIC_MODEL).toBe("test-model-turbo");
 
     const reloaded = manager.readEnvConfig();
-    expect(reloaded.TEST_API_KEY_FOO).toBe("secret-value-12345678");
-    expect(reloaded.TEST_MODEL_NAME).toBe("test-model-turbo");
+    expect(reloaded.ANTHROPIC_API_KEY).toBe("secret-value-12345678");
+    expect(reloaded.ANTHROPIC_MODEL).toBe("test-model-turbo");
   });
 
   it("4. Probing unconfigured provider yields clear failure message", async () => {

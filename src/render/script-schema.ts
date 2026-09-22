@@ -220,7 +220,7 @@ export const ScriptSchema = z.object({
     channel: z.string().min(1),
   }),
   voice: z.object({
-    provider: z.enum(["lucylab", "elevenlabs"]),
+    provider: z.enum(["lucylab", "elevenlabs", "cosyvoice", "f5tts"]),
     voiceId: z.string().min(1),
     speed: z.number().min(0.5).max(2.0).default(1.0),
   }).optional(),

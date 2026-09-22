@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { writeFile } from "node:fs/promises";
-import type { TtsClient } from "./tts-client.js";
+import type { TtsClient, TtsGenerateOptions } from "./tts-client.js";
 
 export interface LucylabOpts {
   apiKey: string;
@@ -34,8 +34,31 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class LucylabClient implements TtsClient {
   constructor(private cfg: LucylabOpts) {}
 
-  async generate(text: string, audioOutPath: string, srtOutPath?: string): Promise<void> {
-    const projectExportId = await this.submitWithRetry(text);
+  /**
+   * Sanitizes dialogue text by stripping leading/inline acting directions, stage instructions,
+   * bracketed expressions [thì thầm] and parenthesized annotations (lo lắng) so they aren't vocalized aloud.
+   */
+  public static cleanDialogueText(raw: string): string {
+    if (!raw) return "";
+    let text = raw.trim();
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+      text = text.slice(1, -1).trim();
+    }
+    text = text.replace(/^(?:\[[^\]]+\]|\([^)]+\)\s*)+/s, "").trim();
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+      text = text.slice(1, -1).trim();
+    }
+    return text;
+  }
+
+  async generate(
+    text: string,
+    audioOutPath: string,
+    srtOutPath?: string,
+    _options?: TtsGenerateOptions
+  ): Promise<void> {
+    const cleanText = LucylabClient.cleanDialogueText(text);
+    const projectExportId = await this.submitWithRetry(cleanText);
     const { url, srtUrl } = await this.pollUntilDone(projectExportId);
     await this.download(url, audioOutPath);
     if (srtOutPath && srtUrl) {

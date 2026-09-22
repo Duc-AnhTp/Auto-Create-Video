@@ -86,6 +86,8 @@ export const ShotSchema = z
         name: z.string(),
         offsetSec: z.number().default(0),
         volume: z.number().min(0).max(1).default(0.7),
+        pan: z.number().min(-1).max(1).optional(),
+        description: z.string().optional(),
       })
       .optional(),
   })
@@ -123,6 +125,7 @@ export const SceneSchema = z
     locationName: z.string().min(1),
     timeOfDay: z.enum(["day", "night", "golden_hour", "dusk", "dawn"]).default("night"),
     mood: z.string().optional(),
+    description: z.string().optional(),
     charactersPresent: z
       .array(
         z.union([
@@ -136,6 +139,17 @@ export const SceneSchema = z
       .default([]),
     propsPresent: z.array(z.string()).default([]),
     beatIds: z.array(z.string()).default([]),
+    propTransfers: z
+      .array(
+        z.object({
+          propId: z.string().optional(),
+          prop_id: z.string().optional(),
+          toCharacterId: z.string(),
+          status: z.enum(["intact", "damaged", "lost", "destroyed"]).optional(),
+        })
+      )
+      .optional(),
+    events: z.array(z.union([z.string(), z.record(z.string(), z.unknown())])).optional(),
     shots: z.array(ShotSchema).min(1, "Each scene must contain at least one shot"),
   })
   .transform((scene) => {
@@ -164,6 +178,36 @@ export const EpisodicScriptSchema = z
     unresolvedCharacters: z.array(z.string()).default([]),
     generatorUsed: z.enum(["llm", "rule_based"]).optional(),
     fallbackReason: z.string().optional(),
+    characterStatusUpdates: z
+      .array(
+        z.object({
+          id: z.string(),
+          status: z.enum(["alive", "injured", "deceased", "missing"]),
+          notes: z.string().optional(),
+          distinguishingMarks: z.string().optional(),
+        })
+      )
+      .optional(),
+    propTransfers: z
+      .array(
+        z.object({
+          propId: z.string().optional(),
+          prop_id: z.string().optional(),
+          toCharacterId: z.string(),
+          sceneId: z.string().optional(),
+          status: z.enum(["intact", "damaged", "lost", "destroyed"]).optional(),
+        })
+      )
+      .optional(),
+    newKnowledge: z
+      .array(
+        z.object({
+          characterId: z.string(),
+          factKey: z.string(),
+          notes: z.string().optional(),
+        })
+      )
+      .optional(),
     scenes: z.array(SceneSchema).min(1, "Episode must contain at least one scene"),
   })
   .transform((script) => {

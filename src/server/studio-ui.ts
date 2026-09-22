@@ -1337,6 +1337,7 @@ export function renderStudioHtml(): string {
       <button class="tab-btn" onclick="switchTab('tabScreenplay')">📝 Kịch Bản Phân Cảnh (Dual-View)</button>
       <button class="tab-btn" onclick="switchTab('tabProduction')">🎬 Bàn Sản Xuất (Production Desk)</button>
       <button class="tab-btn" onclick="switchTab('tabPlayer')">🍿 Cinema Player & Audio Mixer</button>
+      <button class="tab-btn" onclick="switchTab('tabNle')">🔄 Hậu Kỳ NLE (Round-Trip)</button>
     </div>
     <div class="caption">
       Series: <strong id="activeSeriesTitle" style="color: var(--accent-cyan);">-</strong>
@@ -1572,6 +1573,52 @@ export function renderStudioHtml(): string {
       </div>
     </div>
 
+    <!-- TAB 5: TWO-WAY NLE ROUND-TRIP INGEST & TIMELINE SYNC -->
+    <div id="tabNle" class="view-panel">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🔄 HẬU KỲ NLE (TWO-WAY ROUND-TRIP INTERCHANGE)</div>
+            <div class="caption" style="margin-top: 4px;">
+              Đồng bộ hai chiều với DaVinci Resolve & Premiere Pro. Nhập file FCP7 XML hoặc OpenTimelineIO (.otio) để tự động cập nhật Take được duyệt vào Story Bible và tái tính toán dòng thời gian.
+            </div>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px;">
+          <!-- Ingest Input Card -->
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <label class="form-label" style="font-weight: 700;">DÁN NỘI DUNG FCP7 XML HOẶC OTIO JSON:</label>
+            <textarea id="nleInputContent" class="form-input" style="height: 240px; font-family: var(--font-mono); font-size: 12px; resize: vertical;" placeholder="Dán nội dung file .xml (xmeml) hoặc .otio (JSON) từ DaVinci Resolve / Premiere Pro tại đây..."></textarea>
+
+            <div style="display: flex; gap: 10px;">
+              <input type="file" id="nleFileInput" accept=".xml,.otio,.json" style="display: none;" onchange="handleNleFileUpload(event)" />
+              <button class="btn btn-secondary" onclick="document.getElementById('nleFileInput').click()">📁 Chọn File XML / OTIO</button>
+              <button class="btn btn-primary" onclick="analyzeNleDiff(false)">🔍 Phân Tích Chênh Lệch (Diff)</button>
+            </div>
+          </div>
+
+          <!-- Diff Results Preview -->
+          <div style="background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+            <div style="font-size: 13px; font-weight: 700; color: var(--accent-cyan); display: flex; justify-content: space-between;">
+              <span>BÁO CÁO CHỈNH SỬA TỪ EDITOR</span>
+              <span id="nleStatusBadge" class="badge">Chờ phân tích</span>
+            </div>
+
+            <div id="nleDiffSummary" style="font-size: 12.5px; line-height: 1.6; color: var(--text-muted); flex: 1; overflow-y: auto; max-height: 220px;">
+              Chưa có dữ liệu phân tích. Hãy dán XML/OTIO hoặc chọn file rồi bấm "Phân Tích Chênh Lệch".
+            </div>
+
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; display: flex; justify-content: flex-end; gap: 10px;">
+              <button id="applyNleBtn" class="btn btn-primary" style="display: none;" onclick="analyzeNleDiff(true)">
+                ✅ Áp Dụng Thay Đổi Vào Story Bible & Timeline
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- MODAL: AI MODEL HUB & SETTINGS -->
@@ -1693,33 +1740,11 @@ export function renderStudioHtml(): string {
       });
     }
 
-    // Animated Multi-Band VU Bars Engine
     function initVuBars() {
-      ['vuVoiceBars', 'vuSfxBars', 'vuBgmBars'].forEach((id, idx) => {
+      ['vuVoiceBars', 'vuSfxBars', 'vuBgmBars'].forEach(id => {
         const container = document.getElementById(id);
-        if (!container) return;
-        container.innerHTML = "";
-        const barCount = 12;
-        const color = idx === 0 ? 'var(--accent-cyan)' : idx === 1 ? 'var(--accent-indigo)' : 'var(--accent-amber)';
-        for (let i = 0; i < barCount; i++) {
-          const bar = document.createElement("div");
-          bar.className = "vu-bar";
-          bar.style.background = color;
-          bar.style.height = \`\${Math.floor(Math.random() * 12 + 4)}px\`;
-          container.appendChild(bar);
-        }
+        if (container) container.textContent = "Chưa có dữ liệu âm lượng";
       });
-
-      // Fluctuate VU bars smoothly
-      setInterval(() => {
-        ['vuVoiceBars', 'vuSfxBars', 'vuBgmBars'].forEach(id => {
-          const container = document.getElementById(id);
-          if (!container) return;
-          container.querySelectorAll(".vu-bar").forEach(bar => {
-            bar.style.height = \`\${Math.floor(Math.random() * 14 + 3)}px\`;
-          });
-        });
-      }, 180);
     }
 
     // Toast Notification Engine
@@ -1728,7 +1753,7 @@ export function renderStudioHtml(): string {
       const toast = document.createElement("div");
       toast.className = \`toast \${type}\`;
       const icon = type === "success" ? "✓" : type === "error" ? "✕" : "ℹ";
-      toast.innerHTML = \`<span>\${icon}</span> <span>\${message}</span>\`;
+      toast.innerHTML = \`<span>\${icon}</span> <span>\${escapeHtml(String(message))}</span>\`;
       container.appendChild(toast);
       setTimeout(() => {
         toast.style.opacity = "0";
@@ -1838,7 +1863,7 @@ export function renderStudioHtml(): string {
         if (trimmed.startsWith("CẢNH") || trimmed.startsWith("SCENE")) {
           currentSceneCard = document.createElement("div");
           currentSceneCard.className = "scene-breakdown-card";
-          currentSceneCard.innerHTML = \`<div style="font-weight: 800; font-size: 14px; color: var(--accent-cyan); margin-bottom: 8px;">\${trimmed}</div>\`;
+          currentSceneCard.innerHTML = \`<div style="font-weight: 800; font-size: 14px; color: var(--accent-cyan); margin-bottom: 8px;">\${escapeHtml(trimmed)}</div>\`;
           container.appendChild(currentSceneCard);
         } else if (trimmed.startsWith("- CÚ MÁY") || trimmed.startsWith("CÚ MÁY") || trimmed.startsWith("- SHOT")) {
           if (!currentSceneCard) {
@@ -1855,7 +1880,7 @@ export function renderStudioHtml(): string {
               <span class="caption" style="font-family: var(--font-mono); margin-top: 2px;">4.0s (24fps)</span>
             </div>
             <div>
-              <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.55;">\${trimmed}</div>
+              <div style="font-size: 13.5px; color: var(--text-primary); line-height: 1.55;">\${escapeHtml(trimmed)}</div>
             </div>
           \`;
           currentSceneCard.appendChild(shotEl);
@@ -1863,7 +1888,7 @@ export function renderStudioHtml(): string {
           if (currentSceneCard) {
             const dialogue = document.createElement("div");
             dialogue.className = "dialogue-bubble";
-            dialogue.innerHTML = \`<span class="dialogue-speaker">🗣️ THOẠI</span> \${trimmed.replace(/^(THOẠI:|LỜI THOẠI:)/, '').trim()}\`;
+            dialogue.innerHTML = \`<span class="dialogue-speaker">🗣️ THOẠI</span> \${escapeHtml(trimmed.replace(/^(THOẠI:|LỜI THOẠI:)/, '').trim())}\`;
             currentSceneCard.appendChild(dialogue);
           }
         }
@@ -1972,11 +1997,11 @@ export function renderStudioHtml(): string {
         const data = await res.json();
         if (data.success) {
           resultBox.className = "ping-feedback-box ping-feedback-success";
-          resultBox.innerHTML = \`<span>✓ \${data.message}</span> <span class="latency-pill">\${data.latencyMs}ms</span>\`;
+          resultBox.innerHTML = \`<span>✓ \${escapeHtml(data.message)}</span> <span class="latency-pill">\${data.latencyMs}ms</span>\`;
           showToast(\`Kết nối \${providerId.toUpperCase()} thành công!\`, "success");
         } else {
           resultBox.className = "ping-feedback-box ping-feedback-error";
-          resultBox.innerHTML = \`<span>✕ \${data.message}</span>\`;
+          resultBox.innerHTML = \`<span>✕ \${escapeHtml(data.message)}</span>\`;
           showToast(\`Lỗi kết nối \${providerId}\`, "error");
         }
       } catch (err) {
@@ -2061,19 +2086,19 @@ export function renderStudioHtml(): string {
         card.className = "character-card";
         const imgSrc = c.face_reference_image ? \`/api/media/stream?path=\${encodeURIComponent(c.face_reference_image)}\` : '';
         card.innerHTML = \`
-          <div class="portrait-box" onclick="openCharLightbox('\${c.id}')" title="Bấm để xem chi tiết mỏ neo 512-D">
-            \${imgSrc ? \`<img src="\${imgSrc}" class="portrait-img">\` : '<div class="portrait-placeholder">Chưa có ảnh mẫu mỏ neo</div>'}
+          <div class="portrait-box" onclick="openCharLightbox('\${escapeHtml(c.id)}')" title="Bấm để xem chi tiết mỏ neo 512-D">
+            \${imgSrc ? \`<img src="\${escapeHtml(imgSrc)}" class="portrait-img">\` : '<div class="portrait-placeholder">Chưa có ảnh mẫu mỏ neo</div>'}
             <div class="portrait-inspect-hint">🔍 Xem mỏ neo</div>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="font-weight: 700; font-size: 15px;">\${c.name}</div>
+            <div style="font-weight: 700; font-size: 15px;">\${escapeHtml(c.name)}</div>
             <span class="card-badge badge-arcface">512-D ANCHOR</span>
           </div>
           <div class="caption" style="line-height: 1.5;">
-            <div>Vai trò: \${c.role || 'Chính'} | Trạng thái: \${c.status || 'intact'}</div>
-            \${c.distinguishing_marks ? \`<div>Dấu hiệu: \${c.distinguishing_marks}</div>\` : ''}
+            <div>Vai trò: \${escapeHtml(c.role || 'Chính')} | Trạng thái: \${escapeHtml(c.status || 'intact')}</div>
+            \${c.distinguishing_marks ? \`<div>Dấu hiệu: \${escapeHtml(c.distinguishing_marks)}</div>\` : ''}
           </div>
-          <button class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center;" onclick="generateCharArt('\${c.id}')">
+          <button class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center;" onclick="generateCharArt('\${escapeHtml(c.id)}')">
             🎨 AI Vẽ Chân Dung Mỏ Neo
           </button>
         \`;
@@ -2238,6 +2263,122 @@ export function renderStudioHtml(): string {
       });
       showToast("Đã đăng ký nhân vật!", "success");
       loadCurrentSeries();
+    }
+
+    function handleNleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById("nleInputContent").value = e.target.result;
+        showToast("Đã tải tệp " + file.name + " (" + Math.round(file.size / 1024) + " KB)", "info");
+      };
+      reader.readAsText(file);
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function analyzeNleDiff(apply) {
+      if (!currentSeriesId) {
+        showToast("Vui lòng chọn Series trước!", "error");
+        return;
+      }
+      const content = document.getElementById("nleInputContent").value.trim();
+      if (!content) {
+        showToast("Vui lòng dán hoặc chọn file XML/OTIO trước!", "error");
+        return;
+      }
+      const epNum = parseInt(document.getElementById("epSelect")?.value || "1", 10);
+      const badge = document.getElementById("nleStatusBadge");
+      const summaryBox = document.getElementById("nleDiffSummary");
+      const applyBtn = document.getElementById("applyNleBtn");
+
+      badge.className = "badge";
+      badge.textContent = "Đang phân tích...";
+
+      try {
+        const res = await fetch(\`/api/series/\${currentSeriesId}/episodes/\${epNum}/nle/ingest\`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content, apply: Boolean(apply) })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Phân tích thất bại");
+        }
+
+        const diff = data.diff;
+        if (!diff.hasModifications) {
+          badge.textContent = "Không có thay đổi";
+          summaryBox.innerHTML = '<div style="color: var(--accent-emerald);">✨ File NLE hoàn toàn khớp với Timeline hiện tại, không có shot nào bị cắt gọt hay đổi take.</div>';
+          applyBtn.style.display = "none";
+          return;
+        }
+
+        const totalChanges = (diff.trimmedShots?.length || 0) +
+          (diff.swappedTakes?.length || 0) +
+          (diff.removedShots?.length || 0) +
+          (diff.reorderedShots?.length || 0);
+
+        badge.style.background = "var(--accent-amber)";
+        badge.textContent = \`Phát hiện \${totalChanges} thay đổi\`;
+
+        let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+        html += \`<div><strong>Sequence:</strong> \${escapeHtml(diff.sequenceName)} | <strong>Thời lượng:</strong> \${diff.editedTotalDurationSec.toFixed(2)}s (Delta: \${diff.totalDurationDeltaSec >= 0 ? '+' : ''}\${diff.totalDurationDeltaSec.toFixed(2)}s)</div>\`;
+
+        if (diff.trimmedShots.length > 0) {
+          html += '<div style="margin-top: 6px; color: var(--accent-amber);"><strong>✂️ Shot bị cắt gọt (' + diff.trimmedShots.length + '):</strong></div><ul style="margin: 0; padding-left: 20px;">';
+          diff.trimmedShots.forEach(t => {
+            html += \`<li>Shot <code>\${escapeHtml(t.shotId)}</code>: \${t.originalDurationSec.toFixed(2)}s ➔ \${t.editedDurationSec.toFixed(2)}s (\${t.deltaSec >= 0 ? '+' : ''}\${t.deltaSec.toFixed(2)}s)</li>\`;
+          });
+          html += '</ul>';
+        }
+
+        if (diff.swappedTakes.length > 0) {
+          html += '<div style="margin-top: 6px; color: var(--accent-cyan);"><strong>🔄 Shot đổi Take (' + diff.swappedTakes.length + '):</strong></div><ul style="margin: 0; padding-left: 20px;">';
+          diff.swappedTakes.forEach(s => {
+            html += \`<li>Shot <code>\${escapeHtml(s.shotId)}</code>: Take \${escapeHtml(s.originalTakeNumber || '?')} ➔ <strong>Take \${escapeHtml(s.newTakeNumber)}</strong></li>\`;
+          });
+          html += '</ul>';
+        }
+
+        if (diff.removedShots.length > 0) {
+          html += '<div style="margin-top: 6px; color: #ff5555;"><strong>🗑️ Shot bị xóa (' + diff.removedShots.length + '):</strong> ' + diff.removedShots.map(escapeHtml).join(', ') + '</div>';
+        }
+
+        if (diff.reorderedShots && diff.reorderedShots.length > 0) {
+          html += '<div style="margin-top: 6px; color: var(--accent-magenta, #ff79c6);"><strong>🔀 Shot đổi thứ tự (' + diff.reorderedShots.length + '):</strong></div><ul style="margin: 0; padding-left: 20px;">';
+          diff.reorderedShots.forEach(r => {
+            html += \`<li>Shot <code>\${escapeHtml(r.shotId)}</code>: Vị trí \${r.originalIndex + 1} ➔ <strong>\${r.newIndex + 1}</strong></li>\`;
+          });
+          html += '</ul>';
+        }
+
+        html += '</div>';
+        summaryBox.innerHTML = html;
+
+        if (apply) {
+          showToast("Đã đồng bộ thành công vào Story Bible & Timeline!", "success");
+          applyBtn.style.display = "none";
+          badge.textContent = "Đã áp dụng";
+          badge.style.background = "var(--accent-emerald)";
+        } else {
+          applyBtn.style.display = "inline-flex";
+        }
+      } catch (err) {
+        badge.textContent = "Lỗi";
+        badge.style.background = "var(--accent-ruby)";
+        summaryBox.innerHTML = \`<div style="color: var(--accent-ruby);">Lỗi: \${escapeHtml(err.message)}</div>\`;
+        showToast(err.message, "error");
+      }
     }
 
     window.onload = init;

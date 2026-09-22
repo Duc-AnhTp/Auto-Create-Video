@@ -566,6 +566,23 @@ export interface AnalysisReviewItemRecord {
   created_at?: string;
 }
 
+// ── V7: Chekhov's Gun / Narrative Foreshadowing Record ────────────────────
+export interface ChekhovGunRecord {
+  id: string;
+  series_id: string;
+  name: string;
+  type: "prop" | "secret" | "promise" | "threat" | "mystery" | string;
+  description: string;
+  planted_at_episode: number;
+  planted_in_beat_id?: string | null;
+  payoff_status: "planted" | "active" | "resolved" | "abandoned";
+  payoff_episode?: number | null;
+  payoff_beat_id?: string | null;
+  dormant_episodes_count?: number;
+  last_active_episode?: number | null;
+  created_at?: string;
+}
+
 export interface NarrativeDelta {
   characterStatusUpdates?: Array<{
     id: string;
@@ -635,7 +652,7 @@ export class BibleManager {
     props: Map<string, KeyPropRecord>;
     prop_states: PropStateRecord[];
     knowledge: CharacterKnowledgeRecord[];
-    world_state: Map<string, { value: unknown; episode: number }>;
+    world_state: Map<string, { value: unknown; episode: number; seriesId?: string }>;
     episodes: Map<number, EpisodeSummaryRecord>;
     api_logs: ApiUsageRecord[];
     shot_takes: Map<string, ShotTakeRecord>;
@@ -660,6 +677,8 @@ export class BibleManager {
     planned_episodes: Map<string, PlannedEpisodeRecord>;
     coverage_ledgers: Map<string, CoverageLedgerRecord>;
     analysis_review_queue: Map<string, AnalysisReviewItemRecord>;
+    // V7 Chekhov's Gun / Foreshadowing Tracker
+    chekhov_guns: Map<string, ChekhovGunRecord>;
   };
 
   constructor(dbPath: string = "story_bible.db", options: BibleManagerOptions = {}) {
@@ -699,6 +718,7 @@ export class BibleManager {
       planned_episodes: new Map(),
       coverage_ledgers: new Map(),
       analysis_review_queue: new Map(),
+      chekhov_guns: new Map(),
     };
     this.initDb();
   }
@@ -738,6 +758,18 @@ export class BibleManager {
           this.db.exec("PRAGMA busy_timeout = 5000;");
         } catch {
           // Ignore pragma failures on memory or special DBs
+        }
+        // Preserve a consistent SQLite snapshot before upgrading an existing database.
+        if (this.dbPath !== ":memory:") {
+          const tables = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[];
+          if (tables.length) {
+            const hasVersions = tables.some(table => table.name === "canon_migrations");
+            const version = hasVersions ? Number(this.db.prepare("SELECT COALESCE(MAX(version),0) AS version FROM canon_migrations").get().version) : 0;
+            if (version < 7) {
+              const backupPath = this.dbPath + ".pre-v7-" + Date.now() + ".bak";
+              this.db.exec("VACUUM INTO '" + backupPath.replace(/'/g, "''") + "'");
+            }
+          }
         }
         this.applySchemaSql();
         this.runMigrations();
@@ -848,6 +880,13 @@ export class BibleManager {
         this.memoryStore.migrations.push({
           version: 6,
           name: "novel_ingestion_and_series_planning",
+          applied_at: now,
+        });
+      }
+      if (!this.memoryStore.migrations.some((m) => m.version === 7)) {
+        this.memoryStore.migrations.push({
+          version: 7,
+          name: "chekhov_guns_and_long_novel_continuity",
           applied_at: now,
         });
       }
@@ -1047,6 +1086,15 @@ export class BibleManager {
         this.db.prepare("INSERT INTO canon_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(
           6,
           "novel_ingestion_and_series_planning",
+          new Date().toISOString()
+        );
+      }
+
+      if (!appliedVersions.has(7)) {
+        this.applyV7Migration();
+        this.db.prepare("INSERT INTO canon_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(
+          7,
+          "chekhov_guns_and_long_novel_continuity",
           new Date().toISOString()
         );
       }
@@ -1253,6 +1301,31 @@ export class BibleManager {
     try { this.db.exec("ALTER TABLE coverage_ledgers ADD COLUMN stage TEXT DEFAULT 'allocated_to_episode';"); } catch {}
   }
 
+  private applyV7Migration(): void {
+    if (!this.db) return;
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS chekhov_guns (
+        id TEXT PRIMARY KEY,
+        series_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        planted_at_episode INTEGER NOT NULL,
+        planted_in_beat_id TEXT,
+        payoff_status TEXT NOT NULL DEFAULT 'planted',
+        payoff_episode INTEGER,
+        payoff_beat_id TEXT,
+        dormant_episodes_count INTEGER DEFAULT 0,
+        last_active_episode INTEGER,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_chekhov_guns_lookup ON chekhov_guns (series_id, payoff_status);
+    `);
+    try {
+      this.db.exec("ALTER TABLE chekhov_guns ADD COLUMN last_active_episode INTEGER;");
+    } catch {}
+  }
+
   private applySchemaSql() {
     const schemaSql = `
       CREATE TABLE IF NOT EXISTS series_metadata (
@@ -1294,7 +1367,8 @@ export class BibleManager {
         visual_summary TEXT NOT NULL,
         atmospheric_rules TEXT,
         reference_image_path TEXT,
-        lighting_mood TEXT
+        lighting_mood TEXT,
+        series_id TEXT
       );
       CREATE TABLE IF NOT EXISTS key_props (
         id TEXT PRIMARY KEY,
@@ -1302,7 +1376,8 @@ export class BibleManager {
         visual_summary TEXT NOT NULL,
         current_holder_id TEXT,
         reference_image_path TEXT,
-        status TEXT NOT NULL DEFAULT 'intact'
+        status TEXT NOT NULL DEFAULT 'intact',
+        series_id TEXT
       );
       CREATE TABLE IF NOT EXISTS character_knowledge (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1312,9 +1387,11 @@ export class BibleManager {
         notes TEXT
       );
       CREATE TABLE IF NOT EXISTS world_state (
-        key TEXT PRIMARY KEY,
+        key TEXT NOT NULL,
         value_json TEXT NOT NULL,
-        updated_at_episode INTEGER NOT NULL
+        updated_at_episode INTEGER NOT NULL,
+        series_id TEXT NOT NULL DEFAULT 'default-series',
+        PRIMARY KEY (series_id, key)
       );
       CREATE TABLE IF NOT EXISTS episode_summaries (
         episode_number INTEGER NOT NULL,
@@ -1587,6 +1664,47 @@ export class BibleManager {
     }
 
     try {
+      this.db.exec("ALTER TABLE locations ADD COLUMN series_id TEXT;");
+    } catch {
+      // Column already exists
+    }
+
+    try {
+      this.db.exec("ALTER TABLE key_props ADD COLUMN series_id TEXT;");
+    } catch {
+      // Column already exists
+    }
+
+    try {
+      this.db.exec("ALTER TABLE world_state ADD COLUMN series_id TEXT;");
+    } catch {
+      // Column already exists
+    }
+
+    try {
+      const wsTableInfo = this.db.prepare("PRAGMA table_info(world_state);").all() as Array<{ name: string; pk: number }>;
+      const wsPkCols = wsTableInfo.filter((c) => c.pk > 0);
+      if (wsPkCols.length > 0 && wsPkCols.length < 2) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS world_state_temp_mig (
+            key TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            updated_at_episode INTEGER NOT NULL,
+            series_id TEXT NOT NULL DEFAULT 'default-series',
+            PRIMARY KEY (series_id, key)
+          );
+          INSERT OR IGNORE INTO world_state_temp_mig
+            SELECT key, value_json, updated_at_episode, COALESCE(series_id, 'default-series')
+            FROM world_state;
+          DROP TABLE world_state;
+          ALTER TABLE world_state_temp_mig RENAME TO world_state;
+        `);
+      }
+    } catch {
+      // Migration already applied or unneeded
+    }
+
+    try {
       const tableInfo = this.db.prepare("PRAGMA table_info(episode_summaries);").all() as Array<{ name: string; pk: number }>;
       const pkCols = tableInfo.filter((c) => c.pk > 0);
       if (pkCols.length > 0 && pkCols.length < 2) {
@@ -1674,6 +1792,9 @@ export class BibleManager {
       const row = this.db.prepare(query).get(...params);
       return row ? (row as SeriesMetadataRecord) : null;
     }
+    if (id && this.memoryStore.series && this.memoryStore.series.id !== id) {
+      return null;
+    }
     return this.memoryStore.series;
   }
 
@@ -1734,24 +1855,47 @@ export class BibleManager {
       let query = "SELECT * FROM characters WHERE id = ?";
       const params: any[] = [id];
       if (seriesId) {
-        query += " AND (series_id = ? OR series_id IS NULL)";
-        params.push(seriesId);
+        query += " AND (series_id = ? OR series_id = 'default-series' OR series_id IS NULL) ORDER BY CASE WHEN series_id = ? THEN 0 ELSE 1 END LIMIT 1";
+        params.push(seriesId, seriesId);
       }
       const stmt = this.db.prepare(query);
       const row = stmt.get(...params);
       if (!row) return null;
+      let parsedTraits: string[] = [];
+      if (typeof row.personality_traits === "string" && row.personality_traits.trim().length > 0) {
+        try {
+          parsedTraits = JSON.parse(row.personality_traits);
+        } catch {
+          parsedTraits = [];
+        }
+      } else if (Array.isArray(row.personality_traits)) {
+        parsedTraits = row.personality_traits;
+      }
+
       return {
         ...row,
-        personality_traits: JSON.parse(row.personality_traits),
+        personality_traits: parsedTraits,
       } as CharacterRecord;
     }
     const char = this.memoryStore.characters.get(id);
     if (!char) return null;
-    if (seriesId && char.series_id && char.series_id !== seriesId) return null;
+    if (seriesId && char.series_id && char.series_id !== seriesId && char.series_id !== "default-series") return null;
     return char;
   }
 
   public listCharacters(seriesId?: string): CharacterRecord[] {
+    const parseTraits = (traits: any): string[] => {
+      if (typeof traits === "string" && traits.trim().length > 0) {
+        try {
+          const parsed = JSON.parse(traits);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return Array.isArray(traits) ? traits : [];
+    };
+
     if (this.db && !this.isFallback) {
       if (seriesId) {
         try {
@@ -1761,7 +1905,7 @@ export class BibleManager {
           const rows = stmt.all(seriesId);
           return rows.map((r: any) => ({
             ...r,
-            personality_traits: typeof r.personality_traits === "string" ? JSON.parse(r.personality_traits) : (r.personality_traits || []),
+            personality_traits: parseTraits(r.personality_traits),
           }));
         } catch {
           // Fallback if series_id column not present in older db
@@ -1771,7 +1915,7 @@ export class BibleManager {
       const rows = stmt.all();
       return rows.map((r: any) => ({
         ...r,
-        personality_traits: typeof r.personality_traits === "string" ? JSON.parse(r.personality_traits) : (r.personality_traits || []),
+        personality_traits: parseTraits(r.personality_traits),
       }));
     }
     const all = Array.from(this.memoryStore.characters.values());
@@ -1873,14 +2017,15 @@ export class BibleManager {
   public upsertLocation(loc: LocationRecord): void {
     if (this.db && !this.isFallback) {
       const stmt = this.db.prepare(`
-        INSERT INTO locations (id, name, visual_summary, atmospheric_rules, reference_image_path, lighting_mood)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO locations (id, name, visual_summary, atmospheric_rules, reference_image_path, lighting_mood, series_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           visual_summary = excluded.visual_summary,
           atmospheric_rules = excluded.atmospheric_rules,
           reference_image_path = excluded.reference_image_path,
-          lighting_mood = excluded.lighting_mood
+          lighting_mood = excluded.lighting_mood,
+          series_id = COALESCE(excluded.series_id, locations.series_id)
       `);
       stmt.run(
         loc.id,
@@ -1888,19 +2033,29 @@ export class BibleManager {
         loc.visual_summary || (loc as any).visualSummary || loc.name,
         loc.atmospheric_rules ?? null,
         loc.reference_image_path ?? null,
-        loc.lighting_mood ?? null
+        loc.lighting_mood ?? null,
+        (loc as any).series_id ?? null
       );
     } else {
       this.memoryStore.locations.set(loc.id, loc);
     }
   }
 
-  public getLocation(id: string): LocationRecord | null {
+  public getLocation(id: string, seriesId?: string): LocationRecord | null {
     if (this.db && !this.isFallback) {
-      const row = this.db.prepare("SELECT * FROM locations WHERE id = ?").get(id);
+      let query = "SELECT * FROM locations WHERE id = ?";
+      const params: any[] = [id];
+      if (seriesId) {
+        query += " AND (series_id = ? OR series_id = 'default-series' OR series_id IS NULL) ORDER BY CASE WHEN series_id = ? THEN 0 ELSE 1 END LIMIT 1";
+        params.push(seriesId, seriesId);
+      }
+      const row = this.db.prepare(query).get(...params);
       return row ? (row as LocationRecord) : null;
     }
-    return this.memoryStore.locations.get(id) ?? null;
+    const loc = this.memoryStore.locations.get(id) ?? null;
+    if (!loc) return null;
+    if (seriesId && loc.series_id && loc.series_id !== seriesId && loc.series_id !== "default-series") return null;
+    return loc;
   }
 
   public listLocations(seriesId?: string): LocationRecord[] {
@@ -1926,14 +2081,15 @@ export class BibleManager {
   public upsertKeyProp(prop: KeyPropRecord): void {
     if (this.db && !this.isFallback) {
       const stmt = this.db.prepare(`
-        INSERT INTO key_props (id, name, visual_summary, current_holder_id, reference_image_path, status)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO key_props (id, name, visual_summary, current_holder_id, reference_image_path, status, series_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           visual_summary = excluded.visual_summary,
           current_holder_id = excluded.current_holder_id,
           reference_image_path = excluded.reference_image_path,
-          status = excluded.status
+          status = excluded.status,
+          series_id = COALESCE(excluded.series_id, key_props.series_id)
       `);
       stmt.run(
         prop.id,
@@ -1941,7 +2097,8 @@ export class BibleManager {
         prop.visual_summary || (prop as any).visualSummary || prop.name,
         prop.current_holder_id ?? null,
         prop.reference_image_path ?? null,
-        prop.status ?? "intact"
+        prop.status ?? "intact",
+        (prop as any).series_id ?? null
       );
     } else {
       this.memoryStore.props.set(prop.id, prop);
@@ -2005,12 +2162,21 @@ export class BibleManager {
     });
   }
 
-  public getKeyProp(id: string): KeyPropRecord | null {
+  public getKeyProp(id: string, seriesId?: string): KeyPropRecord | null {
     if (this.db && !this.isFallback) {
-      const row = this.db.prepare("SELECT * FROM key_props WHERE id = ?").get(id);
+      let query = "SELECT * FROM key_props WHERE id = ?";
+      const params: any[] = [id];
+      if (seriesId) {
+        query += " AND (series_id = ? OR series_id = 'default-series' OR series_id IS NULL) ORDER BY CASE WHEN series_id = ? THEN 0 ELSE 1 END LIMIT 1";
+        params.push(seriesId, seriesId);
+      }
+      const row = this.db.prepare(query).get(...params);
       return row ? (row as KeyPropRecord) : null;
     }
-    return this.memoryStore.props.get(id) ?? null;
+    const prop = this.memoryStore.props.get(id) ?? null;
+    if (!prop) return null;
+    if (seriesId && prop.series_id && prop.series_id !== seriesId && prop.series_id !== "default-series") return null;
+    return prop;
   }
 
   public listKeyProps(seriesId?: string): KeyPropRecord[] {
@@ -2086,40 +2252,137 @@ export class BibleManager {
 
   // ── World State Operations ────────────────────────────────────────────────
 
-  public setWorldState(key: string, value: unknown, episodeNumber: number): void {
+  public setWorldState(key: string, value: unknown, episodeNumber: number, seriesId?: string): void {
+    const sId = seriesId || this.getSeriesMetadata()?.id || "default-series";
     if (this.db && !this.isFallback) {
-      const stmt = this.db.prepare(`
-        INSERT INTO world_state (key, value_json, updated_at_episode)
-        VALUES (?, ?, ?)
-        ON CONFLICT(key) DO UPDATE SET
-          value_json = excluded.value_json,
-          updated_at_episode = excluded.updated_at_episode
-      `);
-      stmt.run(key, JSON.stringify(value ?? null), episodeNumber);
+      try {
+        const stmt = this.db.prepare(`
+          INSERT INTO world_state (key, value_json, updated_at_episode, series_id)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(series_id, key) DO UPDATE SET
+            value_json = excluded.value_json,
+            updated_at_episode = excluded.updated_at_episode
+        `);
+        stmt.run(key, JSON.stringify(value ?? null), episodeNumber, sId);
+      } catch {
+        try {
+          const stmt = this.db.prepare(`
+            INSERT INTO world_state (key, value_json, updated_at_episode, series_id)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value_json = excluded.value_json,
+              updated_at_episode = excluded.updated_at_episode,
+              series_id = excluded.series_id
+          `);
+          stmt.run(key, JSON.stringify(value ?? null), episodeNumber, sId);
+        } catch {
+          const stmt = this.db.prepare(`
+            INSERT INTO world_state (key, value_json, updated_at_episode)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+              value_json = excluded.value_json,
+              updated_at_episode = excluded.updated_at_episode
+          `);
+          stmt.run(key, JSON.stringify(value ?? null), episodeNumber);
+        }
+      }
     } else {
-      this.memoryStore.world_state.set(key, { value, episode: episodeNumber });
+      this.memoryStore.world_state.set(`${sId}::${key}`, { value, episode: episodeNumber, seriesId: sId });
+      if (!sId || sId === "default-series") {
+        this.memoryStore.world_state.set(key, { value, episode: episodeNumber, seriesId: sId });
+      }
     }
   }
 
-  public getWorldState(key: string): unknown | null {
+  public getWorldState(key: string, seriesId?: string): unknown | null {
+    const sId = seriesId || this.getSeriesMetadata()?.id;
     if (this.db && !this.isFallback) {
-      const row = this.db.prepare("SELECT value_json FROM world_state WHERE key = ?").get(key);
-      return row ? JSON.parse(row.value_json) : null;
+      if (sId) {
+        try {
+          const row = this.db.prepare(
+            "SELECT value_json FROM world_state WHERE key = ? AND (series_id = ? OR series_id = 'default-series' OR series_id IS NULL) ORDER BY CASE WHEN series_id = ? THEN 0 ELSE 1 END LIMIT 1"
+          ).get(key, sId, sId) as any;
+          if (row) {
+            try {
+              return JSON.parse(row.value_json);
+            } catch {
+              return row.value_json;
+            }
+          }
+        } catch {
+          // Fallback if series_id column query fails
+        }
+      }
+      const row = this.db.prepare("SELECT value_json FROM world_state WHERE key = ?").get(key) as any;
+      if (row) {
+        try {
+          return JSON.parse(row.value_json);
+        } catch {
+          return row.value_json;
+        }
+      }
+      return null;
     }
-    return this.memoryStore.world_state.get(key)?.value ?? null;
+    if (sId) {
+      const scoped = this.memoryStore.world_state.get(`${sId}::${key}`);
+      if (scoped) return scoped.value ?? null;
+      const def = this.memoryStore.world_state.get(`default-series::${key}`);
+      if (def) return def.value ?? null;
+      return null;
+    }
+    const mem = this.memoryStore.world_state.get(key);
+    if (!mem) return null;
+    if (mem.seriesId && mem.seriesId !== "default-series") return null;
+    return mem.value ?? null;
   }
 
   public getAllWorldState(seriesId?: string): Record<string, unknown> {
+    const sId = seriesId || this.getSeriesMetadata()?.id;
     const result: Record<string, unknown> = {};
     if (this.db && !this.isFallback) {
-      const rows = this.db.prepare("SELECT key, value_json FROM world_state").all();
+      if (sId) {
+        try {
+          const rows = this.db.prepare(
+            "SELECT key, value_json FROM world_state WHERE series_id = ? OR series_id = 'default-series' OR series_id IS NULL ORDER BY CASE WHEN series_id = ? THEN 1 ELSE 0 END ASC"
+          ).all(sId, sId) as any[];
+          for (const r of rows) {
+            try {
+              result[r.key] = JSON.parse(r.value_json);
+            } catch {
+              result[r.key] = r.value_json;
+            }
+          }
+          return result;
+        } catch {
+          // Fallback if series_id column not present in older db
+        }
+      }
+      const rows = this.db.prepare("SELECT key, value_json FROM world_state").all() as any[];
       for (const r of rows) {
-        result[r.key] = JSON.parse(r.value_json);
+        try {
+          result[r.key] = JSON.parse(r.value_json);
+        } catch {
+          result[r.key] = r.value_json;
+        }
       }
       return result;
     }
+    // Populate default-series / null first, then override with sId
     for (const [k, v] of this.memoryStore.world_state.entries()) {
-      result[k] = v.value;
+      const kSeries = k.includes("::") ? k.split("::")[0] : v.seriesId;
+      const kName = k.includes("::") ? k.split("::")[1] : k;
+      if (!sId || kSeries === "default-series" || !kSeries) {
+        result[kName] = v.value;
+      }
+    }
+    if (sId) {
+      for (const [k, v] of this.memoryStore.world_state.entries()) {
+        const kSeries = k.includes("::") ? k.split("::")[0] : v.seriesId;
+        const kName = k.includes("::") ? k.split("::")[1] : k;
+        if (kSeries === sId) {
+          result[kName] = v.value;
+        }
+      }
     }
     return result;
   }
@@ -2252,6 +2515,9 @@ export class BibleManager {
         const marks = update.distinguishingMarks ?? update.distinguishing_marks;
 
         const prevChar = this.getCharacter(id);
+        if (prevChar && prevChar.status === "deceased" && status && status !== "deceased") {
+          continue;
+        }
         const fromState = prevChar
           ? JSON.stringify({ status: prevChar.status, distinguishing_marks: prevChar.distinguishing_marks })
           : null;
@@ -2398,8 +2664,8 @@ export class BibleManager {
     const worldUpdates = d.worldStateUpdates || d.world_state_updates;
     if (worldUpdates) {
       for (const [key, val] of Object.entries(worldUpdates)) {
-        const prevVal = this.getWorldState(key);
-        this.setWorldState(key, val, episodeNumber);
+        const prevVal = this.getWorldState(key, seriesId);
+        this.setWorldState(key, val, episodeNumber, seriesId);
 
         this.recordStateEvent({
           series_id: seriesId,
@@ -2424,9 +2690,13 @@ export class BibleManager {
    * Generates a concise context injection prompt for LLM script generators
    * to ensure narrative and visual coherence before writing or normalizing a new episode.
    */
-  public generateContextPrompt(episodeNumber: number, activeCharacterIds: string[] = []): string {
-    const series = this.getSeriesMetadata();
-    const allChars = this.listCharacters();
+  public generateContextPrompt(
+    episodeNumber: number,
+    activeCharacterIds: string[] = [],
+    seriesId?: string
+  ): string {
+    const series = this.getSeriesMetadata(seriesId);
+    const allChars = this.listCharacters(seriesId);
     const relevantChars = activeCharacterIds.length > 0
       ? allChars.filter((c) => activeCharacterIds.includes(c.id))
       : allChars;
@@ -2439,21 +2709,21 @@ export class BibleManager {
       return `- [${c.name} (${c.role}, status: ${c.status})]: ${c.visual_summary}${marksDesc} | ${wardrobeDesc} | Tính cách: ${(c.personality_traits || []).join(", ")} | Đã biết: ${knowledge || "chưa có bí mật đáng chú ý"}`;
     });
 
-    const locations = this.listLocations().map(
+    const locations = this.listLocations(seriesId).map(
       (l) => `- [${l.name} (${l.id})]: ${l.visual_summary}${l.atmospheric_rules ? ` (Khí quyển: ${l.atmospheric_rules})` : ""}`
     );
 
-    const keyProps = this.listKeyProps().map((p) => {
-      const holder = p.current_holder_id ? (this.getCharacter(p.current_holder_id)?.name ?? p.current_holder_id) : "chưa rõ";
+    const keyProps = this.listKeyProps(seriesId).map((p) => {
+      const holder = p.current_holder_id ? (this.getCharacter(p.current_holder_id, seriesId)?.name ?? p.current_holder_id) : "chưa rõ";
       return `- [${p.name} (${p.id})]: ${p.visual_summary} (Hiện do ${holder} nắm giữ, trạng thái: ${p.status})`;
     });
 
-    const worldState = this.getAllWorldState();
+    const worldState = this.getAllWorldState(seriesId);
     const worldLines = Object.entries(worldState).map(
       ([k, v]) => `- ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`
     );
 
-    const negativeConstraints = this.getNegativeConstraints(episodeNumber);
+    const negativeConstraints = this.getNegativeConstraints(episodeNumber, seriesId);
 
     return `
 ### STORY BIBLE CONTEXT (Tập ${episodeNumber})
@@ -2478,9 +2748,9 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
   /**
    * Returns a list of strict negative constraints that MUST NOT be violated.
    */
-  public getNegativeConstraints(episodeNumber: number): string[] {
+  public getNegativeConstraints(episodeNumber: number, seriesId?: string): string[] {
     const constraints: string[] = [];
-    const allChars = this.listCharacters();
+    const allChars = this.listCharacters(seriesId);
 
     // 1. Deceased or missing characters
     for (const c of allChars) {
@@ -2495,15 +2765,23 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     let declaredSecretKeys: string[] = [];
     if (this.db && !this.isFallback) {
       try {
-        const rows = this.db.prepare("SELECT DISTINCT fact_key FROM character_knowledge").all() as { fact_key: string }[];
+        let query = "SELECT DISTINCT ck.fact_key FROM character_knowledge ck";
+        const params: any[] = [];
+        if (seriesId) {
+          query += " JOIN characters c ON ck.character_id = c.id WHERE (c.series_id = ? OR c.series_id IS NULL)";
+          params.push(seriesId);
+        }
+        const rows = this.db.prepare(query).all(...params) as { fact_key: string }[];
         declaredSecretKeys = rows.map((r) => r.fact_key).filter((k) => k === "knows_killer_identity" || k.startsWith("secret:"));
       } catch {
         declaredSecretKeys = [];
       }
     } else {
+      const allowedCharIds = new Set(allChars.map((c) => c.id));
       declaredSecretKeys = Array.from(
         new Set(
           this.memoryStore.knowledge
+            .filter((k) => !seriesId || allowedCharIds.has(k.character_id))
             .map((k) => k.fact_key)
             .filter((k) => k === "knows_killer_identity" || k.startsWith("secret:"))
         )
@@ -2525,7 +2803,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     }
 
     // 3. Destroyed or lost key props
-    const props = this.listKeyProps();
+    const props = this.listKeyProps(seriesId);
     for (const p of props) {
       if (p.status === "destroyed") {
         constraints.push(`Đạo cụ ${p.name} (${p.id}) đã bị phá hủy hoàn toàn, không thể sử dụng lại.`);
@@ -2651,9 +2929,13 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
 
   // ── Narrative Delta Validation & Commit Idempotency ──────────────────────
 
-  public validateNarrativeDelta(delta: NarrativeDelta): { valid: boolean; errors: string[] } {
+  public validateNarrativeDelta(
+    delta: NarrativeDelta,
+    seriesId?: string
+  ): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
     const d = delta as any;
+    const targetSeriesId = seriesId || d.seriesId || d.series_id;
 
     // 1. Validate character status updates
     const charUpdates = d.characterStatusUpdates || d.character_status_updates;
@@ -2664,9 +2946,14 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           errors.push("Character status update missing character id.");
           continue;
         }
-        const char = this.getCharacter(id);
+        const char = this.getCharacter(id, targetSeriesId);
         if (!char) {
           errors.push(`Character status update refers to non-existent character '${id}'.`);
+        } else {
+          const newStatus = update.status || update.newStatus || update.new_status;
+          if (char.status === "deceased" && newStatus && newStatus !== "deceased") {
+            errors.push(`Anti-Resurrection gate: Cannot resurrect deceased character '${char.name || id}' to '${newStatus}'.`);
+          }
         }
       }
     }
@@ -2677,7 +2964,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       for (const w of wardrobeUpdates) {
         const charId = w.characterId || w.character_id;
         const wardrobeId = w.wardrobeId || w.wardrobe_id;
-        const char = this.getCharacter(charId);
+        const char = this.getCharacter(charId, targetSeriesId);
         if (!char) {
           errors.push(`Wardrobe update refers to non-existent character '${charId}'.`);
         }
@@ -2700,13 +2987,13 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
           errors.push("Prop update missing prop id.");
           continue;
         }
-        const prop = this.getKeyProp(propId);
+        const prop = this.getKeyProp(propId, targetSeriesId);
         if (!prop) {
           errors.push(`Prop transfer refers to non-existent prop '${propId}'.`);
         }
         if (newHolderId) {
-          const charHolder = this.getCharacter(newHolderId);
-          const locHolder = this.getLocation(newHolderId);
+          const charHolder = this.getCharacter(newHolderId, targetSeriesId);
+          const locHolder = this.getLocation(newHolderId, targetSeriesId);
           if (!charHolder && !locHolder) {
             errors.push(`New prop holder '${newHolderId}' does not exist as character or location.`);
           } else if (charHolder && charHolder.status === "deceased") {
@@ -2721,7 +3008,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     if (knowledgeUpdates && Array.isArray(knowledgeUpdates)) {
       for (const k of knowledgeUpdates) {
         const charId = k.characterId || k.character_id;
-        const char = this.getCharacter(charId);
+        const char = this.getCharacter(charId, targetSeriesId);
         if (!char) {
           errors.push(`Knowledge update refers to non-existent character '${charId}'.`);
         } else if (char.status === "deceased") {
@@ -2810,7 +3097,7 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     };
 
     // 1. Delta reference validation
-    const validation = this.validateNarrativeDelta(delta);
+    const validation = this.validateNarrativeDelta(delta, seriesId);
     if (!validation.valid) {
       throw new DeltaValidationError(
         `Narrative delta validation failed: ${validation.errors.join("; ")}`,
@@ -3492,6 +3779,10 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
         is_approved: Boolean(take.is_approved),
       });
     }
+  }
+
+  public upsertShotTake(take: ShotTakeRecord): void {
+    this.recordShotTake(take);
   }
 
   /**
@@ -5878,6 +6169,169 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
       if (reviewNotes) item.review_notes = reviewNotes;
       return true;
     }
+  }
+
+  // ── Chekhov's Gun / Narrative Foreshadowing Operations ────────────────────
+
+  public plantChekhovGun(gun: ChekhovGunRecord): ChekhovGunRecord {
+    const now = gun.created_at || new Date().toISOString();
+    const lastActive = gun.last_active_episode ?? gun.planted_at_episode;
+    const clean: ChekhovGunRecord = {
+      ...gun,
+      type: gun.type ?? "prop",
+      description: gun.description ?? "",
+      planted_in_beat_id: gun.planted_in_beat_id ?? null,
+      payoff_status: gun.payoff_status || "planted",
+      payoff_episode: gun.payoff_episode ?? null,
+      payoff_beat_id: gun.payoff_beat_id ?? null,
+      dormant_episodes_count: gun.dormant_episodes_count ?? 0,
+      last_active_episode: lastActive,
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO chekhov_guns (
+            id, series_id, name, type, description, planted_at_episode,
+            planted_in_beat_id, payoff_status, payoff_episode, payoff_beat_id,
+            dormant_episodes_count, last_active_episode, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            type = excluded.type,
+            description = excluded.description,
+            planted_at_episode = excluded.planted_at_episode,
+            planted_in_beat_id = excluded.planted_in_beat_id,
+            payoff_status = excluded.payoff_status,
+            payoff_episode = excluded.payoff_episode,
+            payoff_beat_id = excluded.payoff_beat_id,
+            dormant_episodes_count = excluded.dormant_episodes_count,
+            last_active_episode = excluded.last_active_episode
+        `)
+        .run(
+          clean.id,
+          clean.series_id,
+          clean.name,
+          clean.type,
+          clean.description,
+          clean.planted_at_episode,
+          clean.planted_in_beat_id,
+          clean.payoff_status,
+          clean.payoff_episode,
+          clean.payoff_beat_id,
+          clean.dormant_episodes_count,
+          clean.last_active_episode,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.chekhov_guns.set(clean.id, clean);
+    }
+    return clean;
+  }
+
+  public updateChekhovGunActivity(
+    id: string,
+    episodeNumber: number,
+    status?: "planted" | "active"
+  ): boolean {
+    const gun = this.getChekhovGun(id);
+    if (!gun) return false;
+
+    const newStatus = status || gun.payoff_status;
+    if (this.db && !this.isFallback) {
+      const res = this.db
+        .prepare(`
+          UPDATE chekhov_guns
+          SET last_active_episode = ?, payoff_status = ?
+          WHERE id = ?
+        `)
+        .run(episodeNumber, newStatus, id);
+      return (res?.changes || 0) > 0;
+    } else {
+      gun.last_active_episode = episodeNumber;
+      gun.payoff_status = newStatus;
+      return true;
+    }
+  }
+
+  public resolveChekhovGun(
+    id: string,
+    episodeNumber: number,
+    beatId?: string,
+    status: "resolved" | "abandoned" = "resolved"
+  ): boolean {
+    const gun = this.getChekhovGun(id);
+    if (!gun) return false;
+
+    if (this.db && !this.isFallback) {
+      const res = this.db
+        .prepare(`
+          UPDATE chekhov_guns
+          SET payoff_status = ?, payoff_episode = ?, payoff_beat_id = ?, last_active_episode = ?
+          WHERE id = ?
+        `)
+        .run(status, episodeNumber, beatId ?? null, episodeNumber, id);
+      return (res?.changes || 0) > 0;
+    } else {
+      gun.payoff_status = status;
+      gun.payoff_episode = episodeNumber;
+      gun.payoff_beat_id = beatId ?? null;
+      gun.last_active_episode = episodeNumber;
+      return true;
+    }
+  }
+
+  public getChekhovGun(id: string): ChekhovGunRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db.prepare("SELECT * FROM chekhov_guns WHERE id = ?").get(id);
+      return (row as ChekhovGunRecord) ?? null;
+    }
+    return this.memoryStore.chekhov_guns.get(id) ?? null;
+  }
+
+  public listChekhovGuns(seriesId: string, status?: string): ChekhovGunRecord[] {
+    if (this.db && !this.isFallback) {
+      let query = "SELECT * FROM chekhov_guns WHERE series_id = ?";
+      const params: any[] = [seriesId];
+      if (status) {
+        query += " AND payoff_status = ?";
+        params.push(status);
+      }
+      query += " ORDER BY planted_at_episode ASC";
+      return (this.db.prepare(query).all(...params) as ChekhovGunRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.chekhov_guns.values())
+      .filter((g) => g.series_id === seriesId && (!status || g.payoff_status === status))
+      .sort((a, b) => a.planted_at_episode - b.planted_at_episode);
+  }
+
+  public listActiveChekhovGuns(seriesId: string, currentEpisode: number): ChekhovGunRecord[] {
+    const guns = this.listChekhovGuns(seriesId);
+    return guns
+      .filter((g) => {
+        if (g.planted_at_episode > currentEpisode) {
+          return false;
+        }
+        if (g.payoff_status === "planted" || g.payoff_status === "active") {
+          return true;
+        }
+        if (g.payoff_status === "resolved") {
+          // If resolved in a future episode relative to currentEpisode, it was still active at currentEpisode
+          return typeof g.payoff_episode === "number" && g.payoff_episode > currentEpisode;
+        }
+        return false;
+      })
+      .map((g) => {
+        const lastActive =
+          typeof g.last_active_episode === "number" && g.last_active_episode >= g.planted_at_episode
+            ? g.last_active_episode
+            : g.planted_at_episode;
+        return {
+          ...g,
+          dormant_episodes_count: Math.max(0, currentEpisode - lastActive),
+        };
+      });
   }
 }
 

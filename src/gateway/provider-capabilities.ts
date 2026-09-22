@@ -19,6 +19,7 @@ export interface ProviderCapabilities {
   allowedAspectRatios: ("9:16" | "16:9" | "1:1")[];
   supportsSeed: boolean;
   supportsLastFrameExtension: boolean;
+  supportsRegionalConditioning?: boolean;
   supportsIdempotencyKey?: boolean;
   acceptedImageProtocols: ImageInputProtocol[];
   requiresNetworkDownload: boolean;
@@ -129,10 +130,30 @@ export const PROVIDER_CAPABILITY_REGISTRY: Record<string, ProviderCapabilities> 
     allowedAspectRatios: ["9:16", "16:9", "1:1"],
     supportsSeed: true,
     supportsLastFrameExtension: true,
+    supportsRegionalConditioning: true,
     acceptedImageProtocols: ["local_path", "multipart_upload"],
     requiresNetworkDownload: true, // downloaded from local ComfyUI /view endpoint
     pricingPerSecUsd: 0.0,
     notes: "Zero compute cost. Accepts local file paths via /upload/image. Full seed and continuous duration support.",
+  },
+
+  serverless_comfyui: {
+    providerName: "serverless_comfyui",
+    displayName: "Serverless ComfyUI Cloud Swarm (Modal / RunPod)",
+    version: "1.0",
+    officialDocUrl: "https://runpod.io/docs/serverless",
+    supportedModes: ["t2v", "i2v"],
+    allowedDurationsSec: "continuous",
+    minDurationSec: 1,
+    maxDurationSec: 15,
+    allowedAspectRatios: ["9:16", "16:9", "1:1"],
+    supportsSeed: true,
+    supportsLastFrameExtension: true,
+    supportsRegionalConditioning: true,
+    acceptedImageProtocols: ["public_url", "base64_data_uri", "local_path"],
+    requiresNetworkDownload: true,
+    pricingPerSecUsd: 0.04,
+    notes: "Auto-scaling cloud GPU swarm (Modal/RunPod). Continuous duration up to 15s.",
   },
 
   mock: {

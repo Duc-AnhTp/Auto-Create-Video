@@ -98,6 +98,8 @@ export const TimelineVideoShotSchema = z.object({
     .optional(),
   trimStartSec: z.number().min(0).default(0),
   trimEndSec: z.number().min(0).optional(),
+  fileDurationFrames: z.number().int().min(0).optional(),
+  fileDurationSec: z.number().min(0).optional(),
 });
 
 export type TimelineVideoShot = z.infer<typeof TimelineVideoShotSchema>;
@@ -122,6 +124,9 @@ export const TimelineDialogueCueSchema = z.object({
   audioPath: z.string().default(""),
   voiceProfileId: z.string().optional(),
   volume: z.number().min(0).max(2).default(1.0),
+  pan: z.number().min(-1.0).max(1.0).default(0.0).optional(),
+  fileDurationFrames: z.number().int().min(0).optional(),
+  fileDurationSec: z.number().min(0).optional(),
 });
 
 export type TimelineDialogueCue = z.infer<typeof TimelineDialogueCueSchema>;
@@ -136,6 +141,10 @@ export const TimelineSfxCueSchema = z.object({
   durationSec: z.number().min(0),
   audioPath: z.string().default(""),
   volume: z.number().min(0).max(1).default(0.7),
+  pan: z.number().min(-1).max(1).optional(),
+  actionPrompt: z.string().optional(),
+  fileDurationFrames: z.number().int().min(0).optional(),
+  fileDurationSec: z.number().min(0).optional(),
 });
 
 export type TimelineSfxCue = z.infer<typeof TimelineSfxCueSchema>;
@@ -152,6 +161,8 @@ export const TimelineAmbienceCueSchema = z.object({
   volume: z.number().min(0).max(1).default(0.3),
   fadeInSec: z.number().min(0).default(0.5),
   fadeOutSec: z.number().min(0).default(0.5),
+  fileDurationFrames: z.number().int().min(0).optional(),
+  fileDurationSec: z.number().min(0).optional(),
 });
 
 export type TimelineAmbienceCue = z.infer<typeof TimelineAmbienceCueSchema>;
@@ -172,6 +183,8 @@ export const TimelineBgmCueSchema = z.object({
       endFrame: z.number().int().min(0),
     })
   ),
+  fileDurationFrames: z.number().int().min(0).optional(),
+  fileDurationSec: z.number().min(0).optional(),
 });
 
 export type TimelineBgmCue = z.infer<typeof TimelineBgmCueSchema>;
@@ -239,22 +252,28 @@ export type UnifiedTimeline = z.infer<typeof UnifiedTimelineSchema>;
 
 // ── Subtitle Formatter Utilities (SRT / VTT) ────────────────────────────────
 
-function formatSrtTimestamp(sec: number): string {
-  const hours = Math.floor(sec / 3600);
-  const minutes = Math.floor((sec % 3600) / 60);
-  const seconds = Math.floor(sec % 60);
-  const millis = Math.round((sec % 1) * 1000);
+export function formatSrtTimestamp(sec: number): string {
+  const safeSec = typeof sec === "number" && isFinite(sec) ? Math.max(0, sec) : 0;
+  const totalMs = Math.round(safeSec * 1000);
+  const millis = totalMs % 1000;
+  const totalSec = Math.floor(totalMs / 1000);
+  const seconds = totalSec % 60;
+  const minutes = Math.floor(totalSec / 60) % 60;
+  const hours = Math.floor(totalSec / 3600);
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
     2,
     "0"
   )}:${String(seconds).padStart(2, "0")},${String(millis).padStart(3, "0")}`;
 }
 
-function formatVttTimestamp(sec: number): string {
-  const hours = Math.floor(sec / 3600);
-  const minutes = Math.floor((sec % 3600) / 60);
-  const seconds = Math.floor(sec % 60);
-  const millis = Math.round((sec % 1) * 1000);
+export function formatVttTimestamp(sec: number): string {
+  const safeSec = typeof sec === "number" && isFinite(sec) ? Math.max(0, sec) : 0;
+  const totalMs = Math.round(safeSec * 1000);
+  const millis = totalMs % 1000;
+  const totalSec = Math.floor(totalMs / 1000);
+  const seconds = totalSec % 60;
+  const minutes = Math.floor(totalSec / 60) % 60;
+  const hours = Math.floor(totalSec / 3600);
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
     2,
     "0"
@@ -299,3 +318,6 @@ export function exportToVtt(subtitles: TimelineSubtitleCue[]): string {
     .join("\n");
   return header + body;
 }
+
+export { exportToAss, type AssSubtitleOptions } from "../media/ass-subtitle-builder.js";
+

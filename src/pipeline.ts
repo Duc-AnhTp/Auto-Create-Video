@@ -62,12 +62,29 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
   const effectiveProvider: TtsProvider = options.provider ?? raw.voice?.provider ?? cfg.ttsProvider;
   log.step(1, TOTAL_STEPS, `Load env + validate script.json (TTS provider: ${effectiveProvider})`);
 
+  // Fallback default voice if script.voice was omitted
+  function resolveDefaultVoiceId(prov: TtsProvider): string {
+    if (prov === "lucylab") return cfg.lucylabVoiceId || "";
+    if (prov === "elevenlabs") return cfg.elevenlabsVoiceId || "";
+    if (prov === "cosyvoice") return cfg.cosyvoiceVoiceId || "default";
+    if (prov === "f5tts") return cfg.f5ttsRefAudio || "default";
+    return "default";
+  }
+
+  function getProviderEnvHint(prov: TtsProvider): string {
+    if (prov === "lucylab") return "VIETNAMESE_VOICEID";
+    if (prov === "elevenlabs") return "ELEVENLABS_VOICE_ID";
+    if (prov === "cosyvoice") return "COSYVOICE_VOICE_ID or COSYVOICE_ENDPOINT";
+    if (prov === "f5tts") return "F5TTS_REF_AUDIO or F5TTS_ENDPOINT";
+    return "VOICE_ID";
+  }
+
   // If provider option was provided via CLI, override in raw
   if (options.provider) {
     if (!raw.voice) {
-      const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+      const defaultVoiceId = resolveDefaultVoiceId(effectiveProvider);
       if (!defaultVoiceId) {
-        const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+        const varName = getProviderEnvHint(effectiveProvider);
         throw new Error(`--provider ${options.provider} used, but ${varName} is not configured in environment or .env`);
       }
       raw.voice = { provider: options.provider, voiceId: defaultVoiceId, speed: 1.0 };
@@ -87,34 +104,35 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
 
   // If voice object exists but voiceId is missing, populate with provider default
   if (raw.voice && !raw.voice.voiceId) {
-    const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+    const defaultVoiceId = resolveDefaultVoiceId(effectiveProvider);
     if (!defaultVoiceId) {
-      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      const varName = getProviderEnvHint(effectiveProvider);
       throw new Error(`Voice ID is missing in script.json and ${varName} is not configured in environment or .env`);
     }
     raw.voice.voiceId = defaultVoiceId;
   }
 
-  // Substitute env placeholder before validation (works for both providers)
+  // Substitute env placeholder before validation (works for all providers)
   if (
     raw.voice?.voiceId === "${VIETNAMESE_VOICEID}" ||
     raw.voice?.voiceId === "${ELEVENLABS_VOICE_ID}" ||
+    raw.voice?.voiceId === "${COSYVOICE_VOICE_ID}" ||
+    raw.voice?.voiceId === "${F5TTS_REF_AUDIO}" ||
     raw.voice?.voiceId === "${VOICE_ID}"
   ) {
-    const resolvedVoiceId = effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId;
+    const resolvedVoiceId = resolveDefaultVoiceId(effectiveProvider);
     if (!resolvedVoiceId) {
-      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      const varName = getProviderEnvHint(effectiveProvider);
       throw new Error(`Voice ID placeholder used, but ${varName} is not configured in environment or .env`);
     }
     raw.voice.voiceId = resolvedVoiceId;
   }
   let script: Script = ScriptSchema.parse(raw);
 
-  // Fallback default voice if script.voice was omitted
   if (!script.voice) {
-    const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+    const defaultVoiceId = resolveDefaultVoiceId(effectiveProvider);
     if (!defaultVoiceId) {
-      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      const varName = getProviderEnvHint(effectiveProvider);
       throw new Error(`script.voice was omitted and ${varName} is not set in environment or config`);
     }
     script.voice = {
@@ -133,9 +151,9 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
 
   // Ensure voice is populated after review
   if (!script.voice) {
-    const defaultVoiceId = (effectiveProvider === "lucylab" ? cfg.lucylabVoiceId : cfg.elevenlabsVoiceId);
+    const defaultVoiceId = resolveDefaultVoiceId(effectiveProvider);
     if (!defaultVoiceId) {
-      const varName = effectiveProvider === "lucylab" ? "VIETNAMESE_VOICEID" : "ELEVENLABS_VOICE_ID";
+      const varName = getProviderEnvHint(effectiveProvider);
       throw new Error(`script.voice was omitted and ${varName} is not set in environment or config`);
     }
     script.voice = {
@@ -144,7 +162,7 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
       speed: 1.0,
     };
   }
-  const voiceConfig = script.voice;
+  const voiceConfig = script.voice!;
 
   // STEP 2: Download declared images + write script.txt
   log.step(2, TOTAL_STEPS, "Download images + write script.txt for CapCut");
@@ -223,7 +241,11 @@ export async function runPipeline(scriptPath: string, options: PipelineOptions =
     ttsProvider: voiceConfig.provider,
     ...(voiceConfig.provider === "lucylab"
       ? { lucylabVoiceId: voiceConfig.voiceId }
-      : { elevenlabsVoiceId: voiceConfig.voiceId }),
+      : voiceConfig.provider === "elevenlabs"
+      ? { elevenlabsVoiceId: voiceConfig.voiceId }
+      : voiceConfig.provider === "cosyvoice"
+      ? { cosyvoiceVoiceId: voiceConfig.voiceId }
+      : {}),
   };
   const ttsClient = createTtsClient(ttsCfg, { speed: voiceConfig.speed });
   // Concurrency: LucyLab requires 1 (only 1 concurrent export per key);

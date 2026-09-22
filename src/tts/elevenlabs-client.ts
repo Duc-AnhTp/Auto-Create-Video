@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import { writeFile } from "node:fs/promises";
-import type { TtsClient } from "./tts-client.js";
+import type { TtsClient, TtsGenerateOptions } from "./tts-client.js";
 
 export interface ElevenLabsOpts {
   apiKey: string;
@@ -26,8 +26,31 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class ElevenLabsClient implements TtsClient {
   constructor(private cfg: ElevenLabsOpts) {}
 
-  async generate(text: string, audioOutPath: string, _srtOutPath?: string): Promise<void> {
-    await this.synthesizeWithRetry(text, audioOutPath);
+  /**
+   * Sanitizes dialogue text by stripping leading/inline acting directions, stage instructions,
+   * bracketed expressions [thì thầm] and parenthesized annotations (lo lắng) so they aren't vocalized aloud.
+   */
+  public static cleanDialogueText(raw: string): string {
+    if (!raw) return "";
+    let text = raw.trim();
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+      text = text.slice(1, -1).trim();
+    }
+    text = text.replace(/^(?:\[[^\]]+\]|\([^)]+\)\s*)+/s, "").trim();
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+      text = text.slice(1, -1).trim();
+    }
+    return text;
+  }
+
+  async generate(
+    text: string,
+    audioOutPath: string,
+    _srtOutPath?: string,
+    _options?: TtsGenerateOptions
+  ): Promise<void> {
+    const cleanText = ElevenLabsClient.cleanDialogueText(text);
+    await this.synthesizeWithRetry(cleanText, audioOutPath);
     // ElevenLabs has no SRT — silently skip srtOutPath.
   }
 

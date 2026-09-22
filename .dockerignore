@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+dist
+data
+output
+test-output-review
+*.db
+*.db-*
+*.sqlite
+*.log
+test_result.json
+diff.txt

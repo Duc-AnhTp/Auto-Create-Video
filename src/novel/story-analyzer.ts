@@ -8,6 +8,7 @@ import type {
   StoryThreadRecord,
   KnowledgeStateRecord,
   CharacterRecord,
+  ChekhovGunRecord,
 } from "../bible/bible-manager.js";
 import { TextChunker } from "./text-chunker.js";
 import {
@@ -43,6 +44,7 @@ export interface AnalysisResult {
   beats: StoryBeatRecord[];
   threads: StoryThreadRecord[];
   knowledgeStates: KnowledgeStateRecord[];
+  chekhovGuns?: ChekhovGunRecord[];
   warnings: string[];
   generatorUsed?: "llm" | "rule_based";
   fallbackReason?: string;
@@ -235,6 +237,17 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       "revealedAtBeatIndex": 0,
       "isSecret": false
     }
+  ],
+  "chekhovGuns": [
+    {
+      "name": "Tên đạo cụ / bí mật / lời hứa / mối đe dọa gài gắm",
+      "type": "prop" | "secret" | "promise" | "threat" | "mystery",
+      "description": "Mô tả chi tiết và ý nghĩa gài gắm",
+      "plantedInBeatIndex": 0,
+      "payoffStatus": "planted" | "active" | "resolved",
+      "payoffBeatIndex": 2,
+      "confidenceScore": 0.9
+    }
   ]
 }`;
 
@@ -296,6 +309,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       beats: [],
       threads: [],
       knowledgeStates: [],
+      chekhovGuns: [],
     };
     const seenCharNames = new Set<string>();
     let accumulatedBeatOffset = 0;
@@ -339,8 +353,30 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         }
       }
 
+      // Rebase Chekhov's guns beat indices
+      if (out.chekhovGuns) {
+        for (const g of out.chekhovGuns) {
+          const rebasedGun = {
+            ...g,
+            plantedInBeatIndex:
+              g.plantedInBeatIndex != null
+                ? g.plantedInBeatIndex + accumulatedBeatOffset
+                : undefined,
+            payoffBeatIndex:
+              g.payoffBeatIndex != null
+                ? g.payoffBeatIndex + accumulatedBeatOffset
+                : undefined,
+          };
+          validated.chekhovGuns.push(rebasedGun);
+        }
+      }
+
       validated.beats.push(...out.beats);
       accumulatedBeatOffset += out.beats.length;
+    }
+
+    if (options.reviewQueue && bible) {
+      options.reviewQueue.setBible(bible);
     }
 
     // Process Characters
@@ -402,7 +438,9 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
       // Hard gate: pending/unapproved items must NOT enter Story Bible
       if (isApproved) {
-        bible.upsertCharacter(record);
+        if (!options.reviewQueue || !options.reviewQueue.hasBible()) {
+          bible.upsertCharacter(record);
+        }
         characters.push(record);
       }
     }
@@ -528,7 +566,9 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       // approvedBeatIds below to guard against dangling FK references.
       originalIndexToBeatIdMap.set(i, beatId);
     }
-    bible.batchUpsertStoryBeats(beats);
+    if (!options.reviewQueue || !options.reviewQueue.hasBible()) {
+      bible.batchUpsertStoryBeats(beats);
+    }
 
     // Build a set of approved beat IDs to guard thread/knowledge-state
     // references — any beat index pointing to a rejected beat must resolve
@@ -579,7 +619,9 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       }
 
       if (isApproved) {
-        bible.upsertStoryThread(record);
+        if (!options.reviewQueue || !options.reviewQueue.hasBible()) {
+          bible.upsertStoryThread(record);
+        }
         threads.push(record);
       }
     }
@@ -598,15 +640,87 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       const state: Omit<KnowledgeStateRecord, "id" | "created_at"> = {
         series_id: seriesId,
         fact_key: ks.factKey,
-        fact_type: ks.isSecret ? "adaptation_decision" : "character_knowledge",
+        fact_type: "character_knowledge",
         entity_id: charId,
         revealed_at_episode: null,
         revealed_at_beat_id: beatId,
         is_flashback: 0,
-        notes: ks.factDescription,
+        notes: ks.isSecret ? `[SECRET] ${ks.factDescription}` : ks.factDescription,
       };
       const recorded = bible.recordKnowledgeState(state);
       knowledgeStates.push(recorded);
+    }
+
+    // Process Chekhov's Guns
+    const chekhovGuns: ChekhovGunRecord[] = [];
+    if (validated.chekhovGuns && validated.chekhovGuns.length > 0) {
+      for (let i = 0; i < validated.chekhovGuns.length; i++) {
+        const g = validated.chekhovGuns[i];
+        const plantedBeatId = resolveApprovedBeat(g.plantedInBeatIndex) || beats[0]?.id || null;
+        const payoffBeatId = resolveApprovedBeat(g.payoffBeatIndex);
+
+        const plantedBeat =
+          typeof g.plantedInBeatIndex === "number" ? validated.beats[g.plantedInBeatIndex] : undefined;
+        const payoffBeat =
+          typeof g.payoffBeatIndex === "number" ? validated.beats[g.payoffBeatIndex] : undefined;
+
+        const plantedIdx = typeof g.plantedInBeatIndex === "number" ? g.plantedInBeatIndex : undefined;
+        const plantedUnitId = plantedIdx !== undefined ? beats[plantedIdx]?.source_unit_id : undefined;
+        let plantedEpisode = 1;
+        if (plantedBeat && typeof plantedBeat.chapterIndex === "number") {
+          plantedEpisode = plantedBeat.chapterIndex + 1;
+        } else if (plantedUnitId) {
+          const u = units.find((x) => x.id === plantedUnitId);
+          if (u) plantedEpisode = u.order_index + 1;
+        }
+
+        let payoffEpisode: number | null = null;
+        if (g.payoffStatus === "resolved") {
+          payoffEpisode = plantedEpisode;
+          const payoffIdx = typeof g.payoffBeatIndex === "number" ? g.payoffBeatIndex : undefined;
+          const payoffUnitId = payoffIdx !== undefined ? beats[payoffIdx]?.source_unit_id : undefined;
+          if (payoffBeat && typeof payoffBeat.chapterIndex === "number") {
+            payoffEpisode = payoffBeat.chapterIndex + 1;
+          } else if (payoffUnitId) {
+            const u = units.find((x) => x.id === payoffUnitId);
+            if (u) payoffEpisode = u.order_index + 1;
+          }
+        }
+
+        const record: ChekhovGunRecord = {
+          id: `gun_${seriesId}_${i + 1}`,
+          series_id: seriesId,
+          name: g.name,
+          type: g.type,
+          description: g.description,
+          planted_at_episode: plantedEpisode,
+          planted_in_beat_id: plantedBeatId,
+          payoff_status: g.payoffStatus || "planted",
+          payoff_episode: payoffEpisode,
+          payoff_beat_id: payoffBeatId,
+          dormant_episodes_count: 0,
+          created_at: new Date().toISOString(),
+        };
+
+        let isApproved = true;
+        if (options.reviewQueue) {
+          const qItem = options.reviewQueue.enqueue("chekhov_gun", seriesId, record, {
+            id: `rev_${record.id}`,
+            sourceId,
+            confidenceScore: g.confidenceScore,
+          });
+          isApproved = qItem.status === "approved" || qItem.status === "modified";
+        } else if (g.confidenceScore !== undefined && g.confidenceScore < 0.75) {
+          isApproved = false;
+        }
+
+        if (isApproved) {
+          if (!options.reviewQueue || !options.reviewQueue.hasBible()) {
+            bible.plantChekhovGun(record);
+          }
+          chekhovGuns.push(record);
+        }
+      }
     }
 
     return {
@@ -614,6 +728,7 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
       beats,
       threads,
       knowledgeStates,
+      chekhovGuns,
       warnings: [],
     };
   }

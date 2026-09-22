@@ -21,12 +21,14 @@ import {
   type TimelineSubtitleCue,
   exportToSrt,
   exportToVtt,
+  exportToAss,
   secToFrame,
 } from "../series/timeline-schema.js";
 import {
   createValidMockMp4File,
   createValidMockMp3File,
 } from "../assets/mock-media-generator.js";
+import { masterAudioEbuR128 } from "../assets/audio-tools.js";
 import { log } from "../utils/logger.js";
 
 export interface ShotAssemblyInput {
@@ -69,6 +71,18 @@ export interface HierarchicalAssemblerOptions {
   maxAllowedDriftSec?: number;
   detectBlackFrames?: boolean;
   requireApprovedShots?: boolean;
+  burnSubtitles?: boolean;
+  subtitleStyle?: "karaoke" | "pop_in" | "clean" | "impact_bounce";
+  safeTitleAvoidance?: boolean;
+  enablePeakImpactLinking?: boolean;
+  enableColorMatch?: boolean;
+  lutPath?: string;
+  pacingReport?: {
+    overallAverageShotDurationSec: number;
+    overallCutsPerMinute: number;
+    pacingDynamismScore: number;
+    warnings: string[];
+  };
 }
 
 /**
@@ -103,9 +117,11 @@ export function buildSceneStitchFilter(
     width: number;
     height: number;
     fps: number;
+    enableColorMatch?: boolean;
+    lutPath?: string;
   }
 ): { filterComplex: string; estimatedDurationSec: number } {
-  const { width, height, fps } = options;
+  const { width, height, fps, enableColorMatch } = options;
   const filterSteps: string[] = [];
 
   // Step 1: Normalize and trim each shot
@@ -122,6 +138,15 @@ export function buildSceneStitchFilter(
 
     const normLabel = `v${i}_norm`;
     let filter = `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps},format=yuv420p`;
+
+    if (enableColorMatch) {
+      filter += `,eq=contrast=1.05:saturation=1.02`;
+    }
+
+    if (options.lutPath) {
+      const sanitizedLut = options.lutPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      filter += `,lut3d='${sanitizedLut}'`;
+    }
 
     if (trimStart > 0 || shot.trimEndSec !== undefined) {
       filter += `,trim=start=${trimStart.toFixed(3)}:end=${trimEnd.toFixed(3)},setpts=PTS-STARTPTS[${normLabel}]`;
@@ -341,7 +366,13 @@ export class HierarchicalFilmAssembler {
         }
 
         if (hasFfmpeg) {
-          const filter = buildSceneStitchFilter(scene.shots, shotDurations, { width, height, fps });
+          const filter = buildSceneStitchFilter(scene.shots, shotDurations, {
+            width,
+            height,
+            fps,
+            enableColorMatch: this.options.enableColorMatch ?? true,
+            lutPath: this.options.lutPath,
+          });
           const ffmpegArgs = ["-y"];
           for (const sh of scene.shots) {
             ffmpegArgs.push("-i", sh.sourceClipPath);
@@ -526,32 +557,112 @@ export class HierarchicalFilmAssembler {
     }
     log.info(`  Tập phim hoàn chỉnh: ${finalMasterMp4Path}`);
 
-    // ── STAGE 6: Export Subtitles (SRT/VTT) & NLE Interchange (XML/OTIO) ──
+    // ── STAGE 6: Export Subtitles (SRT/VTT/ASS) & NLE Interchange (XML/OTIO) ──
     log.info("\n--- BƯỚC 6: XUẤT PHỤ ĐỀ VÀ TIMELINE TRAO ĐỔI NLE (FCP7 XML & OTIO) ---");
     const srtPath = join(outputDir, "subtitles.srt");
     const vttPath = join(outputDir, "subtitles.vtt");
+    const assPath = join(outputDir, "subtitles.ass");
     await writeFile(srtPath, exportToSrt(subtitleCues), "utf-8");
     await writeFile(vttPath, exportToVtt(subtitleCues), "utf-8");
-
-    // Construct UnifiedTimeline for NLE export
-    const flatVideoTrack = assembledSceneRecords.flatMap((sc) =>
-      sc.shots.map((sh, idx) => ({
-        shotId: sh.shotId,
-        sceneId: sh.sceneId,
-        startFrame: secToFrame(idx * 4.0, fps),
-        endFrame: secToFrame((idx + 1) * 4.0, fps),
-        durationFrames: secToFrame(sh.effectiveDurationSec, fps),
-        startSec: idx * 4.0,
-        endSec: (idx + 1) * 4.0,
-        durationSec: sh.effectiveDurationSec,
-        shotType: "medium" as const,
-        visualPrompt: sh.visualPrompt,
-        characterId: sh.characterId,
-        approvedClipPath: sh.sourceClipPath,
-        trimStartSec: sh.trimStartSec,
-        trimEndSec: sh.trimEndSec,
-      }))
+    await writeFile(
+      assPath,
+      exportToAss(subtitleCues, {
+        aspectRatio: aspectRatio as any,
+        style: this.options.subtitleStyle || "karaoke",
+        safeTitleAvoidance: this.options.safeTitleAvoidance ?? (aspectRatio === "9:16"),
+        enablePeakImpactLinking: this.options.enablePeakImpactLinking ?? true,
+      }),
+      "utf-8"
     );
+
+    let masterHardsubVideoPath: string | undefined = undefined;
+    if (this.options.burnSubtitles) {
+      log.info("  Đang burn-in phụ đề động (.ass) vào video master...");
+      masterHardsubVideoPath = join(outputDir, "master-video-hardsub.mp4");
+      if ((await isFfmpegAvailable()) && existsSync(finalMasterMp4Path)) {
+        try {
+          const escapedAss = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+          await runFfmpeg([
+            "-y",
+            "-i",
+            finalMasterMp4Path,
+            "-vf",
+            `subtitles='${escapedAss}'`,
+            "-c:a",
+            "copy",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            masterHardsubVideoPath,
+          ]);
+          log.info(`  Video hardsub hoàn tất: ${masterHardsubVideoPath}`);
+        } catch (hardsubErr: any) {
+          log.warn(`  Burn-in phụ đề thất bại, tạo fallback: ${hardsubErr.message}`);
+          await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
+        }
+      } else {
+        await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
+      }
+    }
+
+    // Construct UnifiedTimeline for NLE export (accounting for crossfade transitions)
+    let sceneCursorSec = 0;
+    const flatVideoTrack = assembledSceneRecords.flatMap((sc) => {
+      const sceneStartSec = sceneCursorSec;
+      let shotInSceneCursor = sceneStartSec;
+      const shotsOnTrack = sc.shots.map((sh, idx) => {
+        const dur = sh.effectiveDurationSec > 0 ? sh.effectiveDurationSec : 4.0;
+        let transDur = 0;
+        if (idx > 0) {
+          const prevShot = sc.shots[idx - 1];
+          const rawTransDur =
+            (sh.transitionIn?.type === "crossfade" ? sh.transitionIn.durationSec : undefined) ??
+            (prevShot.transitionOut?.type === "crossfade" ? prevShot.transitionOut.durationSec : 0);
+          const maxSafeTrans = Math.min(prevShot.effectiveDurationSec, dur) * 0.5;
+          transDur = rawTransDur > 0 ? Math.min(rawTransDur, maxSafeTrans) : 0;
+        }
+
+        const startSec = Math.max(sceneStartSec, shotInSceneCursor - transDur);
+        const endSec = startSec + dur;
+        const startFrame = secToFrame(startSec, fps);
+        const endFrame = secToFrame(endSec, fps);
+        const durationFrames = endFrame - startFrame;
+        shotInSceneCursor = endSec;
+
+        const transitionIn =
+          transDur > 0
+            ? {
+                type: "crossfade" as const,
+                durationSec: transDur,
+                durationFrames: secToFrame(transDur, fps),
+              }
+            : undefined;
+
+        return {
+          shotId: sh.shotId,
+          sceneId: sh.sceneId,
+          startFrame,
+          endFrame,
+          durationFrames,
+          startSec,
+          endSec,
+          durationSec: dur,
+          shotType: "medium" as const,
+          visualPrompt: sh.visualPrompt,
+          characterId: sh.characterId,
+          approvedClipPath: sh.sourceClipPath,
+          transitionIn,
+          trimStartSec: sh.trimStartSec,
+          trimEndSec: sh.trimEndSec,
+        };
+      });
+
+      sceneCursorSec =
+        sceneStartSec +
+        (sc.durationSec > 0 ? sc.durationSec : shotInSceneCursor - sceneStartSec);
+      return shotsOnTrack;
+    });
 
     const unifiedTimeline: UnifiedTimeline = {
       seriesId,
@@ -637,8 +748,10 @@ export class HierarchicalFilmAssembler {
       masterOutputs: {
         masterVideoPath: finalMasterMp4Path,
         masterAudioPath,
+        masterHardsubVideoPath,
         subtitlesSrtPath: srtPath,
         subtitlesVttPath: vttPath,
+        subtitlesAssPath: assPath,
         stems: {
           dialogue: stemDialoguePath,
           sfx: stemSfxPath,
@@ -651,6 +764,7 @@ export class HierarchicalFilmAssembler {
           verificationNote: nleResult.verificationNote,
         },
       },
+      pacingReport: this.options.pacingReport,
       qaReport,
       createdAt: new Date().toISOString(),
     };
@@ -784,6 +898,18 @@ export class HierarchicalFilmAssembler {
         "2",
         masterAudioPath,
       ]);
+
+      // EBU R128 / ITU-R BS.1770-4 Loudness Mastering (-14 LUFS streaming target)
+      try {
+        await masterAudioEbuR128(masterAudioPath, masterAudioPath, {
+          targetLufs: -14.0,
+          truePeak: -1.0,
+          lra: 7.0,
+          sampleRate: 48000,
+        });
+      } catch (ebuErr: any) {
+        log.warn(`EBU R128 mastering failed: ${ebuErr?.message || ebuErr}; using standard amix output`);
+      }
     } catch (err: any) {
       log.warn(`Không thể mix 4 stems bằng amix: ${err.message}. Tạo file silence fallback.`);
       await this.generateSilentWav(masterAudioPath, targetDur);

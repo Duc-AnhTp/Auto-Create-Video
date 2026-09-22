@@ -55,6 +55,10 @@ import {
   resolveEffectiveRenderConfig,
 } from "./series-schema.js";
 import { CoverageLedgerManager } from "./coverage-ledger.js";
+import { ConceptArtGenerator } from "./concept-art-generator.js";
+import { DynamicPacingCalculator } from "./pacing-calculator.js";
+import { CinematicDirectorEngine } from "./cinematic-director.js";
+import type { FoleyGenerator } from "../audio/foley-generator.js";
 import { log } from "../utils/logger.js";
 import { createValidMockMp4File, hasFfmpeg } from "../assets/mock-media-generator.js";
 
@@ -93,7 +97,7 @@ export function computeAudioFingerprint(
     for (const shot of scene.shots) {
       hash.update(`${shot.shotId}:${shot.durationSec}`);
       if (shot.sfxCue) {
-        hash.update(`${shot.shotId}:${shot.sfxCue.name}:${shot.sfxCue.offsetSec}:${shot.sfxCue.volume}`);
+        hash.update(`${shot.shotId}:${shot.sfxCue.name}:${shot.sfxCue.offsetSec}:${shot.sfxCue.volume}:${shot.sfxCue.pan ?? 0}:${shot.sfxCue.description ?? ""}`);
       }
       for (const d of shot.dialogues) {
         hash.update(
@@ -192,8 +196,15 @@ export interface EpisodicPipelineOptions {
   allowMockMedia?: boolean;
   voiceConfigs?: Record<string, any>;
   useHierarchicalAssembly?: boolean;
+  autoGenerateMissingConceptArt?: boolean;
+  /** Enable Hollywood cinematic directing (180-degree axis enforcement & Foley action detection) */
+  cinematicDirecting?: boolean;
+  foleyGenerator?: FoleyGenerator;
   specHash?: string;
   onProgress?: (step: number, totalSteps: number, message: string) => void;
+  /** Cooperative boundary: finish in-flight work before pausing or cancelling. */
+  checkpoint?: () => Promise<void>;
+  expectedEpisodeNumber?: number;
 }
 
 export interface EpisodicPipelineResult {
@@ -241,6 +252,39 @@ export class EpisodicPipeline {
 
   public getBible(): BibleManager {
     return this.bible;
+  }
+
+  /**
+   * Resolves character portrait image path from Story Bible.
+   * If character lacks a reference portrait or file is missing, automatically invokes
+   * ConceptArtGenerator to produce a high-fidelity concept art anchor with synthetic face embedding.
+   */
+  private async resolveCharacterFaceReference(
+    characterId: string,
+    seriesId: string,
+    autoGenerate = false
+  ): Promise<string | undefined> {
+    const charRec = this.bible.getCharacter(characterId, seriesId);
+    if (!charRec) return undefined;
+    if (charRec.face_reference_image && existsSync(charRec.face_reference_image)) {
+      return charRec.face_reference_image;
+    }
+    if (!autoGenerate) {
+      return charRec.face_reference_image || undefined;
+    }
+    try {
+      const artGen = new ConceptArtGenerator(this.bible);
+      const artRes = await artGen.generateCharacterConceptArt({
+        seriesId,
+        characterId,
+        allowMock: true,
+      });
+      log.info(`[PIPELINE] Đã tự động tạo chân dung chuẩn cho nhân vật '${characterId}': ${artRes.imagePath}`);
+      return artRes.imagePath;
+    } catch (err: any) {
+      log.warn(`[PIPELINE] Không thể tự tạo chân dung cho nhân vật '${characterId}': ${err.message}`);
+      return charRec.face_reference_image || undefined;
+    }
   }
 
   public getOrchestrator(): ResilientJobOrchestrator {
@@ -335,16 +379,106 @@ export class EpisodicPipeline {
 
     // STEP 2: Normalize & Enrich Script with Bible Memory
     log.step(1, 8, "Chuẩn hóa kịch bản & Liên kết bộ nhớ Story Bible");
+    await options.checkpoint?.();
     options.onProgress?.(1, 8, "Chuẩn hóa kịch bản & Liên kết bộ nhớ Story Bible");
     const script = await normalizeScript(rawContent, this.bible, {
+      seriesId: options.seriesId,
       skipAudit: options.skipAudit,
       strictCharacters: options.strictCharacters,
       characterMapping: options.characterMapping,
     });
+    if (options.expectedEpisodeNumber !== undefined && script.episodeNumber !== options.expectedEpisodeNumber) {
+      throw new Error("EPISODE_NUMBER_MISMATCH: Kịch bản không khớp tập được yêu cầu.");
+    }
+    const seriesId = options.seriesId || script.seriesId || "default-series";
     log.info(`  Tập ${script.episodeNumber}: "${script.title}" (${script.scenes.length} cảnh)`);
 
+    // STEP 2b: Visual Pacing Analysis (ASD, CPM, Dynamism Score)
+    let pacingReport: any = undefined;
+    try {
+      pacingReport = DynamicPacingCalculator.analyzeScriptPacing(script);
+      log.info(
+        `  ⏱️ [PACING ANALYSIS] ASD: ${pacingReport.overallAverageShotDurationSec}s | CPM: ${pacingReport.overallCutsPerMinute} cuts/min | Dynamism: ${pacingReport.pacingDynamismScore.toFixed(2)}`
+      );
+      if (pacingReport.warnings.length > 0) {
+        for (const w of pacingReport.warnings) {
+          log.warn(`  ⚠️ [PACING WARNING] ${w}`);
+        }
+      }
+    } catch (pacingErr: any) {
+      log.warn(`  [PACING ANALYSIS] Không thể phân tích nhịp dựng: ${pacingErr.message}`);
+    }
+
+    // STEP 2c: Cinematic Directing & 180-Degree Spatial Axis Enforcement (Phase 1)
+    if (options.cinematicDirecting !== false) {
+      try {
+        let axisAdjustedCount = 0;
+        let foleyAddedCount = 0;
+        for (const scene of script.scenes) {
+          if (scene.charactersPresent && scene.charactersPresent.length >= 2) {
+            const chars = scene.charactersPresent.map((cp) => {
+              const charId = typeof cp === "string" ? cp : cp.characterId;
+              const charRec = this.bible.getCharacter(charId, seriesId);
+              return { id: charId, name: charRec?.name || charId };
+            });
+            const prevShots = scene.shots;
+            scene.shots = CinematicDirectorEngine.enforce180DegreeAxis(scene.shots, chars);
+            if (scene.shots !== prevShots) {
+              axisAdjustedCount++;
+            }
+          }
+          // Detect Action Foley for shots missing sfxCue & assign spatial panning
+          for (const shot of scene.shots) {
+            if (!shot.sfxCue) {
+              const promptForFoley =
+                shot.visualPrompt + (shot.dialogues?.[0]?.text ? ` ${shot.dialogues[0].text}` : "");
+              const foley = CinematicDirectorEngine.detectActionFoley(promptForFoley);
+              if (foley) {
+                let pan: number | undefined = undefined;
+                if (
+                  shot.visualPrompt.includes("bên trái") ||
+                  shot.visualPrompt.includes("tiền cảnh bên trái")
+                ) {
+                  pan = -0.25;
+                } else if (
+                  shot.visualPrompt.includes("bên phải") ||
+                  shot.visualPrompt.includes("tiền cảnh bên phải")
+                ) {
+                  pan = 0.25;
+                }
+                shot.sfxCue = {
+                  ...foley,
+                  ...(pan !== undefined ? { pan } : {}),
+                  description: promptForFoley,
+                };
+                foleyAddedCount++;
+              }
+            } else if (shot.sfxCue && shot.sfxCue.pan === undefined) {
+              if (
+                shot.visualPrompt.includes("bên trái") ||
+                shot.visualPrompt.includes("tiền cảnh bên trái")
+              ) {
+                shot.sfxCue.pan = -0.25;
+              } else if (
+                shot.visualPrompt.includes("bên phải") ||
+                shot.visualPrompt.includes("tiền cảnh bên phải")
+              ) {
+                shot.sfxCue.pan = 0.25;
+              }
+            }
+          }
+        }
+        if (axisAdjustedCount > 0 || foleyAddedCount > 0) {
+          log.info(
+            `  🎬 [CINEMATIC DIRECTING] Áp dụng trục 180° cho ${axisAdjustedCount} cảnh đối thoại, tự động bổ sung ${foleyAddedCount} Foley SFX cues.`
+          );
+        }
+      } catch (dirErr: any) {
+        log.warn(`  [CINEMATIC DIRECTING] Không thể tối ưu trục quay: ${dirErr.message}`);
+      }
+    }
+
     // Determine Output Directory
-    const seriesId = options.seriesId || script.seriesId || "default-series";
     const epNumStr = String(script.episodeNumber).padStart(2, "0");
     const outputDir = options.outputDir || join("output", "series", seriesId, `ep-${epNumStr}`);
     await mkdir(outputDir, { recursive: true });
@@ -429,6 +563,7 @@ export class EpisodicPipeline {
 
     // STEP 3: Continuity Audit Check
     log.step(2, 8, "Rà soát tính liên tục cốt truyện (Continuity Audit)");
+    await options.checkpoint?.();
     options.onProgress?.(2, 8, "Rà soát tính liên tục cốt truyện (Continuity Audit)");
     job.currentPhase = "audit";
     await this.saveCheckpoint(outputDir, job);
@@ -446,9 +581,11 @@ export class EpisodicPipeline {
 
     // STEP 4: Multi-Character Audio Synthesis
     log.step(3, 8, "Sản xuất âm thanh: Đa giọng thoại nhân vật & SFX/BGM");
+    await options.checkpoint?.();
     options.onProgress?.(3, 8, "Sản xuất âm thanh: Đa giọng thoại nhân vật & SFX/BGM");
     let audioPath = job.audioPath;
     let audioDurationSec = 0;
+    let audioRes: any = null;
     const audioCfg = this.audioAssembler.getCfg();
     const currentAudioFingerprint = computeAudioFingerprint(script, effectiveConfig.transitionDurationSec, {
       mockTts,
@@ -495,6 +632,7 @@ export class EpisodicPipeline {
               }
               // Save updated script with restored dialogue-extended durations to disk (Requirement 5)
               await writeFile(join(outputDir, "script-normalized.json"), JSON.stringify(script, null, 2), "utf8");
+              audioRes = { unifiedTimeline: timelineData };
               log.info(`  [RESUME TIMELINE] Đã khôi phục thời lượng shot từ timeline.json đã lưu và cập nhật script-normalized.json.`);
             } catch (tlErr: any) {
               log.warn(`  [RESUME TIMELINE] Không thể đọc timeline.json: ${tlErr.message}`);
@@ -510,13 +648,14 @@ export class EpisodicPipeline {
       job.currentPhase = "audio";
       await this.saveCheckpoint(outputDir, job);
 
-      const audioRes = await this.audioAssembler.assembleEpisodeAudio({
+      audioRes = await this.audioAssembler.assembleEpisodeAudio({
         script,
         bible: this.bible,
         outputDir,
         mockTts,
         overflowPolicy: effectiveConfig.overflowPolicy,
         transitionDurationSec: effectiveConfig.transitionDurationSec,
+        foleyGenerator: options.foleyGenerator,
       });
       audioPath = audioRes.finalAudioPath;
       audioDurationSec = audioRes.totalDurationSec;
@@ -563,6 +702,7 @@ export class EpisodicPipeline {
 
     // STEP 5: AI Video Generation & Shot Chaining
     log.step(4, 8, `Tạo các shot video qua AI Model Gateway (${provider})`);
+    await options.checkpoint?.();
     options.onProgress?.(4, 8, `Tạo các shot video qua AI Model Gateway (${provider})`);
     job.currentPhase = "video_generation";
     await this.saveCheckpoint(outputDir, job);
@@ -657,6 +797,57 @@ export class EpisodicPipeline {
             }
           }
 
+          // Lookup character face reference image from Story Bible for visual consistency
+          let charFaceRef: string | undefined = undefined;
+          if (shot.characterId) {
+            charFaceRef = await this.resolveCharacterFaceReference(
+              shot.characterId,
+              seriesId,
+              options.autoGenerateMissingConceptArt ?? false
+            );
+          }
+
+          // Phase 3: Secondary Character Face Reference & Multi-Subject Regional Conditioning
+          let secondaryCharFaceRef: string | undefined = undefined;
+          let secondaryCharId: string | undefined = undefined;
+          let regionalCond: any = undefined;
+
+          if (scene.charactersPresent && scene.charactersPresent.length >= 2) {
+            const charIds = scene.charactersPresent.map((cp) =>
+              typeof cp === "string" ? cp : cp.characterId
+            );
+            const charAId = shot.characterId || charIds[0];
+            const charBId = charIds.find((id) => id !== charAId) || charIds[1];
+            if (charBId) {
+              secondaryCharId = charBId;
+              secondaryCharFaceRef = await this.resolveCharacterFaceReference(
+                charBId,
+                seriesId,
+                options.autoGenerateMissingConceptArt ?? false
+              );
+            }
+
+            const isMultiCharShot =
+              shot.shotType === "medium" ||
+              shot.shotType === "over_the_shoulder" ||
+              shot.visualPrompt.includes("Two-Shot") ||
+              shot.visualPrompt.includes("180") ||
+              shot.visualPrompt.includes("đối diện") ||
+              shot.visualPrompt.includes("hai nhân vật");
+
+            if (isMultiCharShot && charBId) {
+              const charARec = this.bible.getCharacter(charAId, seriesId);
+              const charBRec = this.bible.getCharacter(charBId, seriesId);
+              regionalCond = {
+                enabled: true,
+                characterAPrompt: `${charARec?.name || "Nhân vật 1"}: ${charARec?.visual_summary || "Ánh mắt sắc bén"}`,
+                characterBPrompt: `${charBRec?.name || "Nhân vật 2"}: ${charBRec?.visual_summary || "Biểu cảm tập trung"}`,
+                characterASide: "left",
+                characterBSide: "right",
+              };
+            }
+          }
+
           const spec: ShotExecutionSpec = {
             shotId: `${shot.shotId}_p${pass.passIndex}`,
             backend: provider,
@@ -665,12 +856,19 @@ export class EpisodicPipeline {
             prompt: shot.visualPrompt,
             aspectRatio: script.aspectRatio,
             referenceImage: shot.referenceImage,
+            characterReferenceImage: charFaceRef,
+            characterId: shot.characterId,
+            secondaryCharacterReferenceImage: secondaryCharFaceRef,
+            secondaryCharacterId: secondaryCharId,
+            regionalConditioning: regionalCond,
+            applyFaceConsistency: Boolean(shot.characterId && charFaceRef),
             firstFrameCondition: firstFrameImage,
             destinationLocalPath: shotLocalPath,
           };
 
           let shotResult: VideoJobStatus;
           try {
+            await options.checkpoint?.();
             const orchRes = await this.orchestrator.executeShot(
               seriesId,
               script.episodeNumber,
@@ -866,6 +1064,7 @@ export class EpisodicPipeline {
 
     // STEP 6: Visual QA & Multi-Frame Continuity Evaluation
     log.step(5, 8, "Kiểm định nhất quán thị giác & Đa frame (Visual QA)");
+    await options.checkpoint?.();
     options.onProgress?.(5, 8, "Kiểm định nhất quán thị giác & Đa frame (Visual QA)");
     job.currentPhase = "qa_review";
     await this.saveCheckpoint(outputDir, job);
@@ -1261,6 +1460,7 @@ export class EpisodicPipeline {
 
           if (qaReport.shouldReRoll) {
             log.info(`  🔄 [AUTO RE-ROLL] Đang tự động tái tạo shot [${shot.shotId}] (lần ${qaReport.reRollAttempt}/${this.faceQa.maxReRolls})...`);
+            await options.checkpoint?.();
             const rerollRes = await this.rerollShot({
               seriesId,
               episodeNumber: script.episodeNumber,
@@ -1451,6 +1651,7 @@ export class EpisodicPipeline {
 
     // STEP 7: Master Assembly (Video Stitching + Audio Muxing)
     log.step(6, 8, "Hậu kỳ: Ghép shot xfade & mux soundtrack tổng thể");
+    await options.checkpoint?.();
     options.onProgress?.(6, 8, "Hậu kỳ: Ghép shot xfade & mux soundtrack tổng thể");
     const finalVideoPath = join(outputDir, "video.mp4");
 
@@ -1565,11 +1766,30 @@ export class EpisodicPipeline {
             scenes: scenesInput,
             outputDir: join(outputDir, "assembly"),
             requireApprovedShots: true,
+            enableColorMatch: (effectiveConfig as any).enableColorMatch ?? true,
+            dialogueCues: audioRes?.unifiedTimeline?.dialogueTrack || [],
+            sfxCues: audioRes?.unifiedTimeline?.sfxTrack || [],
+            ambienceCues: audioRes?.unifiedTimeline?.ambienceTrack || [],
+            bgmTrack: audioRes?.unifiedTimeline?.bgmTrack,
+            subtitleCues: audioRes?.unifiedTimeline?.subtitleTrack || [],
+            pacingReport: pacingReport
+              ? {
+                  overallAverageShotDurationSec: pacingReport.overallAverageShotDurationSec,
+                  overallCutsPerMinute: pacingReport.overallCutsPerMinute,
+                  pacingDynamismScore: pacingReport.pacingDynamismScore,
+                  warnings: pacingReport.warnings,
+                }
+              : undefined,
           });
 
           const manifest = await hierarchicalAssembler.assemble();
           if (manifest.masterOutputs.masterVideoPath && existsSync(manifest.masterOutputs.masterVideoPath)) {
-            if (audioPath && existsSync(audioPath)) {
+            const hasMasteredAudioMix =
+              Boolean(manifest.masterOutputs.masterAudioPath && existsSync(manifest.masterOutputs.masterAudioPath));
+            if (hasMasteredAudioMix) {
+              // Master video output already includes the loudness-mastered 4-track stem mix; preserve it
+              await copyFile(manifest.masterOutputs.masterVideoPath, tempFinalVideoPath);
+            } else if (audioPath && existsSync(audioPath)) {
               if (await hasFfmpeg()) {
                 await runFfmpeg([
                   "-y",
@@ -1720,6 +1940,20 @@ export class EpisodicPipeline {
           aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
           scenes: scenesInput,
           outputDir: join(outputDir, "assembly"),
+          enableColorMatch: (effectiveConfig as any).enableColorMatch ?? true,
+          dialogueCues: audioRes?.unifiedTimeline?.dialogueTrack || [],
+          sfxCues: audioRes?.unifiedTimeline?.sfxTrack || [],
+          ambienceCues: audioRes?.unifiedTimeline?.ambienceTrack || [],
+          bgmTrack: audioRes?.unifiedTimeline?.bgmTrack,
+          subtitleCues: audioRes?.unifiedTimeline?.subtitleTrack || [],
+          pacingReport: pacingReport
+            ? {
+                overallAverageShotDurationSec: pacingReport.overallAverageShotDurationSec,
+                overallCutsPerMinute: pacingReport.overallCutsPerMinute,
+                pacingDynamismScore: pacingReport.pacingDynamismScore,
+                warnings: pacingReport.warnings,
+              }
+            : undefined,
         });
 
         const manifest = await hierarchicalAssembler.assemble();
@@ -1745,6 +1979,7 @@ export class EpisodicPipeline {
 
     // STEP 8: Commit Narrative Delta to Story Bible
     log.step(7, 8, "Ghi nhận tiến trình cốt truyện vào Story Bible SQLite");
+    await options.checkpoint?.();
     options.onProgress?.(7, 8, "Ghi nhận tiến trình cốt truyện vào Story Bible SQLite");
     let committedCanon = false;
 
@@ -1784,7 +2019,7 @@ export class EpisodicPipeline {
     } else {
       // Production path: Lifecycle record must exist and have status 'approved' (Requirement G.1 & G.2)
       if (!lifecycle) {
-        if (options.autoCommitCanon !== false && !options.requireApproval && unapprovedCanonShots.length === 0 && faceQaFailCount === 0) {
+        if (options.autoCommitCanon !== false && !options.requireApproval && unapprovedCanonShots.length === 0 && faceQaFailCount === 0 && faceQaUnavailableCount === 0 && auditPassed) {
           this.bible.setEpisodeLifecycle({
             seriesId,
             episodeNumber: script.episodeNumber,
@@ -1850,6 +2085,7 @@ export class EpisodicPipeline {
     await this.saveCheckpoint(outputDir, job);
 
     log.step(8, 8, `HOÀN THÀNH TẬP ${script.episodeNumber}!`);
+    await options.checkpoint?.();
     options.onProgress?.(8, 8, `HOÀN THÀNH TẬP ${script.episodeNumber}!`);
     return {
       episodeNumber: script.episodeNumber,
@@ -2153,6 +2389,7 @@ export class EpisodicPipeline {
     budgetCapUsd?: number;
     preserveExistingApproval?: boolean;
     forceApprove?: boolean;
+    autoGenerateMissingConceptArt?: boolean;
   }): Promise<{ shotId: string; takeId: string; videoPath: string; isApproved: boolean }> {
     const provider = options.dryRun ? "mock" : (options.provider || "mock");
     const epNumStr = String(options.episodeNumber).padStart(2, "0");
@@ -2223,6 +2460,55 @@ export class EpisodicPipeline {
 
     log.info(`  Đang sinh Take ${takeNumber}: "${prompt.slice(0, 60)}..."`);
 
+    let charFaceRef: string | undefined = undefined;
+    if (shot.characterId) {
+      charFaceRef = await this.resolveCharacterFaceReference(
+        shot.characterId,
+        options.seriesId,
+        options.autoGenerateMissingConceptArt ?? false
+      );
+    }
+
+    const parentScene = script.scenes.find((sc) => sc.shots.some((sh) => isEquivalentShot(sh.shotId, options.shotId)));
+    let secondaryCharFaceRef: string | undefined = undefined;
+    let secondaryCharId: string | undefined = undefined;
+    let regionalCond: any = undefined;
+
+    if (parentScene?.charactersPresent && parentScene.charactersPresent.length >= 2) {
+      const charIds = parentScene.charactersPresent.map((cp) =>
+        typeof cp === "string" ? cp : cp.characterId
+      );
+      const charAId = shot.characterId || charIds[0];
+      const charBId = charIds.find((id) => id !== charAId) || charIds[1];
+      if (charBId) {
+        secondaryCharId = charBId;
+        secondaryCharFaceRef = await this.resolveCharacterFaceReference(
+          charBId,
+          options.seriesId,
+          options.autoGenerateMissingConceptArt ?? false
+        );
+      }
+      const isMultiCharShot =
+        shot.shotType === "medium" ||
+        shot.shotType === "over_the_shoulder" ||
+        prompt.includes("Two-Shot") ||
+        prompt.includes("180") ||
+        prompt.includes("đối diện") ||
+        prompt.includes("hai nhân vật");
+
+      if (isMultiCharShot && charBId) {
+        const charARec = this.bible.getCharacter(charAId, options.seriesId);
+        const charBRec = this.bible.getCharacter(charBId, options.seriesId);
+        regionalCond = {
+          enabled: true,
+          characterAPrompt: `${charARec?.name || "Nhân vật 1"}: ${charARec?.visual_summary || "Ánh mắt sắc bén"}`,
+          characterBPrompt: `${charBRec?.name || "Nhân vật 2"}: ${charBRec?.visual_summary || "Biểu cảm tập trung"}`,
+          characterASide: "left",
+          characterBSide: "right",
+        };
+      }
+    }
+
     const spec: ShotExecutionSpec = {
       shotId: `${options.shotId}_take${takeNumStr}`,
       backend: provider,
@@ -2231,6 +2517,12 @@ export class EpisodicPipeline {
       prompt,
       aspectRatio: script.aspectRatio,
       referenceImage: shot.referenceImage,
+      characterReferenceImage: shot.characterId ? (charFaceRef || shot.referenceImage) : undefined,
+      characterId: shot.characterId,
+      secondaryCharacterReferenceImage: secondaryCharFaceRef,
+      secondaryCharacterId: secondaryCharId,
+      regionalConditioning: regionalCond,
+      applyFaceConsistency: Boolean(shot.characterId && (charFaceRef || shot.referenceImage)),
       destinationLocalPath: takeLocalPath,
     };
 
@@ -2415,6 +2707,9 @@ export function extractNarrativeDeltaFromScript(
     episodeNumber?: number;
     title?: string;
     logline?: string;
+    characterStatusUpdates?: Array<{ id: string; status: string; notes?: string; distinguishingMarks?: string }>;
+    propTransfers?: Array<{ propId?: string; prop_id?: string; newHolderId?: string; new_holder_id?: string; toCharacterId?: string; reason?: string }>;
+    newKnowledge?: Array<{ characterId?: string; character_id?: string; factKey?: string; fact_key?: string; notes?: string }>;
     scenes?: any[];
   },
   bible: BibleManager,
@@ -2470,8 +2765,8 @@ export function extractNarrativeDeltaFromScript(
 
   // 1. Detect dynamic character status changes (injuries, deaths, healing)
   const scriptStatusOverrides = new Map<string, { status: string; notes?: string }>();
-  if ((script as any).characterStatusUpdates && Array.isArray((script as any).characterStatusUpdates)) {
-    for (const u of (script as any).characterStatusUpdates) {
+  if (script.characterStatusUpdates && Array.isArray(script.characterStatusUpdates)) {
+    for (const u of script.characterStatusUpdates) {
       if (u.id && u.status) scriptStatusOverrides.set(u.id, u);
     }
   }
@@ -2572,12 +2867,12 @@ export function extractNarrativeDeltaFromScript(
     reason?: string;
   }> = [];
 
-  if ((script as any).propTransfers && Array.isArray((script as any).propTransfers)) {
-    for (const pt of (script as any).propTransfers) {
+  if (script.propTransfers && Array.isArray(script.propTransfers)) {
+    for (const pt of script.propTransfers) {
       const propId = pt.propId || pt.prop_id;
-      const newHolder = pt.newHolderId || pt.new_holder_id;
+      const newHolder = pt.toCharacterId || pt.newHolderId || pt.new_holder_id;
       if (propId && newHolder) {
-        const prop = bible.getKeyProp(propId);
+        const prop = targetSeriesId ? bible.getKeyProp(propId, targetSeriesId) : bible.getKeyProp(propId);
         if (prop) {
           propTransfers.push({
             prop_id: propId,
@@ -2599,12 +2894,12 @@ export function extractNarrativeDeltaFromScript(
     for (const scene of script.scenes || []) {
       // 2a. Support structured scene-level propTransfers or events (Finding 15)
       const sceneStructuredTransfers: any[] = [];
-      if (Array.isArray((scene as any).propTransfers)) {
-        sceneStructuredTransfers.push(...(scene as any).propTransfers);
+      if (Array.isArray(scene.propTransfers)) {
+        sceneStructuredTransfers.push(...scene.propTransfers);
       }
-      if (Array.isArray((scene as any).events)) {
-        for (const ev of (scene as any).events) {
-          if (ev?.type === "prop_transfer" || ev?.eventType === "prop_transfer") {
+      if (Array.isArray(scene.events)) {
+        for (const ev of scene.events) {
+          if ((ev as any)?.type === "prop_transfer" || (ev as any)?.eventType === "prop_transfer") {
             sceneStructuredTransfers.push(ev);
           }
         }
@@ -2613,9 +2908,11 @@ export function extractNarrativeDeltaFromScript(
       if (sceneStructuredTransfers.length > 0) {
         for (const st of sceneStructuredTransfers) {
           const pId = st.propId || st.prop_id;
-          const newHolder = st.newHolderId || st.new_holder_id || st.recipientId;
+          const newHolder = st.toCharacterId || st.newHolderId || st.new_holder_id || st.recipientId;
           if (pId && newHolder) {
-            const currentHolder = inMemoryPropHolder.get(pId) ?? (bible.getKeyProp(pId)?.current_holder_id ?? null);
+            const currentHolder =
+              inMemoryPropHolder.get(pId) ??
+              ((targetSeriesId ? bible.getKeyProp(pId, targetSeriesId) : bible.getKeyProp(pId))?.current_holder_id ?? null);
             if (newHolder !== currentHolder) {
               propTransfers.push({
                 prop_id: pId,
@@ -2657,23 +2954,25 @@ export function extractNarrativeDeltaFromScript(
 
         for (const pId of scene.propsPresent) {
           // If already transferred in structured events for this scene, skip heuristic
-          if (sceneStructuredTransfers.some((st: any) => (st.propId || st.prop_id) === pId)) {
+          if (sceneStructuredTransfers.some((st) => (st.propId || st.prop_id) === pId)) {
             continue;
           }
 
           // Use in-memory holder if we already tracked a transfer this episode,
           // otherwise fall back to the database value (pre-episode state).
+          const prop = targetSeriesId
+            ? bible.getKeyProp(pId, targetSeriesId)
+            : bible.getKeyProp(pId);
+
           let currentHolder: string | null;
           if (inMemoryPropHolder.has(pId)) {
             currentHolder = inMemoryPropHolder.get(pId) ?? null;
           } else {
-            const prop = bible.getKeyProp(pId);
             currentHolder = prop?.current_holder_id ?? null;
             inMemoryPropHolder.set(pId, currentHolder);
           }
 
           // Finding 6: Check for specific prop name mentions in shots to prevent false positives
-          const prop = bible.getKeyProp(pId);
           const pName = (prop?.name || "").toLowerCase();
           const isSinglePropInScene = scene.propsPresent.length === 1;
           const propMentionedInScene =
@@ -2695,10 +2994,32 @@ export function extractNarrativeDeltaFromScript(
               continue;
             }
 
+            const holderRec = currentHolder ? episodeCharCache.get(currentHolder) : null;
+            const holderName = (holderRec?.name || currentHolder || "").toLowerCase();
+            const isHolderAction =
+              holderName &&
+              (prompt.includes(`${holderName} cầm lấy`) ||
+                prompt.includes(`${holderName} cầm`) ||
+                prompt.includes(`${holderName} cất`) ||
+                prompt.includes(`${holderName} giữ`));
+
             for (const cId of presentIds) {
               if (cId === currentHolder) continue;
               const cRec = episodeCharCache.get(cId);
               const cName = (cRec?.name || cId).toLowerCase();
+
+              // If this is an action performed by the current holder, don't misattribute to another character
+              // unless there is an explicit transfer preposition towards cName
+              if (
+                isHolderAction &&
+                !prompt.includes(`cho ${cName}`) &&
+                !prompt.includes(`đến ${cName}`) &&
+                !prompt.includes(`trao`) &&
+                !prompt.includes(`giao`)
+              ) {
+                continue;
+              }
+
               if (
                 prompt.includes(`cho ${cName}`) ||
                 prompt.includes(`đến ${cName}`) ||
@@ -2723,7 +3044,34 @@ export function extractNarrativeDeltaFromScript(
               /(?:đưa).{0,30}(?:cho|tận tay|tay cho|qua cho)/i.test(scText);
 
             if (hasUnambiguousTransfer && (!isNonTransferPhrase || /(?:đưa|trao).{0,30}cho/i.test(scText))) {
-              recipientCharId = presentIds.find((cId: string) => cId !== currentHolder) || null;
+              // Priority 1: Match explicit recipient character name in scene text
+              for (const cId of presentIds) {
+                if (cId === currentHolder) continue;
+                const cRec = episodeCharCache.get(cId);
+                const cName = (cRec?.name || cId).toLowerCase();
+                const transferToRegex = new RegExp(
+                  `(?:cho|tận tay|tới|giao|trao|chuyển)\\s+(?:cho\\s+)?(?:anh|chị|cô|bác|chú|em)?\\s*${cName}`,
+                  "i"
+                );
+                if (
+                  transferToRegex.test(scText) ||
+                  scText.includes(`cho ${cName}`) ||
+                  scText.includes(`tận tay ${cName}`) ||
+                  scText.includes(`${cName} nhận`) ||
+                  scText.includes(`${cName} cầm`)
+                ) {
+                  recipientCharId = cId;
+                  break;
+                }
+              }
+
+              // Priority 2: If no explicit name match, only attribute if there is exactly ONE other character in the scene
+              if (!recipientCharId) {
+                const otherPresent = presentIds.filter((cId: string) => cId !== currentHolder);
+                if (otherPresent.length === 1) {
+                  recipientCharId = otherPresent[0];
+                }
+              }
             }
           }
 
@@ -2744,8 +3092,8 @@ export function extractNarrativeDeltaFromScript(
 
   // 3. Detect new character knowledge / revealed secrets
   const newKnowledge: Array<{ character_id: string; fact_key: string; notes?: string }> = [];
-  if ((script as any).newKnowledge && Array.isArray((script as any).newKnowledge)) {
-    for (const k of (script as any).newKnowledge) {
+  if (script.newKnowledge && Array.isArray(script.newKnowledge)) {
+    for (const k of script.newKnowledge) {
       const charId = k.characterId || k.character_id;
       const factKey = k.factKey || k.fact_key;
       if (charId && factKey) {

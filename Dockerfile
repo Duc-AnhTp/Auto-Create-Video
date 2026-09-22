@@ -23,6 +23,7 @@ RUN npm ci --include=dev
 
 # Copy application source
 COPY . .
+RUN npm run build
 
 # Ensure output, data, and asset directories exist
 RUN mkdir -p output data assets/characters assets/locations assets/bgm
@@ -35,4 +36,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:3456/health || exit 1
 
 # Default launch command: Full-Flow Web Studio
-CMD ["npm", "run", "studio"]
+CMD ["node", "dist/cli.js", "series:studio", "--host", "0.0.0.0", "--no-open"]

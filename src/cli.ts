@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./utils/media-runtime.js";
 import { config } from "dotenv";
 config({ path: ".env.local" });
 config({ path: ".env" });

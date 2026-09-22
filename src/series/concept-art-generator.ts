@@ -32,6 +32,19 @@ export interface ConceptArtResult {
   updatedBible: boolean;
 }
 
+export interface CharacterTurnaroundPackResult {
+  characterId: string;
+  seriesId: string;
+  views: {
+    front: ConceptArtResult;
+    threeQuarter: ConceptArtResult;
+    profile: ConceptArtResult;
+    fullBody: ConceptArtResult;
+  };
+  faceEmbedding: number[];
+  updatedBible: boolean;
+}
+
 /**
  * Derives a deterministic 512-D normalized unit vector from a string seed (e.g. character ID + name).
  * Compatible with ArcFace / FaceNet 512-D face embedding specifications.
@@ -105,7 +118,7 @@ export class ConceptArtGenerator {
     }
 
     const seriesMeta = this.bible.getSeriesMetadata(seriesId);
-    const char = this.bible.getCharacter(characterId);
+    const char = this.bible.getCharacter(characterId, seriesId);
     if (!char) {
       throw new Error(`[CONCEPT ART] Nhân vật '${characterId}' không tồn tại trong Series [${seriesId}].`);
     }
@@ -129,10 +142,11 @@ export class ConceptArtGenerator {
     // 4. Extract or derive 512-D Face Feature Embedding
     const faceEmbedding = generateSyntheticFaceEmbedding(`${seriesId}_${characterId}_${char.name}`);
 
-    // 5. Update Story Bible character record with the reference image
+    // 5. Update Story Bible character record with the reference image and biometric embedding
     this.bible.upsertCharacter({
       ...char,
       face_reference_image: imagePath,
+      face_embedding_json: JSON.stringify(faceEmbedding),
     });
 
     const fileStat = await stat(imagePath);
@@ -151,6 +165,117 @@ export class ConceptArtGenerator {
   }
 
   /**
+   * Generates a 4-view character turnaround asset pack (front, 3/4, profile, full-body).
+   * Permanently anchors multi-angle facial and wardrobe consistency across all camera perspectives.
+   */
+  public async generateCharacterTurnaroundPack(
+    options: ConceptArtOptions
+  ): Promise<CharacterTurnaroundPackResult> {
+    const { seriesId, characterId } = options;
+    if (!characterId) {
+      throw new Error("[CONCEPT ART] Thiếu characterId để tạo character turnaround pack.");
+    }
+
+    const seriesMeta = this.bible.getSeriesMetadata(seriesId);
+    const char = this.bible.getCharacter(characterId, seriesId);
+    if (!char) {
+      throw new Error(`[CONCEPT ART] Nhân vật '${characterId}' không tồn tại trong Series [${seriesId}].`);
+    }
+
+    const seriesStyle = seriesMeta?.visual_style || "Cinematic 35mm, photorealistic 8k, dramatic lighting";
+    const charSummary = char.visual_summary || `Character ${char.name}`;
+    const marks = char.distinguishing_marks ? `, distinguishing marks: ${char.distinguishing_marks}` : "";
+    const destDir = options.outputDir || join("assets", "characters", seriesId);
+    await mkdir(destDir, { recursive: true });
+
+    // 1. Front View (0° Straight On Portrait)
+    const frontPrompt = `${seriesStyle}. Full frontal portrait (0-degree straight-on view) of ${char.name}, ${charSummary}${marks}, direct eye contact, neutral expression, crisp lighting, high facial detail.`;
+    const frontPath = join(destDir, `${characterId}_turnaround_front.jpg`);
+    const frontProvider = await this.generateArtWithProvider(frontPrompt, frontPath, `${char.name} Front`, options);
+    const frontStat = await stat(frontPath);
+    const frontResult: ConceptArtResult = {
+      entityType: "character",
+      entityId: characterId,
+      seriesId,
+      prompt: frontPrompt,
+      imagePath: frontPath,
+      fileSizeBytes: frontStat.size,
+      providerUsed: frontProvider,
+      updatedBible: false,
+    };
+
+    // 2. Three-Quarter View (45° Perspective)
+    const tqPrompt = `${seriesStyle}. Three-quarter angle portrait (45-degree angle view) of ${char.name}, ${charSummary}${marks}, defined jawline and cheekbones, cinematic three-point lighting.`;
+    const tqPath = join(destDir, `${characterId}_turnaround_three_quarter.jpg`);
+    const tqProvider = await this.generateArtWithProvider(tqPrompt, tqPath, `${char.name} 3/4`, options);
+    const tqStat = await stat(tqPath);
+    const tqResult: ConceptArtResult = {
+      entityType: "character",
+      entityId: characterId,
+      seriesId,
+      prompt: tqPrompt,
+      imagePath: tqPath,
+      fileSizeBytes: tqStat.size,
+      providerUsed: tqProvider,
+      updatedBible: false,
+    };
+
+    // 3. Profile View (90° Side Silhouette)
+    const profilePrompt = `${seriesStyle}. Side profile shot (90-degree lateral view) of ${char.name}, ${charSummary}${marks}, sharp nose bridge and silhouette, studio rim light.`;
+    const profilePath = join(destDir, `${characterId}_turnaround_profile.jpg`);
+    const profileProvider = await this.generateArtWithProvider(profilePrompt, profilePath, `${char.name} Profile`, options);
+    const profileStat = await stat(profilePath);
+    const profileResult: ConceptArtResult = {
+      entityType: "character",
+      entityId: characterId,
+      seriesId,
+      prompt: profilePrompt,
+      imagePath: profilePath,
+      fileSizeBytes: profileStat.size,
+      providerUsed: profileProvider,
+      updatedBible: false,
+    };
+
+    // 4. Full-Body Wardrobe View (Full Costume & Posture)
+    const fullBodyPrompt = `${seriesStyle}. Full body shot head-to-toe of ${char.name}, ${charSummary}${marks}, complete costume wardrobe and footwear, natural standing heroic posture.`;
+    const fullBodyPath = join(destDir, `${characterId}_turnaround_full_body.jpg`);
+    const fullBodyProvider = await this.generateArtWithProvider(fullBodyPrompt, fullBodyPath, `${char.name} Full Body`, options);
+    const fullBodyStat = await stat(fullBodyPath);
+    const fullBodyResult: ConceptArtResult = {
+      entityType: "character",
+      entityId: characterId,
+      seriesId,
+      prompt: fullBodyPrompt,
+      imagePath: fullBodyPath,
+      fileSizeBytes: fullBodyStat.size,
+      providerUsed: fullBodyProvider,
+      updatedBible: false,
+    };
+
+    // 5. Generate unit face embedding and update Story Bible
+    const faceEmbedding = generateSyntheticFaceEmbedding(`${seriesId}_${characterId}_${char.name}`);
+    this.bible.upsertCharacter({
+      ...char,
+      face_reference_image: frontPath,
+      character_sheet_path: frontPath,
+      face_embedding_json: JSON.stringify(faceEmbedding),
+    });
+
+    return {
+      characterId,
+      seriesId,
+      views: {
+        front: frontResult,
+        threeQuarter: tqResult,
+        profile: profileResult,
+        fullBody: fullBodyResult,
+      },
+      faceEmbedding,
+      updatedBible: true,
+    };
+  }
+
+  /**
    * Generates concept art for a specific location and updates Story Bible.
    */
   public async generateLocationConceptArt(options: ConceptArtOptions): Promise<ConceptArtResult> {
@@ -160,7 +285,7 @@ export class ConceptArtGenerator {
     }
 
     const seriesMeta = this.bible.getSeriesMetadata(seriesId);
-    const loc = this.bible.getLocation(locationId);
+    const loc = this.bible.getLocation(locationId, seriesId);
     if (!loc) {
       throw new Error(`[CONCEPT ART] Bối cảnh '${locationId}' không tồn tại trong Series [${seriesId}].`);
     }
@@ -241,16 +366,19 @@ export class ConceptArtGenerator {
       throw new Error(
         "[CONCEPT ART] Cloud provider chưa được cấu hình. Đặt allowMock = true để dùng mock trong môi trường phát triển."
       );
-    } else {
-      // provider === 'mock' (or any unrecognized value falls through here).
+    } else if (provider === "mock") {
       // P0 Provenance Gate: allowMock must be explicitly true; undefined or false both block mock generation.
       if (!options.allowMock) {
         throw new Error(
-          `[CONCEPT ART] Provider '${provider}' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
+          `[CONCEPT ART] Provider 'mock' không tạo ra media thực. Đặt allowMock = true để chấp nhận kết quả mock, hoặc cấu hình provider thực (local_comfyui hoặc cloud).`
         );
       }
       await this.generateMockArt(label, imagePath);
       return "mock";
+    } else {
+      throw new Error(
+        `[CONCEPT ART] Provider không hợp lệ: '${provider}'. Các provider được hỗ trợ: 'local_comfyui', 'cloud', 'mock'.`
+      );
     }
   }
 

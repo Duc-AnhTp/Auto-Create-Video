@@ -384,4 +384,93 @@ describe("BibleManager (Phân Hệ I: Story Bible Engine)", () => {
     expect(resBob.allowed).toBe(false);
     expect(resBob.reason).toContain("locked by worker 'worker_alice'");
   });
+
+  it("safely handles character personality_traits deserialization even when empty or invalid", () => {
+    // 1. Array of traits
+    manager.upsertCharacter({
+      id: "char_safe_1",
+      name: "An",
+      role: "supporting",
+      visual_summary: "Cô gái trẻ",
+      personality_traits: ["táo bạo", "thông minh"],
+      status: "alive",
+    });
+    const char1 = manager.getCharacter("char_safe_1");
+    expect(char1?.personality_traits).toEqual(["táo bạo", "thông minh"]);
+
+    // 2. Empty string traits (should not throw SyntaxError)
+    manager.upsertCharacter({
+      id: "char_safe_2",
+      name: "Bình",
+      role: "supporting",
+      visual_summary: "Chàng trai",
+      personality_traits: [] as any,
+      status: "alive",
+    });
+    const char2 = manager.getCharacter("char_safe_2");
+    expect(Array.isArray(char2?.personality_traits)).toBe(true);
+  });
+
+  it("filters key props, locations and negative constraints strictly by seriesId", () => {
+    const seriesA = "series_alpha";
+    const seriesB = "series_beta";
+
+    manager.upsertSeriesMetadata({
+      id: seriesA,
+      title: "Series Alpha",
+      visual_style: "Sci-Fi",
+      aspect_ratio: "16:9",
+      fps: 24,
+      created_at: new Date().toISOString(),
+    });
+
+    manager.upsertSeriesMetadata({
+      id: seriesB,
+      title: "Series Beta",
+      visual_style: "Fantasy",
+      aspect_ratio: "16:9",
+      fps: 24,
+      created_at: new Date().toISOString(),
+    });
+
+    // Add prop in series A
+    manager.upsertKeyProp({
+      id: "prop_shared_id",
+      series_id: seriesA,
+      name: "Súng Laser Alpha",
+      visual_summary: "Súng công nghệ cao",
+      status: "destroyed",
+    });
+
+    // Add location in series B
+    manager.upsertLocation({
+      id: "loc_shared_id",
+      series_id: seriesB,
+      name: "Lâu Đài Phép Thuật",
+      visual_summary: "Lâu đài bay",
+    });
+
+    // Retrieve prop with seriesId check
+    const propA = manager.getKeyProp("prop_shared_id", seriesA);
+    expect(propA).toBeDefined();
+    expect(propA?.name).toBe("Súng Laser Alpha");
+
+    const propB = manager.getKeyProp("prop_shared_id", seriesB);
+    expect(propB).toBeNull();
+
+    // Retrieve location with seriesId check
+    const locB = manager.getLocation("loc_shared_id", seriesB);
+    expect(locB).toBeDefined();
+    expect(locB?.name).toBe("Lâu Đài Phép Thuật");
+
+    const locA = manager.getLocation("loc_shared_id", seriesA);
+    expect(locA).toBeNull();
+
+    // Verify negative constraints isolation
+    const constraintsA = manager.getNegativeConstraints(1, seriesA);
+    expect(constraintsA.some((c) => c.includes("Súng Laser Alpha"))).toBe(true);
+
+    const constraintsB = manager.getNegativeConstraints(1, seriesB);
+    expect(constraintsB.some((c) => c.includes("Súng Laser Alpha"))).toBe(false);
+  });
 });

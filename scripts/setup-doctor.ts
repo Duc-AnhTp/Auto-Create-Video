@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
-import { existsSync, copyFileSync } from "node:fs";
+import "../src/utils/media-runtime.js";
+import { existsSync, copyFileSync, statfsSync } from "node:fs";
 import { join } from "node:path";
 import axios from "axios";
 
@@ -23,7 +24,7 @@ async function runDoctor() {
   // 1. Node.js Version Check
   const nodeVer = process.versions.node;
   const majorVer = parseInt(nodeVer.split(".")[0], 10);
-  if (majorVer >= 20) {
+  if (majorVer >= 22) {
     results.push({
       name: "Node.js Runtime",
       status: "pass",
@@ -33,8 +34,8 @@ async function runDoctor() {
     results.push({
       name: "Node.js Runtime",
       status: "fail",
-      detail: `v${nodeVer} (Yêu cầu Node >= 20)`,
-      recommendation: "Cập nhật Node.js lên v20 hoặc v22 LTS: https://nodejs.org",
+      detail: `v${nodeVer} (Yêu cầu Node >= 22)`,
+      recommendation: "Cập nhật Node.js lên v22 hoặc v24 LTS: https://nodejs.org",
     });
   }
 
@@ -52,7 +53,7 @@ async function runDoctor() {
         name: "Story Bible SQLite",
         status: "fail",
         detail: "Không tìm thấy node:sqlite DatabaseSync",
-        recommendation: "Hãy sử dụng Node.js 20.x hoặc 22.x LTS chính thức.",
+        recommendation: "Hãy sử dụng Node.js 22.x hoặc 24.x LTS chính thức.",
       });
     }
   } catch (err: any) {
@@ -84,7 +85,7 @@ async function runDoctor() {
     results.push({
       name: "FFmpeg Video Engine",
       status: "warn",
-      detail: "Chưa cài đặt FFmpeg trên máy (Hệ thống sẽ chạy ở chế độ Mock Renderer)",
+      detail: "Chưa có FFmpeg: chưa thể kiểm chứng hoặc dựng media thật.",
       recommendation: `Cài đặt FFmpeg bằng 1 lệnh: ${installCmd}`,
     });
   }
@@ -157,11 +158,16 @@ async function runDoctor() {
     results.push({
       name: "ComfyUI / Local GPU",
       status: "warn",
-      detail: `ComfyUI không phản hồi tại ${comfyHost} (Sẽ dùng Mock T2I/T2V hoặc Cloud API)`,
+      detail: `ComfyUI không phản hồi tại ${comfyHost}; chọn provider khả dụng trước khi chạy.`,
       recommendation: "Bật ComfyUI nếu muốn kết xuất video cục bộ trên GPU cá nhân.",
     });
   }
 
+  const disk = statfsSync(process.cwd());
+  const freeGiB = Number(disk.bavail) * Number(disk.bsize) / 1024 ** 3;
+  results.push({ name: "Dung lượng ổ đĩa", status: freeGiB < 2 ? "fail" : freeGiB < 10 ? "warn" : "pass", detail: freeGiB.toFixed(1) + " GiB còn trống", recommendation: freeGiB < 10 ? "Dành ít nhất 10 GiB cho media và bản dựng thử." : undefined });
+  const vietnameseFont = process.platform === "win32" ? existsSync("C:/Windows/Fonts/arial.ttf") : existsSync("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+  results.push({ name: "Font tiếng Việt", status: vietnameseFont ? "pass" : "warn", detail: vietnameseFont ? "Có font hệ thống hỗ trợ Latin mở rộng" : "Chưa xác minh font; cần kiểm tra phụ đề trên bản dựng" });
   // Print Report
   console.log("┌───────────────────────────────────┬────────┬────────────────────────────────────────────────────────┐");
   console.log("│ HẠNG MỤC KIỂM TRA                 │ TRẠNG  │ CHI TIẾT                                               │");
@@ -189,7 +195,7 @@ async function runDoctor() {
     console.error("❌ Một số yêu cầu bắt buộc chưa đạt. Vui lòng khắc phục theo hướng dẫn trên.");
     process.exit(1);
   } else {
-    console.log("🎉 HỆ THỐNG ĐÃ SẴN SÀNG ĐỂ LÀM PHIM VÀ SẢN XUẤT VIDEO!");
+    console.log("🎉 Chẩn đoán hoàn tất. Provider và chất lượng phim thật cần được kiểm chứng riêng.");
   }
 }
 

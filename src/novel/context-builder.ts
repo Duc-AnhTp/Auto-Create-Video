@@ -7,6 +7,18 @@ import type {
   StoryThreadRecord,
   KnowledgeStateRecord,
 } from "../bible/bible-manager.js";
+import {
+  evaluateChekhovGuns,
+  generateChekhovWarningsPrompt,
+  type ChekhovEvaluationReport,
+} from "./chekhov-tracker.js";
+
+export interface ContinuityMemoryWindow {
+  previousEpisodeNumber?: number;
+  previousEpisodeTitle?: string;
+  previousEpisodeLogline?: string;
+  previousMajorEvents: string[];
+}
 
 export interface SourceSpanContext {
   unitId: string;
@@ -29,6 +41,9 @@ export interface EpisodeGenerationContext {
   plannedEpisode: PlannedEpisodeRecord | null;
   stateIn: Record<string, any>;
   plannedStateOut: Record<string, any>;
+  continuityMemory?: ContinuityMemoryWindow;
+  chekhovReport?: ChekhovEvaluationReport;
+  chekhovWarningsPrompt?: string;
   unitSummaries?: UnitSummaryContext[];
   sourceSpans: SourceSpanContext[];
   mandatoryBeats: StoryBeatRecord[];
@@ -257,7 +272,25 @@ export class ContextBuilder {
     // 11. Negative Constraints from Bible
     const negativeConstraints = bible.getNegativeConstraints(epNum);
 
-    // 12. Assemble structured formatted prompt
+    // 12. Sliding-Window Continuity Memory (Macro Prologue from Episode N-1)
+    let continuityMemory: ContinuityMemoryWindow | undefined = undefined;
+    if (epNum > 1) {
+      const prevSummary = bible.getEpisodeSummary(epNum - 1, seriesId);
+      if (prevSummary) {
+        continuityMemory = {
+          previousEpisodeNumber: epNum - 1,
+          previousEpisodeTitle: prevSummary.title,
+          previousEpisodeLogline: prevSummary.logline,
+          previousMajorEvents: prevSummary.major_events || [],
+        };
+      }
+    }
+
+    // 13. Chekhov's Gun & Narrative Foreshadowing Evaluation
+    const chekhovReport = evaluateChekhovGuns(bible, seriesId, epNum);
+    const chekhovWarningsPrompt = generateChekhovWarningsPrompt(chekhovReport);
+
+    // 14. Assemble structured formatted prompt
     const formattedPrompt = ContextBuilder.formatStructuredPrompt({
       seriesId,
       episodeNumber: epNum,
@@ -265,6 +298,8 @@ export class ContextBuilder {
       plannedEpisode,
       stateIn,
       plannedStateOut,
+      continuityMemory,
+      chekhovWarningsPrompt,
       unitSummaries,
       sourceSpans,
       mandatoryBeats,
@@ -283,6 +318,9 @@ export class ContextBuilder {
       plannedEpisode,
       stateIn,
       plannedStateOut,
+      continuityMemory,
+      chekhovReport,
+      chekhovWarningsPrompt,
       unitSummaries,
       sourceSpans,
       mandatoryBeats,
@@ -420,6 +458,8 @@ export class ContextBuilder {
     plannedEpisode: PlannedEpisodeRecord | null;
     stateIn: Record<string, any>;
     plannedStateOut: Record<string, any>;
+    continuityMemory?: ContinuityMemoryWindow;
+    chekhovWarningsPrompt?: string;
     unitSummaries?: UnitSummaryContext[];
     sourceSpans: SourceSpanContext[];
     mandatoryBeats: StoryBeatRecord[];
@@ -438,6 +478,25 @@ export class ContextBuilder {
     }
     if (ctx.seriesMetadata?.aspect_ratio) {
       lines.push(`Tỷ lệ khung hình: ${ctx.seriesMetadata.aspect_ratio}`);
+    }
+
+    // Sliding-Window Continuity Memory from Episode N-1
+    if (ctx.continuityMemory) {
+      lines.push("\n[CỬA SỔ LIÊN TỤC TẬP TRƯỚC (SLIDING WINDOW CONTINUITY MEMORY)]");
+      lines.push(
+        `Tập trước (Tập ${ctx.continuityMemory.previousEpisodeNumber}): ${ctx.continuityMemory.previousEpisodeTitle || ""}`
+      );
+      if (ctx.continuityMemory.previousEpisodeLogline) {
+        lines.push(`Logline tập trước: ${ctx.continuityMemory.previousEpisodeLogline}`);
+      }
+      if (ctx.continuityMemory.previousMajorEvents.length > 0) {
+        lines.push(`Các biến cố chính vừa diễn ra: ${ctx.continuityMemory.previousMajorEvents.join("; ")}`);
+      }
+    }
+
+    // Chekhov's Gun / Dormant Plant Warnings
+    if (ctx.chekhovWarningsPrompt) {
+      lines.push("\n" + ctx.chekhovWarningsPrompt);
     }
 
     // Planned Episode Arc

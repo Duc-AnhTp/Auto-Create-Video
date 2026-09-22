@@ -152,6 +152,7 @@ THOẠI: Minh: Đã quá muộn rồi.
     expect(shot1.visualPrompt).toContain("Quán Bar Hẻm 9");
     expect(shot1.visualPrompt).toContain("Vết sẹo mảnh cắt ngang lông mày trái");
     expect(shot1.visualPrompt).toContain("Áo măng tô dạ");
+    expect(shot1.visualPrompt).toContain("85mm anamorphic portrait lens");
     expect(shot1.referenceImage).toBe("assets/characters/minh_face.jpg");
 
     // Dialogue is assigned to char_minh with correct voiceProfileId
@@ -196,5 +197,29 @@ THOẠI: Minh: Tôi đã trở lại.
     `;
 
     await expect(normalizeScript(rawText, bible)).rejects.toThrow(ContinuityError);
+  });
+
+  it("extracts acting instructions in [...] and (...) and strips them cleanly from subtitle and tts text", () => {
+    const rawText = `
+TIÊU ĐỀ: Đêm Hành Động
+TẬP: 1
+
+CẢNH 1: Hẻm Tối - Đêm
+[SHOT 1: CẬN CẢNH]
+HÌNH ẢNH: Minh nấp sau bức tường neon
+NHÂN VẬT CHÍNH: Minh
+THỜI LƯỢNG: 4s
+THOẠI: Minh [thì thầm, lo lắng]: "Đừng cử động, chúng đang ở ngay phía sau."
+    `;
+
+    const intermediate = parseRawScreenplay(rawText);
+    const enriched = enrichWithBibleContext(intermediate, bible);
+    const shot = enriched.scenes[0].shots[0];
+    const dialogue = shot.dialogue!;
+
+    expect(dialogue.actingInstruction).toBe("thì thầm, lo lắng");
+    expect(dialogue.subtitleText).toBe("Đừng cử động, chúng đang ở ngay phía sau.");
+    expect(dialogue.text).not.toContain("thì thầm");
+    expect(dialogue.ttsText).not.toContain("lo lắng");
   });
 });

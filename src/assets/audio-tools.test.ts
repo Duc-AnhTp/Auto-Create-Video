@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
-import { getDurationSec, concatWithSilence, mixBgmWithDucking } from "./audio-tools.js";
+import { getDurationSec, concatWithSilence, mixBgmWithDucking, masterAudioEbuR128 } from "./audio-tools.js";
 
 function hasBinary(bin: string): boolean {
   try {
@@ -75,5 +75,43 @@ describe.skipIf(!hasFfmpeg)("mixBgmWithDucking", () => {
     // Output duration should match sample-audio-2 length (~3s)
     expect(d).toBeGreaterThan(2.8);
     expect(d).toBeLessThan(3.4);
+  });
+});
+
+describe.skipIf(!hasFfmpeg)("masterAudioEbuR128", () => {
+  it("normalizes audio to EBU R128 loudness standards (-14 LUFS)", async () => {
+    const out = join(tmp, "mastered-audio.mp3");
+    await masterAudioEbuR128(
+      "tests/fixtures/sample-audio-1.mp3",
+      out,
+      { targetLufs: -14.0, truePeak: -1.0 }
+    );
+    expect(existsSync(out)).toBe(true);
+    const d = await getDurationSec(out);
+    expect(d).toBeGreaterThan(1.8);
+    expect(d).toBeLessThan(2.3);
+  });
+
+  it("can output uncompressed broadcast WAV with EBU R128", async () => {
+    const out = join(tmp, "mastered-broadcast.wav");
+    await masterAudioEbuR128(
+      "tests/fixtures/sample-audio-1.mp3",
+      out,
+      { targetLufs: -23.0, truePeak: -1.0 }
+    );
+    expect(existsSync(out)).toBe(true);
+    const d = await getDurationSec(out);
+    expect(d).toBeGreaterThan(1.8);
+    expect(d).toBeLessThan(2.3);
+  });
+
+  it("safely masters audio in-place when inputPath and outPath are identical", async () => {
+    const inPlace = join(tmp, "inplace-master.mp3");
+    copyFileSync("tests/fixtures/sample-audio-1.mp3", inPlace);
+    await masterAudioEbuR128(inPlace, inPlace, { targetLufs: -14.0, truePeak: -1.0 });
+    expect(existsSync(inPlace)).toBe(true);
+    const d = await getDurationSec(inPlace);
+    expect(d).toBeGreaterThan(1.8);
+    expect(d).toBeLessThan(2.3);
   });
 });

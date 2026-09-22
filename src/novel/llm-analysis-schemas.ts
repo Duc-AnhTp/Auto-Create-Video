@@ -55,17 +55,30 @@ export const LlmExtractedKnowledgeStateSchema = z.object({
   characterName: z.string().min(1),
   factKey: z.string().min(1),
   factDescription: z.string().min(1),
-  revealedAtBeatIndex: z.number().optional(),
+  revealedAtBeatIndex: z.number().nullable().optional(),
   isSecret: z.boolean().default(false),
 });
 
 export type LlmExtractedKnowledgeState = z.infer<typeof LlmExtractedKnowledgeStateSchema>;
+
+export const LlmExtractedChekhovGunSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(["prop", "secret", "promise", "threat", "mystery"]).default("prop"),
+  description: z.string().min(1),
+  plantedInBeatIndex: z.number().nullable().optional(),
+  payoffStatus: z.enum(["planted", "active", "resolved", "abandoned"]).default("planted"),
+  payoffBeatIndex: z.number().nullable().optional(),
+  confidenceScore: z.number().min(0).max(1).default(0.85),
+});
+
+export type LlmExtractedChekhovGun = z.infer<typeof LlmExtractedChekhovGunSchema>;
 
 export const LlmStoryAnalysisOutputSchema = z.object({
   characters: z.array(LlmExtractedCharacterSchema).default([]),
   beats: z.array(LlmExtractedBeatSchema).default([]),
   threads: z.array(LlmExtractedThreadSchema).default([]),
   knowledgeStates: z.array(LlmExtractedKnowledgeStateSchema).default([]),
+  chekhovGuns: z.array(LlmExtractedChekhovGunSchema).default([]),
 });
 
 export type LlmStoryAnalysisOutput = z.infer<typeof LlmStoryAnalysisOutputSchema>;

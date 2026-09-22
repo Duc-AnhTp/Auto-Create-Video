@@ -207,6 +207,7 @@ describe("Phase 3 Verification: Video Gateway CDN Downloader, Asset Resolver & F
       });
 
       bible.upsertCharacter({
+      series_id: "cyber-saigon",
         id: "minh",
         name: "Minh",
         role: "protagonist",

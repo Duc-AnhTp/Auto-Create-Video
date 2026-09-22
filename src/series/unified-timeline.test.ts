@@ -11,6 +11,8 @@ import {
   DialogueOverflowError,
   exportToSrt,
   exportToVtt,
+  formatSrtTimestamp,
+  formatVttTimestamp,
 } from "./timeline-schema.js";
 import { TimelineScheduler } from "./timeline-scheduler.js";
 import { AudioAssembler } from "./audio-assembler.js";
@@ -381,6 +383,20 @@ describe("Unified Timeline Engine & Frame-Locked Multi-Track Scheduling", () => 
     const vtt = exportToVtt(timeline.subtitleTrack);
     expect(vtt).toContain("<v Minh>Giá con chip này: đúng $500.");
     expect(vtt).not.toContain("năm trăm đô la");
+  });
+
+  it("safely formats SRT and VTT timestamps preventing millisecond 1000 overflow", () => {
+    // 1.9998 seconds should round to 2.000, not 00:00:01,1000
+    expect(formatSrtTimestamp(1.9998)).toBe("00:00:02,000");
+    expect(formatVttTimestamp(1.9998)).toBe("00:00:02.000");
+
+    // Exact milliseconds
+    expect(formatSrtTimestamp(65.123)).toBe("00:01:05,123");
+    expect(formatVttTimestamp(65.123)).toBe("00:01:05.123");
+
+    // Negative or NaN defensive guard
+    expect(formatSrtTimestamp(-10)).toBe("00:00:00,000");
+    expect(formatVttTimestamp(-10)).toBe("00:00:00.000");
   });
 
   // ── Criterion 5: Multi-Track Audio Stems Assembly & File Export ───────────

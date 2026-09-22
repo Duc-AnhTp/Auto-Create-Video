@@ -22,7 +22,7 @@ export interface NleExportResult {
 /**
  * Escapes XML special characters.
  */
-function escapeXml(str: any): string {
+function escapeXml(str: unknown): string {
   if (str === undefined || str === null) return "";
   return String(str)
     .replace(/&/g, "&amp;")
@@ -30,6 +30,18 @@ function escapeXml(str: any): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+/**
+ * Convenience wrapper exporting FCP7 XML directly from a UnifiedTimeline.
+ */
+export function exportFcp7Xml(
+  timeline: UnifiedTimeline,
+  sequenceName?: string,
+  width?: number,
+  height?: number
+): string {
+  return generateFcp7Xml({ timeline, sequenceName, width, height });
 }
 
 /**
@@ -48,8 +60,8 @@ export function generateFcp7Xml(options: {
   const seqName = escapeXml(options.sequenceName || `Episode_${timeline.episodeNumber}_Master`);
   const totalFrames = secToFrame(timeline.targetTotalDurationSec, fps);
 
-  // Build Video Track Items
-  const videoClipItems: string[] = [];
+  // Build Video Track Items (with bucketing for multi-track collision prevention during crossfades)
+  const videoBuckets: { cursorFrame: number; clipItems: string[] }[] = [];
   let fileCounter = 1;
   let clipCounter = 1;
 
@@ -63,11 +75,47 @@ export function generateFcp7Xml(options: {
     const inFrame = secToFrame(trimInSec, fps);
     const outFrame = inFrame + shotDurationFrames;
 
+    const rawMediaDurationFrames =
+      shot.fileDurationFrames ??
+      (shot.fileDurationSec !== undefined
+        ? secToFrame(shot.fileDurationSec, fps)
+        : undefined);
+    const effectiveMediaDuration = Math.max(
+      rawMediaDurationFrames ?? (outFrame + secToFrame(shot.trimEndSec ?? 0, fps)),
+      outFrame
+    );
+
     const clipPath = shot.approvedClipPath || `shots/${shot.shotId}.mp4`;
     const absPath = resolve(clipPath);
     const fileUrl = pathToFileURL(absPath).href;
 
-    videoClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
+    let bucket = videoBuckets.find((b) => b.cursorFrame <= shotStartFrame);
+    if (!bucket) {
+      bucket = { cursorFrame: 0, clipItems: [] };
+      videoBuckets.push(bucket);
+    }
+
+    let markerColor = "Green";
+    let markerComment = "Approved Take";
+    if ((shot as any).priority === "hero") {
+      markerColor = "Cyan";
+      markerComment = "Hero Shot - High Priority";
+    } else if (shot.shotType === "action") {
+      markerColor = "Orange";
+      markerComment = "Action Sequence";
+    } else if (shot.shotType === "establishing") {
+      markerColor = "Purple";
+      markerComment = "Establishing Geography";
+    } else if (shot.shotType === "close_up" || shot.shotType === "extreme_close_up") {
+      markerColor = "Blue";
+      markerComment = "Close-up Reaction";
+    }
+
+    if ((shot as any).cameraMovement) {
+      markerComment += ` | Camera: ${(shot as any).cameraMovement}`;
+    }
+
+    bucket.clipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
           <name>${escapeXml(shot.shotId)}</name>
           <duration>${shotDurationFrames}</duration>
           <rate>
@@ -78,6 +126,13 @@ export function generateFcp7Xml(options: {
           <end>${shotEndFrame}</end>
           <in>${inFrame}</in>
           <out>${outFrame}</out>
+          <marker>
+            <name>${escapeXml(shot.shotId)}</name>
+            <comment>${escapeXml(markerComment)}</comment>
+            <color>${markerColor}</color>
+            <in>${inFrame}</in>
+            <out>${inFrame + Math.min(fps, shotDurationFrames)}</out>
+          </marker>
           <file id="file-${fileCounter++}">
             <name>${escapeXml(shot.shotId)}.mp4</name>
             <pathurl>${fileUrl}</pathurl>
@@ -85,7 +140,7 @@ export function generateFcp7Xml(options: {
               <timebase>${fps}</timebase>
               <ntsc>FALSE</ntsc>
             </rate>
-            <duration>${outFrame}</duration>
+            <duration>${effectiveMediaDuration}</duration>
             <media>
               <video>
                 <samplecharacteristics>
@@ -96,19 +151,28 @@ export function generateFcp7Xml(options: {
             </media>
           </file>
         </clipitem>`);
+    bucket.cursorFrame = shotEndFrame;
   }
 
   // Build Dialogue Track Items
   const dialogueClipItems: string[] = [];
   for (const dia of timeline.dialogueTrack) {
     const startFrame = dia.startFrame ?? secToFrame(dia.startSec, fps);
-    const durationFrames = dia.durationFrames ?? secToFrame(dia.durationSec, fps);
+    const rawDurationFrames = dia.durationFrames ?? secToFrame(dia.durationSec, fps);
+    const durationFrames = Math.max(rawDurationFrames, 1);
     const endFrame = startFrame + durationFrames;
-    const speaker = dia.speakerName || (dia as any).speaker || "Speaker";
-    const dialogueId = dia.dialogueId || (dia as any).id || "dia";
+    const speaker = dia.speakerName || (dia as { speaker?: string }).speaker || "Speaker";
+    const dialogueId = dia.dialogueId || (dia as { id?: string }).id || "dia";
     const audioPath = dia.audioPath || `audio/dialogue_${dialogueId}.mp3`;
     const absPath = resolve(audioPath);
     const fileUrl = pathToFileURL(absPath).href;
+    const rawFileDurationFrames =
+      dia.fileDurationFrames ??
+      (dia.fileDurationSec !== undefined
+        ? secToFrame(dia.fileDurationSec, fps)
+        : durationFrames);
+    const effectiveFileDuration = Math.max(rawFileDurationFrames, durationFrames);
+    const diaFileName = basename(audioPath) || `dia_${dialogueId}.mp3`;
 
     dialogueClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
           <name>${escapeXml(speaker)}: ${escapeXml(dialogueId)}</name>
@@ -122,12 +186,21 @@ export function generateFcp7Xml(options: {
           <in>0</in>
           <out>${durationFrames}</out>
           <file id="file-${fileCounter++}">
-            <name>dia_${escapeXml(dialogueId)}.mp3</name>
+            <name>${escapeXml(diaFileName)}</name>
             <pathurl>${fileUrl}</pathurl>
             <rate>
               <timebase>${fps}</timebase>
             </rate>
-            <duration>${durationFrames}</duration>
+            <duration>${effectiveFileDuration}</duration>
+            <media>
+              <audio>
+                <samplecharacteristics>
+                  <depth>16</depth>
+                  <samplerate>48000</samplerate>
+                </samplecharacteristics>
+                <channelcount>2</channelcount>
+              </audio>
+            </media>
           </file>
         </clipitem>`);
   }
@@ -136,13 +209,21 @@ export function generateFcp7Xml(options: {
   const sfxClipItems: string[] = [];
   for (const sfx of timeline.sfxTrack) {
     const startFrame = sfx.startFrame ?? secToFrame(sfx.startSec, fps);
-    const durationFrames = sfx.durationFrames ?? secToFrame(sfx.durationSec, fps);
+    const rawDurationFrames = sfx.durationFrames ?? secToFrame(sfx.durationSec, fps);
+    const durationFrames = Math.max(rawDurationFrames, 1);
     const endFrame = startFrame + durationFrames;
-    const cueId = sfx.cueId || (sfx as any).id || "sfx";
+    const cueId = sfx.cueId || (sfx as { id?: string }).id || "sfx";
     const sfxName = sfx.name || cueId;
     const audioPath = sfx.audioPath || `audio/sfx_${cueId}.mp3`;
     const absPath = resolve(audioPath);
     const fileUrl = pathToFileURL(absPath).href;
+    const rawFileDurationFrames =
+      sfx.fileDurationFrames ??
+      (sfx.fileDurationSec !== undefined
+        ? secToFrame(sfx.fileDurationSec, fps)
+        : durationFrames);
+    const effectiveFileDuration = Math.max(rawFileDurationFrames, durationFrames);
+    const sfxFileName = basename(audioPath) || `sfx_${cueId}.mp3`;
 
     sfxClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
           <name>SFX: ${escapeXml(sfxName)}</name>
@@ -156,12 +237,21 @@ export function generateFcp7Xml(options: {
           <in>0</in>
           <out>${durationFrames}</out>
           <file id="file-${fileCounter++}">
-            <name>sfx_${escapeXml(cueId)}.mp3</name>
+            <name>${escapeXml(sfxFileName)}</name>
             <pathurl>${fileUrl}</pathurl>
             <rate>
               <timebase>${fps}</timebase>
             </rate>
-            <duration>${durationFrames}</duration>
+            <duration>${effectiveFileDuration}</duration>
+            <media>
+              <audio>
+                <samplecharacteristics>
+                  <depth>16</depth>
+                  <samplerate>48000</samplerate>
+                </samplecharacteristics>
+                <channelcount>2</channelcount>
+              </audio>
+            </media>
           </file>
         </clipitem>`);
   }
@@ -170,10 +260,18 @@ export function generateFcp7Xml(options: {
   const bgmClipItems: string[] = [];
   if (timeline.bgmTrack && timeline.bgmTrack.audioPath) {
     const startFrame = timeline.bgmTrack.startFrame ?? 0;
-    const durationFrames = timeline.bgmTrack.durationFrames ?? totalFrames;
+    const rawDurationFrames = timeline.bgmTrack.durationFrames ?? totalFrames;
+    const durationFrames = Math.max(rawDurationFrames, 1);
     const endFrame = startFrame + durationFrames;
     const absPath = resolve(timeline.bgmTrack.audioPath);
     const fileUrl = pathToFileURL(absPath).href;
+    const rawFileDurationFrames =
+      timeline.bgmTrack.fileDurationFrames ??
+      (timeline.bgmTrack.fileDurationSec !== undefined
+        ? secToFrame(timeline.bgmTrack.fileDurationSec, fps)
+        : durationFrames);
+    const effectiveFileDuration = Math.max(rawFileDurationFrames, durationFrames);
+    const bgmFileName = basename(timeline.bgmTrack.audioPath) || "bgm.mp3";
 
     bgmClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
           <name>BGM Track</name>
@@ -187,18 +285,31 @@ export function generateFcp7Xml(options: {
           <in>0</in>
           <out>${durationFrames}</out>
           <file id="file-${fileCounter++}">
-            <name>bgm.mp3</name>
+            <name>${escapeXml(bgmFileName)}</name>
             <pathurl>${fileUrl}</pathurl>
             <rate>
               <timebase>${fps}</timebase>
             </rate>
-            <duration>${durationFrames}</duration>
+            <duration>${effectiveFileDuration}</duration>
+            <media>
+              <audio>
+                <samplecharacteristics>
+                  <depth>16</depth>
+                  <samplerate>48000</samplerate>
+                </samplecharacteristics>
+                <channelcount>2</channelcount>
+              </audio>
+            </media>
           </file>
         </clipitem>`);
   }
 
-  // Build Ambience Track Items (A4)
-  const ambienceClipItems: string[] = [];
+  // Build Ambience Track Items (A4+) - bucket concurrent cues into non-overlapping tracks
+  interface Fcp7TrackBucket {
+    cursorFrame: number;
+    clipItems: string[];
+  }
+  const ambBuckets: Fcp7TrackBucket[] = [];
   const ambienceList = Array.isArray(timeline.ambienceTrack)
     ? timeline.ambienceTrack
     : timeline.ambienceTrack
@@ -221,19 +332,25 @@ export function generateFcp7Xml(options: {
     const durationFrames = Math.max(rawDuration, 1);
     const endFrame = startFrame + durationFrames;
     const cueId =
-      amb.cueId || (amb as any).id || (ambienceList.length > 1 ? `ambience_${ambIdx}` : "ambience");
+      amb.cueId || (amb as { id?: string }).id || (ambienceList.length > 1 ? `ambience_${ambIdx}` : "ambience");
     const ambName = amb.name || cueId;
     const absPath = resolve(amb.audioPath);
     const fileUrl = pathToFileURL(absPath).href;
     const rawFileDurationFrames =
-      (amb as any).fileDurationFrames ??
-      ((amb as any).fileDurationSec !== undefined
-        ? secToFrame((amb as any).fileDurationSec, fps)
+      amb.fileDurationFrames ??
+      (amb.fileDurationSec !== undefined
+        ? secToFrame(amb.fileDurationSec, fps)
         : durationFrames);
     const effectiveFileDuration = Math.max(rawFileDurationFrames, durationFrames);
     const fileName = basename(amb.audioPath) || `ambience_${cueId}.mp3`;
 
-    ambienceClipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
+    let bucket = ambBuckets.find((b) => b.cursorFrame <= startFrame);
+    if (!bucket) {
+      bucket = { cursorFrame: 0, clipItems: [] };
+      ambBuckets.push(bucket);
+    }
+
+    bucket.clipItems.push(`        <clipitem id="clipitem-${clipCounter++}">
           <name>Ambience: ${escapeXml(ambName)}</name>
           <duration>${durationFrames}</duration>
           <rate>
@@ -251,9 +368,33 @@ export function generateFcp7Xml(options: {
               <timebase>${fps}</timebase>
             </rate>
             <duration>${effectiveFileDuration}</duration>
+            <media>
+              <audio>
+                <samplecharacteristics>
+                  <depth>16</depth>
+                  <samplerate>48000</samplerate>
+                </samplecharacteristics>
+                <channelcount>2</channelcount>
+              </audio>
+            </media>
           </file>
         </clipitem>`);
+    bucket.cursorFrame = endFrame;
   }
+
+  const ambienceTracksXml =
+    ambBuckets.length > 0
+      ? ambBuckets
+          .map(
+            (b, idx) => `        <!-- Ambience Track (A${4 + idx}) -->
+        <track>
+${b.clipItems.join("\n")}
+        </track>`
+          )
+          .join("\n")
+      : `        <!-- Ambience Track (A4) -->
+        <track>
+        </track>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE xmeml>
@@ -285,9 +426,16 @@ export function generateFcp7Xml(options: {
             </rate>
           </samplecharacteristics>
         </format>
+        ${videoBuckets.length > 0
+          ? videoBuckets
+              .map(
+                (b, idx) => `<!-- Video Track (V${idx + 1}) -->
         <track>
-${videoClipItems.join("\n")}
-        </track>
+${b.clipItems.join("\n")}
+        </track>`
+              )
+              .join("\n        ")
+          : `<track>\n        </track>`}
       </video>
       <audio>
         <!-- Dialogue Track (A1) -->
@@ -302,10 +450,7 @@ ${sfxClipItems.join("\n")}
         <track>
 ${bgmClipItems.join("\n")}
         </track>
-        <!-- Ambience Track (A4) -->
-        <track>
-${ambienceClipItems.join("\n")}
-        </track>
+${ambienceTracksXml}
       </audio>
     </media>
   </sequence>
@@ -324,18 +469,23 @@ export function generateOtioJson(options: {
   const seqName = options.sequenceName || `Episode_${timeline.episodeNumber}_Master`;
   const totalFrames = secToFrame(timeline.targetTotalDurationSec, fps);
 
-  // Video Track Children
-  const videoChildren: object[] = [];
-  let videoCursorFrame = 0;
+  // Video Track Children (with bucketing for multi-track collision prevention during crossfades)
+  const videoBuckets: { cursorFrame: number; children: object[] }[] = [];
 
   for (const shot of timeline.videoTrack) {
     const shotStartFrame = shot.startFrame ?? secToFrame(shot.startSec, fps);
     const shotDurationFrames = shot.durationFrames ?? secToFrame(shot.durationSec, fps);
 
+    let bucket = videoBuckets.find((b) => b.cursorFrame <= shotStartFrame);
+    if (!bucket) {
+      bucket = { cursorFrame: 0, children: [] };
+      videoBuckets.push(bucket);
+    }
+
     // If there is a gap before shot
-    if (shotStartFrame > videoCursorFrame) {
-      const gapFrames = shotStartFrame - videoCursorFrame;
-      videoChildren.push({
+    if (shotStartFrame > bucket.cursorFrame) {
+      const gapFrames = shotStartFrame - bucket.cursorFrame;
+      bucket.children.push({
         OTIO_SCHEMA: "Gap.1",
         name: "Video_Gap",
         source_range: {
@@ -344,7 +494,7 @@ export function generateOtioJson(options: {
           duration: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: gapFrames },
         },
       });
-      videoCursorFrame = shotStartFrame;
+      bucket.cursorFrame = shotStartFrame;
     }
 
     const trimInSec = shot.trimStartSec ?? 0;
@@ -352,7 +502,7 @@ export function generateOtioJson(options: {
     const clipPath = shot.approvedClipPath || `shots/${shot.shotId}.mp4`;
     const fileUrl = pathToFileURL(resolve(clipPath)).href;
 
-    videoChildren.push({
+    bucket.children.push({
       OTIO_SCHEMA: "Clip.1",
       name: shot.shotId,
       source_range: {
@@ -371,7 +521,7 @@ export function generateOtioJson(options: {
       },
     });
 
-    videoCursorFrame = shotStartFrame + shotDurationFrames;
+    bucket.cursorFrame = shotStartFrame + shotDurationFrames;
   }
 
   // Dialogue Audio Track
@@ -395,8 +545,8 @@ export function generateOtioJson(options: {
       diaCursorFrame = startFrame;
     }
 
-    const speaker = dia.speakerName || (dia as any).speaker || "Speaker";
-    const dialogueId = dia.dialogueId || (dia as any).id || "dia";
+    const speaker = dia.speakerName || (dia as { speaker?: string }).speaker || "Speaker";
+    const dialogueId = dia.dialogueId || (dia as { id?: string }).id || "dia";
     const audioPath = dia.audioPath || `audio/dialogue_${dialogueId}.mp3`;
     const fileUrl = pathToFileURL(resolve(audioPath)).href;
 
@@ -415,8 +565,8 @@ export function generateOtioJson(options: {
       metadata: {
         speaker: speaker,
         characterId: dia.characterId || "",
-        rawText: dia.rawText || (dia as any).text || "",
-        displayText: dia.subtitleText || (dia as any).text || "",
+        rawText: dia.rawText || (dia as { text?: string }).text || "",
+        displayText: dia.subtitleText || (dia as { text?: string }).text || "",
       },
     });
 
@@ -444,7 +594,7 @@ export function generateOtioJson(options: {
       sfxCursorFrame = startFrame;
     }
 
-    const cueId = sfx.cueId || (sfx as any).id || "sfx";
+    const cueId = sfx.cueId || (sfx as { id?: string }).id || "sfx";
     const sfxName = sfx.name || cueId;
     const audioPath = sfx.audioPath || `audio/sfx_${cueId}.mp3`;
     const fileUrl = pathToFileURL(resolve(audioPath)).href;
@@ -485,11 +635,13 @@ export function generateOtioJson(options: {
     // Fix: an ambience object without durationSec/durationFrames (common for
     // session-wide ambience like { name: "neon_hum", volume: 0.3 }) should
     // span the full episode rather than produce a zero-duration clip.
-    const durationFrames =
+    const durationFrames = Math.max(
+      1,
       amb.durationFrames ??
-      (amb.durationSec !== undefined
-        ? secToFrame(amb.durationSec, fps)
-        : totalFrames - startFrame);
+        (amb.durationSec !== undefined
+          ? secToFrame(amb.durationSec, fps)
+          : totalFrames - startFrame)
+    );
 
     let bucket = ambBuckets.find((b) => b.cursorFrame <= startFrame);
     if (!bucket) {
@@ -510,7 +662,7 @@ export function generateOtioJson(options: {
       bucket.cursorFrame = startFrame;
     }
 
-    const cueId = amb.cueId || (amb as any).id || "ambience";
+    const cueId = amb.cueId || (amb as { id?: string }).id || "ambience";
     const ambName = amb.name || cueId;
     const fileUrl = pathToFileURL(resolve(amb.audioPath)).href;
 
@@ -536,14 +688,14 @@ export function generateOtioJson(options: {
       ? [
           {
             OTIO_SCHEMA: "Track.1",
-            name: "Ambience Track (A3)",
+            name: "Ambience Track (A4)",
             kind: "Audio",
             children: [],
           },
         ]
       : ambBuckets.map((bucket, idx) => ({
           OTIO_SCHEMA: "Track.1",
-          name: ambBuckets.length === 1 ? "Ambience Track (A3)" : `Ambience Track ${idx + 1} (A${3 + idx})`,
+          name: ambBuckets.length === 1 ? "Ambience Track (A4)" : `Ambience Track ${idx + 1} (A${4 + idx})`,
           kind: "Audio",
           children: bucket.children,
         }));
@@ -551,21 +703,42 @@ export function generateOtioJson(options: {
   // BGM Audio Track
   const bgmChildren: object[] = [];
   if (timeline.bgmTrack && timeline.bgmTrack.audioPath) {
-    const fileUrl = pathToFileURL(resolve(timeline.bgmTrack.audioPath)).href;
+    const bgm = timeline.bgmTrack;
+    const bgmStartFrame = bgm.startFrame ?? secToFrame(bgm.startSec ?? 0, fps);
+    const rawBgmDuration =
+      bgm.durationFrames ??
+      (bgm.durationSec !== undefined
+        ? secToFrame(bgm.durationSec, fps)
+        : totalFrames - bgmStartFrame);
+    const bgmDurationFrames = Math.max(rawBgmDuration, 1);
+
+    if (bgmStartFrame > 0) {
+      bgmChildren.push({
+        OTIO_SCHEMA: "Gap.1",
+        name: "BGM_Gap",
+        source_range: {
+          OTIO_SCHEMA: "TimeRange.1",
+          start_time: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: 0 },
+          duration: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: bgmStartFrame },
+        },
+      });
+    }
+
+    const fileUrl = pathToFileURL(resolve(bgm.audioPath)).href;
     bgmChildren.push({
       OTIO_SCHEMA: "Clip.1",
       name: "BGM Track",
       source_range: {
         OTIO_SCHEMA: "TimeRange.1",
         start_time: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: 0 },
-        duration: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: totalFrames },
+        duration: { OTIO_SCHEMA: "RationalTime.1", rate: fps, value: bgmDurationFrames },
       },
       media_reference: {
         OTIO_SCHEMA: "ExternalReference.1",
         target_url: fileUrl,
       },
       metadata: {
-        duckingWindows: timeline.bgmTrack.duckingWindows,
+        duckingWindows: bgm.duckingWindows,
       },
     });
   }
@@ -581,12 +754,21 @@ export function generateOtioJson(options: {
     tracks: {
       OTIO_SCHEMA: "Stack.1",
       children: [
-        {
-          OTIO_SCHEMA: "Track.1",
-          name: "Video Track (V1)",
-          kind: "Video",
-          children: videoChildren,
-        },
+        ...(videoBuckets.length > 0
+          ? videoBuckets.map((b, idx) => ({
+              OTIO_SCHEMA: "Track.1",
+              name: `Video Track (V${idx + 1})`,
+              kind: "Video",
+              children: b.children,
+            }))
+          : [
+              {
+                OTIO_SCHEMA: "Track.1",
+                name: "Video Track (V1)",
+                kind: "Video",
+                children: [],
+              },
+            ]),
         {
           OTIO_SCHEMA: "Track.1",
           name: "Dialogue Track (A1)",
@@ -599,13 +781,13 @@ export function generateOtioJson(options: {
           kind: "Audio",
           children: sfxChildren,
         },
-        ...ambienceTracks,
         {
           OTIO_SCHEMA: "Track.1",
-          name: "BGM Track (A4)",
+          name: "BGM Track (A3)",
           kind: "Audio",
           children: bgmChildren,
         },
+        ...ambienceTracks,
       ],
     },
     metadata: {

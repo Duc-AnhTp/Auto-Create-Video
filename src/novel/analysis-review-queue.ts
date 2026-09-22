@@ -5,7 +5,7 @@ import type {
 } from "./llm-analysis-schemas.js";
 import type { BibleManager, AnalysisReviewItemRecord } from "../bible/bible-manager.js";
 
-export type ReviewItemType = "character" | "beat" | "thread";
+export type ReviewItemType = "character" | "beat" | "thread" | "chekhov_gun" | "prop";
 
 export interface ReviewQueueItem<T = any> {
   id: string;
@@ -31,6 +31,14 @@ export class AnalysisReviewQueue {
 
   public setBible(bible: BibleManager): void {
     this.bible = bible;
+  }
+
+  public hasBible(): boolean {
+    return Boolean(this.bible);
+  }
+
+  public getBible(): BibleManager | undefined {
+    return this.bible;
   }
 
   public enqueue<T>(
@@ -93,6 +101,11 @@ export class AnalysisReviewQueue {
         status,
         created_at: now,
       });
+
+      // Auto-approved entities must be atomically persisted into domain tables
+      if (status === "approved") {
+        this.persistApprovedToDomainBible(type, data);
+      }
     }
 
     return item;
@@ -106,6 +119,10 @@ export class AnalysisReviewQueue {
     return Array.from(this.items.values()).filter(
       (item) => item.status === "pending" && (!seriesId || item.seriesId === seriesId)
     );
+  }
+
+  public getPendingCount(seriesId?: string): number {
+    return this.getPending(seriesId).length;
   }
 
   public getAll(seriesId?: string): ReviewQueueItem[] {
@@ -160,15 +177,48 @@ export class AnalysisReviewQueue {
     };
   }
 
-  private persistApprovedToDomainBible(type: ReviewItemType, data: any): void {
+  private persistApprovedToDomainBible(type: ReviewItemType, data: any, seriesId?: string): void {
     if (!this.bible || !data) return;
     try {
+      const targetSeriesId = data.series_id || data.seriesId || seriesId;
       if (type === "character" && data.id) {
-        this.bible.upsertCharacter(data);
+        this.bible.upsertCharacter({
+          ...data,
+          series_id: targetSeriesId || data.series_id,
+        });
       } else if (type === "beat" && data.id) {
-        this.bible.upsertStoryBeat(data);
+        this.bible.upsertStoryBeat({
+          ...data,
+          series_id: targetSeriesId || data.series_id,
+        });
       } else if (type === "thread" && data.id) {
-        this.bible.upsertStoryThread(data);
+        this.bible.upsertStoryThread({
+          ...data,
+          series_id: targetSeriesId || data.series_id,
+        });
+      } else if (type === "prop" && data.id) {
+        this.bible.upsertKeyProp({
+          id: data.id,
+          name: data.name || data.id,
+          visual_summary: data.visual_summary || data.visualSummary || data.description || data.name || "",
+          current_holder_id: data.current_holder_id || data.currentHolderId || null,
+          reference_image_path: data.reference_image_path || data.referenceImagePath || null,
+          status: data.status || "intact",
+          series_id: targetSeriesId || undefined,
+        });
+      } else if (type === "chekhov_gun" && (data.id || data.gun_id || data.gunId)) {
+        const gunId = data.id || data.gun_id || data.gunId;
+        this.bible.plantChekhovGun({
+          id: gunId,
+          series_id: targetSeriesId || "series_main",
+          name: data.name || data.itemOrClue || data.item_or_clue || gunId,
+          type: (data.type as any) || "prop",
+          description: data.description || data.context || "",
+          planted_at_episode: data.planted_at_episode ?? data.plantedAtEpisode ?? 1,
+          planted_in_beat_id: data.planted_in_beat_id ?? data.plantedInBeatId ?? null,
+          payoff_status: data.payoff_status ?? "planted",
+          payoff_episode: data.payoff_episode ?? data.payoffExpectedBy ?? null,
+        });
       }
     } catch {}
   }
@@ -212,7 +262,7 @@ export class AnalysisReviewQueue {
 
     const currentItem = item || this.items.get(id);
     if (currentItem) {
-      this.persistApprovedToDomainBible(currentItem.type, currentItem.data);
+      this.persistApprovedToDomainBible(currentItem.type, currentItem.data, currentItem.seriesId);
     }
 
     return inDb ? dbWriteOk : true;
@@ -258,27 +308,31 @@ export class AnalysisReviewQueue {
     return inDb ? dbWriteOk : true;
   }
 
-  public modify<T>(id: string, modifiedData: T, notes?: string): boolean {
+  public modify<T>(id: string, modifiedData: T, notes?: string, autoApprove = false): boolean {
     const item = this.items.get(id);
     const now = new Date().toISOString();
     let dbWriteOk = false;
     let inDb = false;
 
+    let wasApproved = item?.status === "approved" || item?.status === "modified" || autoApprove;
+
     if (this.bible) {
       const existing = this.bible.getReviewItem(id);
       if (existing) {
         inDb = true;
+        wasApproved = wasApproved || existing.status === "approved" || existing.status === "modified";
+        const newStatus = wasApproved ? "modified" : "pending";
         try {
           this.bible.enqueueReviewItem({
             ...existing,
             data_json: JSON.stringify(modifiedData),
-            status: "modified",
+            status: newStatus,
             reviewed_at: now,
             review_notes: notes !== undefined ? notes : existing.review_notes,
           });
           dbWriteOk = true;
           existing.data_json = JSON.stringify(modifiedData);
-          existing.status = "modified";
+          existing.status = newStatus;
           existing.reviewed_at = now;
           if (notes !== undefined) existing.review_notes = notes;
           if (!item) {
@@ -299,16 +353,18 @@ export class AnalysisReviewQueue {
       return false;
     }
 
+    const newStatus = wasApproved ? "modified" : "pending";
     if (item) {
       item.data = modifiedData;
-      item.status = "modified";
+      item.status = newStatus;
       item.reviewedAt = now;
       if (notes !== undefined) item.reviewNotes = notes;
     }
 
     const currentItem = item || this.items.get(id);
-    if (currentItem) {
-      this.persistApprovedToDomainBible(currentItem.type, currentItem.data);
+    // Hard Gate: only persist to domain tables if the item is approved
+    if (currentItem && wasApproved) {
+      this.persistApprovedToDomainBible(currentItem.type, currentItem.data, currentItem.seriesId);
     }
 
     return inDb ? dbWriteOk : true;

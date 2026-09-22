@@ -91,6 +91,7 @@ describe("Giai đoạn 4: Hoàn Thiện QA và Duyệt Take", () => {
   it("strictly returns UNAVAILABLE and escalates to review when reference image or face is missing", async () => {
     const bible = new BibleManager(testDbPath);
     bible.upsertCharacter({
+      series_id: "series_qa_test",
       id: "char_noface",
       name: "Vô Danh",
       role: "supporting",
@@ -173,6 +174,7 @@ VÔ DANH: Tôi không có ảnh chân dung trong Story Bible.
 
     const bible = new BibleManager(testDbPath);
     bible.upsertCharacter({
+      series_id: "series_qa_test",
       id: "char_an",
       name: "An",
       role: "protagonist",
@@ -216,6 +218,7 @@ AN: Đang kiểm tra chứng cứ QA.
 
     const bible = new BibleManager(testDbPath);
     bible.upsertCharacter({
+      series_id: "series_qa_test",
       id: "char_minh",
       name: "Minh",
       role: "protagonist",
@@ -280,6 +283,7 @@ MINH: Take đầu tiên được duyệt.
 
     const bible = new BibleManager(testDbPath);
     bible.upsertCharacter({
+      series_id: "series_qa_test",
       id: "char_minh",
       name: "Minh",
       role: "protagonist",

@@ -4,6 +4,7 @@ import { mkdir, writeFile, copyFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { log } from "../utils/logger.js";
 import { downloadVideoSafely, probeVideoFile, type VideoProbeInfo } from "../media/media-validator.js";
+import { createValidMockMp4File } from "../assets/mock-media-generator.js";
 import {
   type ProviderCapabilities,
   type ImageInputProtocol,
@@ -36,6 +37,7 @@ export {
 
 export type BackendProvider =
   | "local_comfyui"
+  | "serverless_comfyui"
   | "api_wan"
   | "api_ltx"
   | "api_kling"
@@ -56,6 +58,20 @@ export interface ShotExecutionSpec {
   loras?: Array<{ path: string; weight: number }>;
   referenceImage?: string;
   firstFrameCondition?: string; // used for autoregressive I2V extension
+  characterReferenceImage?: string; // Reference portrait for character face & visual anchoring
+  characterId?: string; // Associated Story Bible character ID
+  secondaryCharacterReferenceImage?: string; // Secondary character reference for multi-character 2-shot scenes
+  secondaryCharacterId?: string; // Secondary Story Bible character ID
+  faceEmbedding?: number[]; // 512-D ArcFace / FaceNet embedding vector
+  ipAdapterWeight?: number; // IP-Adapter conditioning weight (default ~0.8)
+  applyFaceConsistency?: boolean; // Explicit flag to activate IP-Adapter/FaceID nodes
+  regionalConditioning?: {
+    enabled: boolean;
+    characterAPrompt?: string;
+    characterBPrompt?: string;
+    characterASide?: "left" | "right";
+    characterBSide?: "left" | "right";
+  };
   seed?: number;
   metadata?: Record<string, unknown>;
   destinationLocalPath?: string;
@@ -82,6 +98,7 @@ export interface VideoProviderAdapter {
 // ── Provider Pricing Table ($ per second of generated video) ─────────────────
 export const PROVIDER_RATES_PER_SEC: Record<BackendProvider, number> = {
   local_comfyui: 0.0,    // Self-hosted, $0 compute cost
+  serverless_comfyui: 0.04, // Cloud Serverless ComfyUI (Modal/RunPod GPU)
   mock: 0.0,             // Mock simulator, $0 cost
   api_wan: 0.08,         // Hosted Wan 2.2 API
   api_ltx: 0.12,         // Hosted LTX-2.5 (audio+video unified)
@@ -155,18 +172,35 @@ export interface GatewayConfig {
   enableFailover?: boolean;
 }
 
+export interface GatewayTelemetry {
+  totalShots: number;
+  shotsByProvider: Record<string, number>;
+  failoversTriggered: number;
+  totalSpendUsd: number;
+  maxBudgetUsd: number;
+  budgetUtilizationPct: number;
+  circuitBreakers: Record<string, "CLOSED" | "OPEN">;
+}
+
 export class VideoModelGateway {
   private adapters: Map<BackendProvider, VideoProviderAdapter> = new Map();
   private circuitBreakers: Map<BackendProvider, CircuitBreaker> = new Map();
   private currentSpendUsd = 0;
   private maxBudgetUsd: number;
+  private defaultLocalBackend?: BackendProvider;
+  private defaultHeroBackend?: BackendProvider;
   private pollIntervalMs: number;
   private pollTimeoutMs: number;
   private fallbackChain: BackendProvider[];
   private enableFailover: boolean;
+  private totalShots = 0;
+  private shotsByProvider: Map<BackendProvider, number> = new Map();
+  private failoversTriggered = 0;
 
   constructor(config: GatewayConfig = {}) {
     this.maxBudgetUsd = config.maxBudgetUsd ?? 25.0; // Default $25 cap per episode run
+    this.defaultLocalBackend = config.defaultLocalBackend;
+    this.defaultHeroBackend = config.defaultHeroBackend;
     this.pollIntervalMs = config.pollIntervalMs ?? 1500;
     this.pollTimeoutMs = config.pollTimeoutMs ?? 120000; // 2 min max per shot
     this.fallbackChain = config.fallbackChain || [];
@@ -178,6 +212,26 @@ export class VideoModelGateway {
     if (!this.circuitBreakers.has(adapter.providerName)) {
       this.circuitBreakers.set(adapter.providerName, new CircuitBreaker(3));
     }
+  }
+
+  public getTelemetry(): GatewayTelemetry {
+    const cbMap: Record<string, "CLOSED" | "OPEN"> = {};
+    for (const [p, cb] of this.circuitBreakers.entries()) {
+      cbMap[p] = cb.getState();
+    }
+    const shotsMap: Record<string, number> = {};
+    for (const [p, c] of this.shotsByProvider.entries()) {
+      shotsMap[p] = c;
+    }
+    return {
+      totalShots: this.totalShots,
+      shotsByProvider: shotsMap,
+      failoversTriggered: this.failoversTriggered,
+      totalSpendUsd: this.currentSpendUsd,
+      maxBudgetUsd: this.maxBudgetUsd,
+      budgetUtilizationPct: this.maxBudgetUsd > 0 ? (this.currentSpendUsd / this.maxBudgetUsd) * 100 : 0,
+      circuitBreakers: cbMap,
+    };
   }
 
   public getSpend(): number {
@@ -198,18 +252,27 @@ export class VideoModelGateway {
 
   /**
    * Routes a shot spec using the hybrid strategy:
-   * - standard priority -> local_comfyui (or mock if local not registered)
-   * - hero priority -> registered cloud API backend (api_runway or api_kling)
+   * - standard priority -> local_comfyui (or serverless_comfyui, or mock if none registered)
+   * - hero priority -> registered cloud API backend (api_veo, api_kling, api_runway, etc.)
    */
   public selectBackend(spec: ShotExecutionSpec): BackendProvider {
     if (spec.backend) return spec.backend;
     if (spec.priority === "hero") {
+      if (this.defaultHeroBackend && this.adapters.has(this.defaultHeroBackend)) {
+        return this.defaultHeroBackend;
+      }
       if (this.adapters.has("api_veo")) return "api_veo";
       if (this.adapters.has("api_kling")) return "api_kling";
       if (this.adapters.has("api_runway")) return "api_runway";
       if (this.adapters.has("api_seedance")) return "api_seedance";
+      if (this.adapters.has("serverless_comfyui")) return "serverless_comfyui";
     }
-    return this.adapters.has("local_comfyui") ? "local_comfyui" : "mock";
+    if (this.defaultLocalBackend && this.adapters.has(this.defaultLocalBackend)) {
+      return this.defaultLocalBackend;
+    }
+    if (this.adapters.has("local_comfyui")) return "local_comfyui";
+    if (this.adapters.has("serverless_comfyui")) return "serverless_comfyui";
+    return "mock";
   }
 
   /**
@@ -244,6 +307,7 @@ export class VideoModelGateway {
         }
 
         if (hasNext) {
+          this.failoversTriggered++;
           const nextBackend = candidateBackends[i + 1];
           log.warn(
             `[GATEWAY FAILOVER] Provider '${backend}' thất bại cho shot [${spec.shotId}]: ${err.message}. Đang tự động chuyển đổi sang provider dự phòng '${nextBackend}'...`
@@ -313,21 +377,26 @@ export class VideoModelGateway {
         // Auto-download CDN video to localPath if destination is requested or needed
         const targetPath = destinationPath || spec.destinationLocalPath;
         if (targetPath && status.videoUrl && (!status.localPath || !existsSync(status.localPath))) {
+          const isMockUrl = status.videoUrl.startsWith("http://mock.") || status.videoUrl.startsWith("file://");
           try {
-            await downloadVideoFromUrl(status.videoUrl, targetPath, backend !== "mock");
+            await downloadVideoFromUrl(status.videoUrl, targetPath, backend !== "mock" && !isMockUrl);
             status.localPath = targetPath;
           } catch (dlErr: any) {
-            if (backend !== "mock") {
+            if (backend === "mock" || isMockUrl) {
+              await createValidMockMp4File(targetPath, spec.durationSec || 4.0);
+              status.localPath = targetPath;
+            } else {
               cb.recordFailure();
               throw new Error(`Tải video từ CDN thất bại cho provider '${backend}': ${dlErr.message}`);
             }
-            log.warn(`Không thể tải video từ URL ${status.videoUrl}: ${dlErr.message}`);
           }
         }
 
         // Only record success and spend after asset is verified and safely acquired
         cb.recordSuccess();
         this.currentSpendUsd += estimatedCost;
+        this.totalShots++;
+        this.shotsByProvider.set(backend, (this.shotsByProvider.get(backend) || 0) + 1);
 
         return status;
       }

@@ -240,6 +240,39 @@ describe("Versioned Canon State Manager (Story Bible v2)", () => {
       expect(validation.errors.some((e) => e.includes("deceased character"))).toBe(true);
     });
 
+    it("rejects resurrection of deceased character via Anti-Resurrection safety gate", () => {
+      const resurrectionDelta: NarrativeDelta = {
+        character_status_updates: [
+          { id: "char_hung", status: "alive" },
+        ],
+      };
+      const validation = bible.validateNarrativeDelta(resurrectionDelta);
+      expect(validation.valid).toBe(false);
+      expect(validation.errors.some((e) => e.includes("Anti-Resurrection gate"))).toBe(true);
+    });
+
+    it("ensures series-specific world state takes precedence over default-series", () => {
+      bible.setWorldState("cyber_district", { level: "low" }, 1, "default-series");
+      bible.setWorldState("cyber_district", { level: "high" }, 1, "series-action");
+      const states = bible.getAllWorldState("series-action");
+      expect((states.cyber_district as any).level).toBe("high");
+    });
+
+    it("falls back to default-series when querying entity by specific seriesId", () => {
+      bible.upsertCharacter({
+        id: "char_mentor",
+        name: "Old Mentor",
+        role: "mentor",
+        visual_summary: "Lão tiền bối",
+        personality_traits: ["wise"],
+        status: "alive",
+        series_id: "default-series",
+      });
+      const found = bible.getCharacter("char_mentor", "series-action");
+      expect(found).not.toBeNull();
+      expect(found?.name).toBe("Old Mentor");
+    });
+
     it("passes validation for sound and consistent narrative delta", () => {
       bible.upsertCharacter({
         id: "char_an",

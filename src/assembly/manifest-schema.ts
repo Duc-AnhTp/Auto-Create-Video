@@ -91,8 +91,10 @@ export const AssemblyManifestSchema = z.object({
   masterOutputs: z.object({
     masterVideoPath: z.string().min(1),
     masterAudioPath: z.string().min(1),
+    masterHardsubVideoPath: z.string().optional(),
     subtitlesSrtPath: z.string().optional(),
     subtitlesVttPath: z.string().optional(),
+    subtitlesAssPath: z.string().optional(),
     stems: z.object({
       dialogue: z.string().optional(),
       sfx: z.string().optional(),
@@ -107,6 +109,14 @@ export const AssemblyManifestSchema = z.object({
       ),
     }),
   }),
+  pacingReport: z
+    .object({
+      overallAverageShotDurationSec: z.number(),
+      overallCutsPerMinute: z.number(),
+      pacingDynamismScore: z.number(),
+      warnings: z.array(z.string()).default([]),
+    })
+    .optional(),
   qaReport: AssemblyQaReportSchema,
   createdAt: z.string(),
 });

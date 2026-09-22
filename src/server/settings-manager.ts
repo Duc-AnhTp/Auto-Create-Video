@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { resolve } from "node:path";
 import axios from "axios";
 
@@ -88,8 +88,8 @@ export class SettingsManager {
       } catch {}
     };
 
-    parseEnvFile(rootEnv);
-    parseEnvFile(this.envLocalPath);
+    if (process.env.NODE_ENV !== "test") parseEnvFile(rootEnv);
+    if (process.env.NODE_ENV !== "test" || !this.envLocalPath.endsWith(".env.local")) parseEnvFile(this.envLocalPath);
 
     return config;
   }
@@ -98,6 +98,10 @@ export class SettingsManager {
    * Writes updated values to .env.local and updates process.env in memory.
    */
   public saveConfigUpdates(updates: Record<string, string>): void {
+    const allowed = new Set(this.getProviders().flatMap(provider => provider.fields.map(field => field.envKey)));
+    for (const [key, value] of Object.entries(updates)) {
+      if (!allowed.has(key) || typeof value !== "string" || /[\r\n\0]/.test(value) || value.includes("••")) throw new Error("INVALID_CONFIG_UPDATE: " + key);
+    }
     let existingContent = "";
     if (existsSync(this.envLocalPath)) {
       try {
@@ -116,7 +120,7 @@ export class SettingsManager {
         const k = trimmed.slice(0, eqIdx).trim();
         if (k in updates) {
           keysHandled.add(k);
-          return `${k}=${updates[k]}`;
+          return `${k}=${JSON.stringify(updates[k])}`;
         }
       }
       return line;
@@ -124,13 +128,15 @@ export class SettingsManager {
 
     for (const [k, v] of Object.entries(updates)) {
       if (!keysHandled.has(k)) {
-        updatedLines.push(`${k}=${v}`);
+        updatedLines.push(`${k}=${JSON.stringify(v)}`);
       }
-      // Live patch running environment
-      process.env[k] = v;
+
     }
 
-    writeFileSync(this.envLocalPath, updatedLines.join("\n").trim() + "\n", "utf-8");
+    const temp = this.envLocalPath + ".tmp";
+    writeFileSync(temp, updatedLines.join("\n").trim() + "\n", { encoding: "utf-8", mode: 0o600 });
+    renameSync(temp, this.envLocalPath);
+    for (const [key, value] of Object.entries(updates)) process.env[key] = value;
   }
 
   /**

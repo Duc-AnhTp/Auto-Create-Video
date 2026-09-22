@@ -1,6 +1,6 @@
 import "dotenv/config";
 
-export type TtsProvider = "lucylab" | "elevenlabs";
+export type TtsProvider = "lucylab" | "elevenlabs" | "cosyvoice" | "f5tts";
 
 export interface TiktokConfig {
   displayName: string;
@@ -26,10 +26,22 @@ export interface Config {
   elevenlabsModelId: string;
   elevenlabsEndpoint: string;
 
+  // CosyVoice 2 (Neural Instruct Emotion TTS)
+  cosyvoiceEndpoint?: string;
+  cosyvoiceApiKey?: string;
+  cosyvoiceVoiceId?: string;
+
+  // F5-TTS (Flow Matching Neural TTS)
+  f5ttsEndpoint?: string;
+  f5ttsApiKey?: string;
+  f5ttsRefAudio?: string;
+  f5ttsRefText?: string;
+
   // TikTok follow card (outro)
   tiktok: TiktokConfig;
 
   ttsConcurrency: number;
+  ttsMockFallback?: boolean;
 }
 
 function intDefault(name: string, def: number): number {
@@ -85,13 +97,28 @@ export function validateTtsProvider(
         `Copy .env.example to .env.local and fill in your ElevenLabs voice ID.`
       );
     }
+  } else if (provider === "cosyvoice") {
+    if (!cfg.cosyvoiceEndpoint || cfg.cosyvoiceEndpoint.trim() === "") {
+      throw new Error(
+        `Missing COSYVOICE_ENDPOINT (required when TTS_PROVIDER=cosyvoice). ` +
+        `Set COSYVOICE_ENDPOINT (e.g. http://localhost:50000) in .env.`
+      );
+    }
+  } else if (provider === "f5tts") {
+    if (!cfg.f5ttsEndpoint || cfg.f5ttsEndpoint.trim() === "") {
+      throw new Error(
+        `Missing F5TTS_ENDPOINT (required when TTS_PROVIDER=f5tts). ` +
+        `Set F5TTS_ENDPOINT (e.g. http://localhost:50001) in .env.`
+      );
+    }
   }
 }
 
 export function loadConfig(opts?: LoadConfigOptions): Config {
+  const validProviders: TtsProvider[] = ["lucylab", "elevenlabs", "cosyvoice", "f5tts"];
   const provider = (process.env.TTS_PROVIDER ?? "lucylab") as TtsProvider;
-  if (provider !== "lucylab" && provider !== "elevenlabs") {
-    throw new Error(`TTS_PROVIDER must be "lucylab" or "elevenlabs", got "${provider}"`);
+  if (!validProviders.includes(provider)) {
+    throw new Error(`TTS_PROVIDER must be one of ${validProviders.join(", ")}, got "${provider}"`);
   }
 
   const cfg: Config = {
@@ -105,6 +132,13 @@ export function loadConfig(opts?: LoadConfigOptions): Config {
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,
     elevenlabsModelId: process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2",
     elevenlabsEndpoint: process.env.ELEVENLABS_ENDPOINT ?? "https://api.elevenlabs.io/v1",
+    cosyvoiceEndpoint: process.env.COSYVOICE_ENDPOINT ?? "http://localhost:50000",
+    cosyvoiceApiKey: process.env.COSYVOICE_API_KEY,
+    cosyvoiceVoiceId: process.env.COSYVOICE_VOICE_ID,
+    f5ttsEndpoint: process.env.F5TTS_ENDPOINT ?? "http://localhost:50001",
+    f5ttsApiKey: process.env.F5TTS_API_KEY,
+    f5ttsRefAudio: process.env.F5TTS_REF_AUDIO,
+    f5ttsRefText: process.env.F5TTS_REF_TEXT,
     tiktok: {
       displayName: process.env.TIKTOK_DISPLAY_NAME ?? "Công nghệ 24h",
       handle: process.env.TIKTOK_HANDLE ?? "@congnghe24h",
@@ -112,6 +146,10 @@ export function loadConfig(opts?: LoadConfigOptions): Config {
       avatarUrl: process.env.TIKTOK_AVATAR_URL || undefined,
     },
     ttsConcurrency: intDefault("TTS_CONCURRENCY", 1),
+    ttsMockFallback:
+      process.env.TTS_MOCK_FALLBACK === "true" ||
+      process.env.MOCK_TTS === "true" ||
+      process.env.MOCK_ALL === "true",
   };
 
   const validateTarget = opts?.validateProvider ?? true;

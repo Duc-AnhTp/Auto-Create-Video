@@ -11,6 +11,7 @@ import {
 } from "./series-schema.js";
 import { BibleManager } from "../bible/bible-manager.js";
 import { normalizeVietnameseForTts } from "../tts/vietnamese-normalizer.js";
+import { CinematicDirectorEngine } from "./cinematic-director.js";
 
 export class ContinuityError extends Error {
   public contradictions: any[];
@@ -75,6 +76,8 @@ export interface IntermediateScene {
   timeOfDay?: "day" | "night" | "golden_hour" | "dusk" | "dawn";
   charactersMentioned?: string[];
   propsMentioned?: string[];
+  propTransfers?: any[];
+  events?: any[];
   beatIds?: string[];
   shots: IntermediateShot[];
 }
@@ -87,6 +90,30 @@ export interface IntermediateScript {
   bgm?: string;
   unresolvedCharacters?: string[];
   scenes: IntermediateScene[];
+}
+
+/**
+ * Extracts acting instructions enclosed in [...] or (...) from dialogue text,
+ * and strips outer quotation marks and acting instructions to yield pure subtitle/spoken text.
+ */
+export function extractActingInstructionAndCleanText(input: string): { cleanText: string; instruction?: string } {
+  if (!input) return { cleanText: "" };
+  let text = input.trim();
+  // Strip outer quotation marks
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    text = text.slice(1, -1).trim();
+  }
+  // Match prefix [instruction] or (instruction)
+  const match = text.match(/^(?:\[([^\]]+)\]|\(([^)]+)\))\s*(.*)$/s);
+  if (match) {
+    const instruction = (match[1] || match[2]).trim();
+    let cleanText = (match[3] || "").trim();
+    if ((cleanText.startsWith('"') && cleanText.endsWith('"')) || (cleanText.startsWith("'") && cleanText.endsWith("'"))) {
+      cleanText = cleanText.slice(1, -1).trim();
+    }
+    return { cleanText, instruction };
+  }
+  return { cleanText: text };
 }
 
 const NON_SPEAKER_PREFIXES = new Set([
@@ -165,27 +192,35 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
                 if (Array.isArray(sh.dialogues) && sh.dialogues.length > 0) {
                   for (let dIdx = 0; dIdx < sh.dialogues.length; dIdx++) {
                     const d = sh.dialogues[dIdx];
+                    const rawInput = d.subtitleText || d.text || "";
+                    const cleaned = extractActingInstructionAndCleanText(rawInput);
+                    const cleanText = cleaned.cleanText;
+                    const instruction = d.actingInstruction || cleaned.instruction;
                     dialogues.push({
                       dialogueId: d.dialogueId || `${shotId}_d${String(dIdx + 1).padStart(2, "0")}`,
                       speaker: d.speakerName || d.speaker || d.characterId || "Người dẫn chuyện",
-                      text: d.text || "",
+                      text: cleanText,
                       rawText: d.rawText || d.text || "",
-                      subtitleText: d.subtitleText || d.text || "",
-                      ttsText: d.ttsText || d.text || "",
-                      actingInstruction: d.actingInstruction,
+                      subtitleText: cleanText,
+                      ttsText: d.ttsText ? extractActingInstructionAndCleanText(d.ttsText).cleanText : undefined,
+                      actingInstruction: instruction,
                       type: d.type || "speech",
                     });
                   }
                 } else if (sh.dialogue) {
                   // Legacy single dialogue
+                  const rawInput = sh.dialogue.subtitleText || sh.dialogue.text || "";
+                  const cleaned = extractActingInstructionAndCleanText(rawInput);
+                  const cleanText = cleaned.cleanText;
+                  const instruction = sh.dialogue.actingInstruction || cleaned.instruction;
                   dialogues.push({
                     dialogueId: sh.dialogue.dialogueId || `${shotId}_d01`,
                     speaker: sh.dialogue.speakerName || sh.dialogue.speaker || sh.dialogue.characterId || "Người dẫn chuyện",
-                    text: sh.dialogue.text || "",
+                    text: cleanText,
                     rawText: sh.dialogue.rawText || sh.dialogue.text || "",
-                    subtitleText: sh.dialogue.subtitleText || sh.dialogue.text || "",
-                    ttsText: sh.dialogue.ttsText || sh.dialogue.text || "",
-                    actingInstruction: sh.dialogue.actingInstruction,
+                    subtitleText: cleanText,
+                    ttsText: sh.dialogue.ttsText ? extractActingInstructionAndCleanText(sh.dialogue.ttsText).cleanText : undefined,
+                    actingInstruction: instruction,
                     type: sh.dialogue.type || "speech",
                   });
                 }
@@ -489,13 +524,14 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
 
     // ── Dialogue Parsing: Support Multiple Turns & Acting Instructions ──────────
     // Form 1: VOICEOVER / DẪN CHUYỆN: text
-    const voMatch = line.match(/^(?:DẪN CHUYỆN|VOICEOVER|NGƯỜI DẪN CHUYỆN)\s*:\s*(.+)$/i);
+    const voMatch = line.match(/^(?:DẪN CHUYỆN|VOICEOVER|NGƯỜI DẪN CHUYỆN)(?:\s*(?:\(([^)]*)\)|\[([^\]]*)\]))?\s*:\s*(.+)$/i);
     if (voMatch) {
-      let rawText = voMatch[1].trim();
-      let cleanText = rawText;
-      if ((cleanText.startsWith('"') && cleanText.endsWith('"')) || (cleanText.startsWith("'") && cleanText.endsWith("'"))) {
-        cleanText = cleanText.slice(1, -1).trim();
-      }
+      const rawInstruction = (voMatch[1] || voMatch[2])?.trim();
+      const rawText = voMatch[3].trim();
+      const extracted = extractActingInstructionAndCleanText(rawText);
+      const instruction = rawInstruction || extracted.instruction;
+      const cleanText = extracted.cleanText;
+
       const dId = `${currentShot.shotId}_d${String(currentShot.dialogues.length + 1).padStart(2, "0")}`;
       const diagItem: IntermediateDialogue = {
         dialogueId: dId,
@@ -503,6 +539,7 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
         text: cleanText,
         rawText: line,
         subtitleText: cleanText,
+        actingInstruction: instruction,
         type: "voiceover",
       };
       currentShot.dialogues.push(diagItem);
@@ -513,14 +550,15 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
     }
 
     // Form 2: Explicit prefix: THOẠI: SPEAKER (instruction): "text"
-    const explicitThoaiMatch = line.match(/^THOẠI\s*:\s*(?:([A-ZÀ-Ỹa-zà-ỹ0-9_\s]+)(?:\s*\(([^)]*)\))?\s*:\s*)?(.+)$/i);
+    const explicitThoaiMatch = line.match(/^THOẠI\s*:\s*(?:([A-ZÀ-Ỹa-zà-ỹ0-9_\s]+)(?:\s*(?:\(([^)]*)\)|\[([^\]]*)\]))?\s*:\s*)?(.+)$/i);
     if (explicitThoaiMatch) {
       const speaker = (explicitThoaiMatch[1] || currentShot.characterName || "Nhân vật").trim();
-      const instruction = explicitThoaiMatch[2]?.trim();
-      let cleanText = explicitThoaiMatch[3].trim();
-      if ((cleanText.startsWith('"') && cleanText.endsWith('"')) || (cleanText.startsWith("'") && cleanText.endsWith("'"))) {
-        cleanText = cleanText.slice(1, -1).trim();
-      }
+      const rawInstruction = (explicitThoaiMatch[2] || explicitThoaiMatch[3])?.trim();
+      const rawText = explicitThoaiMatch[4].trim();
+      const extracted = extractActingInstructionAndCleanText(rawText);
+      const instruction = rawInstruction || extracted.instruction;
+      const cleanText = extracted.cleanText;
+
       const dId = `${currentShot.shotId}_d${String(currentShot.dialogues.length + 1).padStart(2, "0")}`;
       const diagItem: IntermediateDialogue = {
         dialogueId: dId,
@@ -542,7 +580,7 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
     }
 
     // Form 3: SPEAKER (acting instruction): "dialogue text with optional colons: and punctuation"
-    const dialogueWithInstructionMatch = line.match(/^([A-ZÀ-Ỹa-zà-ỹ0-9_\s]+)(?:\s*\(([^)]*)\))?\s*:\s*(.+)$/);
+    const dialogueWithInstructionMatch = line.match(/^([A-ZÀ-Ỹa-zà-ỹ0-9_\s]+)(?:\s*(?:\(([^)]*)\)|\[([^\]]*)\]))?\s*:\s*(.+)$/);
     if (dialogueWithInstructionMatch) {
       const potentialSpeaker = dialogueWithInstructionMatch[1].trim();
       const upperSpeaker = potentialSpeaker.toUpperCase();
@@ -552,24 +590,12 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
         potentialSpeaker.length <= 30 &&
         potentialSpeaker.split(/\s+/).length <= 4
       ) {
-        let instruction = dialogueWithInstructionMatch[2]?.trim();
-        let spokenText = dialogueWithInstructionMatch[3].trim();
+        const rawInstruction = (dialogueWithInstructionMatch[2] || dialogueWithInstructionMatch[3])?.trim();
+        const spokenText = dialogueWithInstructionMatch[4].trim();
 
-        // Check if spoken text starts with parenthetical instruction e.g. "(thì thào) Cầm lấy con chip"
-        const inlineInstructionMatch = spokenText.match(/^\(([^)]+)\)\s*(.+)$/);
-        if (inlineInstructionMatch) {
-          if (!instruction) instruction = inlineInstructionMatch[1].trim();
-          spokenText = inlineInstructionMatch[2].trim();
-        }
-
-        // Clean outer quotation marks while preserving interior quotes & colons
-        let subtitleText = spokenText;
-        if (
-          (subtitleText.startsWith('"') && subtitleText.endsWith('"')) ||
-          (subtitleText.startsWith("'") && subtitleText.endsWith("'"))
-        ) {
-          subtitleText = subtitleText.slice(1, -1).trim();
-        }
+        const extracted = extractActingInstructionAndCleanText(spokenText);
+        const instruction = rawInstruction || extracted.instruction;
+        const subtitleText = extracted.cleanText;
 
         const dId = `${currentShot.shotId}_d${String(currentShot.dialogues.length + 1).padStart(2, "0")}`;
         const diagItem: IntermediateDialogue = {
@@ -654,6 +680,30 @@ export interface NormalizerOptions {
 }
 
 /**
+ * Maps screenplay shot types and framing to professional DP (Director of Photography)
+ * cinematographic directives (lens focal lengths, depth of field, optical characteristics).
+ */
+export function getDpCinematographyDirective(shotType?: string): string {
+  switch (shotType?.toLowerCase()) {
+    case "wide":
+    case "establishing":
+    case "toàn cảnh":
+      return "35mm wide-angle lens, deep depth of field, expansive cinematic framing";
+    case "close_up":
+    case "extreme_close_up":
+    case "cận cảnh":
+      return "85mm anamorphic portrait lens, shallow depth of field, creamy bokeh, chiaroscuro lighting";
+    case "action":
+    case "hành động":
+      return "28mm wide dynamic angle, fast shutter speed, high dynamic range motion capture";
+    case "medium":
+    case "trung cảnh":
+    default:
+      return "50mm prime cinematic lens, natural perspective, balanced contrast";
+  }
+}
+
+/**
  * Enriches intermediate screenplay using persistent Story Bible context.
  * Identifies characters, assigns voiceProfileIds, flags unresolved characters,
  * and composes detailed master visual prompts.
@@ -663,13 +713,14 @@ export function enrichWithBibleContext(
   bible: BibleManager,
   options: NormalizerOptions = {}
 ): EpisodicScript {
-  const series = bible.getSeriesMetadata();
+  const targetSeriesId = options.seriesId || (parsed as any).seriesId;
+  const series = bible.getSeriesMetadata(targetSeriesId);
   const seriesStyle = series?.visual_style || "Cinematic 35mm, atmospheric lighting, photorealistic 8k";
   const aspectRatio = series?.aspect_ratio || "9:16";
 
-  const allCharacters = bible.listCharacters();
-  const allLocations = bible.listLocations();
-  const allProps = bible.listKeyProps();
+  const allCharacters = bible.listCharacters(targetSeriesId);
+  const allLocations = bible.listLocations(targetSeriesId);
+  const allProps = bible.listKeyProps(targetSeriesId);
 
   const unresolvedSet = new Set<string>();
 
@@ -775,10 +826,11 @@ export function enrichWithBibleContext(
         charDetails = ` Nhân vật ${mainChar.name} (${mainChar.visual_summary}${marks}${wardrobeDetails}).`;
       }
 
-      // Compose Master Visual Prompt: Art Style + Location + Character/Props + Action Framing
+      // Compose Master Visual Prompt: Art Style + Location + Character/Props + Action Framing + DP Lens Directives
+      const dpDirective = getDpCinematographyDirective(shot.shotType);
       const shotFramingPrefix = shot.shotType
-        ? `[Cú máy: ${shot.shotType}${shot.cameraMovement ? ` - ${shot.cameraMovement}` : ""}] `
-        : "";
+        ? `[Cú máy: ${shot.shotType}${shot.cameraMovement ? ` - ${shot.cameraMovement}` : ""}, ${dpDirective}] `
+        : `[${dpDirective}] `;
       const masterVisualPrompt = `${seriesStyle}. Bối cảnh: ${locationName} (${locationVisual}${locationAtmo}).${charDetails} ${shotFramingPrefix}${shot.visualPrompt}`.trim();
 
       // Resolve Reference Image: Priority Character Face > Wardrobe Image > Location Image
@@ -813,8 +865,13 @@ export function enrichWithBibleContext(
 
         const voiceProfile = isVoiceover ? undefined : char?.voice_profile_id;
         const dialogueId = d.dialogueId || `${shot.shotId}_d${String(dIdx + 1).padStart(2, "0")}`;
-        const subtitleText = d.subtitleText || d.text;
-        const ttsText = d.ttsText || normalizeVietnameseForTts(subtitleText);
+        const rawSub = d.subtitleText || d.text;
+        const cleanedSub = extractActingInstructionAndCleanText(rawSub);
+        const subtitleText = cleanedSub.cleanText;
+        const actingInstruction = d.actingInstruction || cleanedSub.instruction;
+        const ttsText = d.ttsText
+          ? extractActingInstructionAndCleanText(d.ttsText).cleanText
+          : normalizeVietnameseForTts(subtitleText);
 
         enrichedDialogues.push({
           dialogueId,
@@ -824,7 +881,7 @@ export function enrichWithBibleContext(
           rawText: d.rawText || d.text,
           subtitleText,
           ttsText,
-          actingInstruction: d.actingInstruction,
+          actingInstruction,
           type: isVoiceover ? "voiceover" : "speech",
           voiceProfileId: voiceProfile,
           isUnresolved,
@@ -841,7 +898,17 @@ export function enrichWithBibleContext(
         characterId: mainChar?.id,
         dialogues: enrichedDialogues,
         dialogue: enrichedDialogues[0], // for legacy callers
-        cameraMovement: shot.cameraMovement,
+        cameraMovement:
+          shot.cameraMovement ||
+          (shot.shotType === "establishing"
+            ? "dolly_in_slow"
+            : shot.shotType === "close_up" || shot.shotType === "extreme_close_up"
+            ? "dolly_in_slow"
+            : shot.shotType === "action"
+            ? "tracking_shot"
+            : shot.shotType === "wide"
+            ? "pan_horizontal"
+            : "static_locked_off"),
         beatIds: shot.beatIds || [],
         sfxCue: shot.sfxCue
           ? {
@@ -849,7 +916,7 @@ export function enrichWithBibleContext(
               offsetSec: shot.sfxCue.offsetSec ?? 0,
               volume: shot.sfxCue.volume ?? 0.7,
             }
-          : undefined,
+          : CinematicDirectorEngine.detectActionFoley(shot.visualPrompt),
       };
     });
 
@@ -862,6 +929,8 @@ export function enrichWithBibleContext(
       mood: scene.timeOfDay,
       charactersPresent: charsPresent,
       propsPresent,
+      propTransfers: scene.propTransfers || [],
+      events: scene.events || [],
       beatIds: scene.beatIds || [],
       shots: enrichedShots,
     };
@@ -886,7 +955,7 @@ export function enrichWithBibleContext(
   return {
     schemaVersion: "3.0",
     version: "3.0",
-    seriesId: series?.id || "episodic-series",
+    seriesId: targetSeriesId || series?.id || "episodic-series",
     episodeNumber: parsed.episodeNumber,
     title: parsed.title,
     logline: parsed.logline,
@@ -908,18 +977,27 @@ export async function normalizeScript(
   options: NormalizerOptions = {}
 ): Promise<EpisodicScript> {
   // 1. Parse raw text/json (throws ScreenplayParseError on malformed text)
-  const intermediate = parseRawScreenplay(rawText);
-
-  // 2. Cross-reference & enrich with Bible context
-  const enriched = enrichWithBibleContext(intermediate, bible, options);
+  let canonical: EpisodicScript | undefined;
+  if (rawText.trim().startsWith("{")) {
+    try {
+      const value = JSON.parse(rawText);
+      // Studio drafts already contain enriched, stable prompts/cue IDs. Do not enrich twice.
+      if (value.schemaVersion === "3.0") canonical = EpisodicScriptSchema.parse(value);
+    } catch { /* The existing parser supplies detailed errors for invalid/legacy input. */ }
+  }
+  if (canonical && options.seriesId && canonical.seriesId !== options.seriesId) {
+    throw new Error("SERIES_ID_MISMATCH: Kịch bản thuộc dự án khác.");
+  }
+  const enriched = canonical ?? enrichWithBibleContext(parseRawScreenplay(rawText), bible, options);
 
   // 3. Validate schema
   const validated = EpisodicScriptSchema.parse(enriched);
 
   // 4. Validate script deep integrity
-  const knownCharacters = bible.listCharacters().map((c) => c.id);
-  const knownLocations = bible.listLocations().map((l) => l.id);
-  const knownProps = bible.listKeyProps().map((p) => p.id);
+  const targetSeriesId = options.seriesId || validated.seriesId;
+  const knownCharacters = bible.listCharacters(targetSeriesId).map((c) => c.id);
+  const knownLocations = bible.listLocations(targetSeriesId).map((l) => l.id);
+  const knownProps = bible.listKeyProps(targetSeriesId).map((p) => p.id);
 
   const integrityReport = validateScriptIntegrity(validated, {
     knownCharacterIds: knownCharacters,

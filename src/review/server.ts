@@ -546,7 +546,18 @@ export function startReviewServer(options: ReviewServerOptions): ReviewServerPro
 
       // Restrict CORS to localhost only (no arbitrary network access)
       const origin = req.headers.origin;
-      if (origin && (origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:"))) {
+      const isLocalOrigin =
+        !origin ||
+        origin.startsWith("http://localhost:") ||
+        origin === "http://localhost" ||
+        origin.startsWith("http://127.0.0.1:") ||
+        origin === "http://127.0.0.1";
+      if (!isLocalOrigin || req.headers["sec-fetch-site"] === "cross-site") {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Cross-origin requests are forbidden." }));
+        return;
+      }
+      if (origin) {
         res.setHeader("Access-Control-Allow-Origin", origin);
       }
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -1126,13 +1137,23 @@ export function startSeriesReviewServer(options: SeriesReviewServerOptions): Ser
       const url = req.url || "/";
       const method = req.method || "GET";
 
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      const origin = req.headers.origin;
+      const isAllowedOrigin = !origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      if (origin && isAllowedOrigin) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      }
 
       if (method === "OPTIONS") {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      if (origin && !isAllowedOrigin && method === "POST") {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Cross-origin requests from untrusted origins are forbidden" }));
         return;
       }
 
@@ -1209,6 +1230,11 @@ export function startSeriesReviewServer(options: SeriesReviewServerOptions): Ser
 
           if (options.closeOnFinalize && activeServer) {
             setTimeout(() => {
+              for (const socket of sockets) {
+                try {
+                  socket.destroy();
+                } catch {}
+              }
               activeServer?.close(() => resolveMain());
             }, 500);
           }

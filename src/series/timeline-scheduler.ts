@@ -14,6 +14,7 @@ import {
   type TimelineSubtitleCue,
   type UnifiedTimeline,
 } from "./timeline-schema.js";
+import { CinematicDirectorEngine } from "./cinematic-director.js";
 import { log } from "../utils/logger.js";
 
 export interface ScheduleTimelineOptions {
@@ -70,6 +71,10 @@ export class TimelineScheduler {
 
     for (const scene of script.scenes) {
       const sceneStartFrame = currentFrameCursor;
+      const char0 = scene.charactersPresent?.[0];
+      const char1 = scene.charactersPresent?.[1];
+      const leadCharId = typeof char0 === "string" ? char0 : char0?.characterId;
+      const secondCharId = typeof char1 === "string" ? char1 : char1?.characterId;
 
       // Add ambient room tone for the scene
       const sceneAmbienceCue: TimelineAmbienceCue = {
@@ -219,6 +224,11 @@ export class TimelineScheduler {
           const dDurSec = frameToSec(dDurFrames, fps);
 
           const cueId = line.dialogueId || `${shot.shotId}_d${String(turnIdx + 1).padStart(2, "0")}`;
+          const pan = CinematicDirectorEngine.calculateSpeakerAudioPan(
+            line.characterId,
+            leadCharId,
+            secondCharId
+          );
 
           // Dialogue Cue
           dialogueTrack.push({
@@ -241,6 +251,7 @@ export class TimelineScheduler {
             voiceProfileId: line.voiceProfileId,
             audioPath: "",
             volume: 1.0,
+            pan,
           });
 
           // Subtitle Cue - STRICTLY uses subtitleText (clean text), NEVER phonetic ttsText
@@ -276,6 +287,8 @@ export class TimelineScheduler {
             durationSec: 0,
             volume: shot.sfxCue.volume ?? 0.7,
             audioPath: "",
+            pan: shot.sfxCue.pan,
+            actionPrompt: shot.sfxCue.description || shot.visualPrompt,
           });
         }
 

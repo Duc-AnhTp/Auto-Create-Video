@@ -438,6 +438,7 @@ MINH: Cần kiểm tra QA tự động khi backend khả dụng.
         created_at: new Date().toISOString(),
       });
       bible.upsertCharacter({
+        series_id: "series_qa_resume",
         id: "minh",
         name: "Minh",
         role: "protagonist",

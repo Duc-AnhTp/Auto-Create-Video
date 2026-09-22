@@ -1,14 +1,28 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, writeFile, readdir, mkdir, stat } from "node:fs/promises";
 import { createReadStream, existsSync } from "node:fs";
-import { join, resolve, normalize, extname } from "node:path";
+import { join, resolve, normalize, extname, basename, relative, isAbsolute, dirname } from "node:path";
 import { exec } from "node:child_process";
 import { BibleManager } from "../bible/bible-manager.js";
 import { StoryToScreenplayGenerator } from "../series/story-to-screenplay.js";
 import { ConceptArtGenerator } from "../series/concept-art-generator.js";
 import { EpisodicPipeline, type EpisodicPipelineOptions } from "../series/episodic-pipeline.js";
 import { parseRawScreenplay, normalizeScript } from "../series/script-normalizer.js";
+import {
+  parseNleTimeline,
+  parseFcp7Xml,
+  parseOtioJson,
+  compareWithTimeline,
+  applyNleEditsToBible,
+  applyNleEditsToTimeline,
+} from "../assembly/nle-ingest-parser.js";
+import type { UnifiedTimeline, TimelineVideoShot } from "../series/timeline-schema.js";
 import { log } from "../utils/logger.js";
+import { StudioApi } from "./studio-api.js";
+import { checkRequestOrigin, containedPath, HttpError, readJson } from "./http-safety.js";
+import { SeriesId } from "./studio-contract.js";
+import { ZodError } from "zod";
+import { redact } from "../utils/redact.js";
 import { SettingsManager } from "./settings-manager.js";
 import { renderStudioHtml } from "./studio-ui.js";
 
@@ -16,6 +30,9 @@ export interface StudioServerOptions {
   port?: number;
   host?: string;
   autoOpen?: boolean;
+  queuePath?: string;
+  settingsPath?: string;
+  workersEnabled?: boolean;
 }
 
 export class StudioServer {
@@ -24,11 +41,13 @@ export class StudioServer {
   private host: string;
   private sseClients: Map<string, Set<ServerResponse>> = new Map();
   private settingsManager: SettingsManager;
+  private api: StudioApi;
 
   constructor(options: StudioServerOptions = {}) {
-    this.port = options.port || 3456;
+    this.port = options.port ?? 3456;
     this.host = options.host || "127.0.0.1";
-    this.settingsManager = new SettingsManager();
+    this.settingsManager = new SettingsManager(options.settingsPath);
+    this.api = new StudioApi(options.queuePath ?? (process.env.NODE_ENV === "test" ? ":memory:" : resolve("data/studio-jobs.db")), options.workersEnabled ?? process.env.NODE_ENV !== "test");
   }
 
   public broadcastEvent(seriesId: string, episodeNumber: number, data: Record<string, any>): void {
@@ -49,21 +68,26 @@ export class StudioServer {
   public async start(): Promise<string> {
     return new Promise((resolvePromise, reject) => {
       this.server = createServer(async (req, res) => {
-        // CORS Headers
-        res.setHeader("Access-Control-Allow-Origin", "*");
-        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
-
-        if (req.method === "OPTIONS") {
-          res.writeHead(204);
-          res.end();
-          return;
-        }
-
+        try { checkRequestOrigin(req, this.host, this.port); }
+        catch (error) { res.writeHead(error instanceof HttpError ? error.status : 403, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: error instanceof Error ? error.message : "Forbidden" })); return; }
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Referrer-Policy", "no-referrer");
+        if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
         const url = new URL(req.url || "/", `http://${this.host}:${this.port}`);
         const pathname = url.pathname;
 
         try {
+          const seriesPath = pathname.match(/^\/api\/(?:v1\/)?series\/([^/]+)\//);
+          if (seriesPath) SeriesId.parse(decodeURIComponent(seriesPath[1]));
+          if (await this.api.handle(req, res, url)) return;
+          if (pathname === "/studio-next" || pathname.startsWith("/studio-assets/")) {
+            const webRoot = resolve("dist/studio");
+            const file = pathname === "/studio-next" ? join(webRoot, "index.html") : join(webRoot, pathname.slice(1));
+            if (!existsSync(file)) throw new HttpError(404, "STUDIO_BUILD_REQUIRED", "Chạy npm run build:studio để mở Studio mới.");
+            const safe = containedPath(webRoot, file);
+            const type = extname(safe) === ".js" ? "text/javascript" : extname(safe) === ".css" ? "text/css" : "text/html; charset=utf-8";
+            res.writeHead(200, { "Content-Type": type }); res.end(await readFile(safe)); return;
+          }
           // 1. Health Check
           if (pathname === "/health") {
             res.writeHead(200, { "Content-Type": "application/json" });
@@ -72,7 +96,7 @@ export class StudioServer {
           }
 
           // 2. Web UI SPA (Home)
-          if (pathname === "/" || pathname === "/studio") {
+          if (pathname === "/" || pathname === "/studio" || pathname === "/studio-legacy") {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(renderStudioHtml());
             return;
@@ -130,7 +154,7 @@ export class StudioServer {
 
           if (pathname === "/api/series/init" && req.method === "POST") {
             const body = await this.parseJsonBody(req);
-            const bible = new BibleManager(`data/series/${body.id}/story_bible.db`);
+            SeriesId.parse(body.id);
             const meta = {
               id: body.id,
               title: body.title || "Untitled Series",
@@ -140,7 +164,9 @@ export class StudioServer {
               fps: Number(body.fps) || 30,
               created_at: new Date().toISOString(),
             };
-            bible.upsertSeriesMetadata(meta);
+            await this.withBible(`data/series/${body.id}/story_bible.db`, (bible) => {
+              bible.upsertSeriesMetadata(meta);
+            });
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ success: true, metadata: meta }));
             return;
@@ -159,20 +185,22 @@ export class StudioServer {
           if (charMatch && req.method === "POST") {
             const seriesId = charMatch[1];
             const body = await this.parseJsonBody(req);
-            const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
-            bible.upsertCharacter({
-              id: body.id,
-              series_id: seriesId,
-              name: body.name,
-              role: body.role || "supporting",
-              visual_summary: body.visual_summary,
-              distinguishing_marks: body.distinguishing_marks,
-              status: body.status || "alive",
-              face_reference_image: body.face_reference_image,
-              voice_profile_id: body.voice_profile_id || "lucylab:default",
+            const character = await this.withBible(`data/series/${seriesId}/story_bible.db`, (bible) => {
+              bible.upsertCharacter({
+                id: body.id,
+                series_id: seriesId,
+                name: body.name,
+                role: body.role || "supporting",
+                visual_summary: body.visual_summary,
+                distinguishing_marks: body.distinguishing_marks,
+                status: body.status || "alive",
+                face_reference_image: body.face_reference_image,
+                voice_profile_id: body.voice_profile_id || "lucylab:default",
+              });
+              return bible.getCharacter(body.id, seriesId);
             });
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: true, character: bible.getCharacter(body.id) }));
+            res.end(JSON.stringify({ success: true, character }));
             return;
           }
 
@@ -180,18 +208,20 @@ export class StudioServer {
           if (locMatch && req.method === "POST") {
             const seriesId = locMatch[1];
             const body = await this.parseJsonBody(req);
-            const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
-            bible.upsertLocation({
-              id: body.id,
-              series_id: seriesId,
-              name: body.name,
-              visual_summary: body.visual_summary,
-              lighting_mood: body.lighting_mood,
-              atmospheric_rules: body.atmospheric_rules,
-              reference_image_path: body.reference_image_path,
+            const location = await this.withBible(`data/series/${seriesId}/story_bible.db`, (bible) => {
+              bible.upsertLocation({
+                id: body.id,
+                series_id: seriesId,
+                name: body.name,
+                visual_summary: body.visual_summary,
+                lighting_mood: body.lighting_mood,
+                atmospheric_rules: body.atmospheric_rules,
+                reference_image_path: body.reference_image_path,
+              });
+              return bible.getLocation(body.id, seriesId);
             });
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: true, location: bible.getLocation(body.id) }));
+            res.end(JSON.stringify({ success: true, location }));
             return;
           }
 
@@ -199,16 +229,18 @@ export class StudioServer {
           if (propMatch && req.method === "POST") {
             const seriesId = propMatch[1];
             const body = await this.parseJsonBody(req);
-            const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
-            bible.upsertKeyProp({
-              id: body.id,
-              series_id: seriesId,
-              name: body.name,
-              current_holder_id: body.current_holder_id,
-              description: body.description,
+            const prop = await this.withBible(`data/series/${seriesId}/story_bible.db`, (bible) => {
+              bible.upsertKeyProp({
+                id: body.id,
+                series_id: seriesId,
+                name: body.name,
+                current_holder_id: body.current_holder_id,
+                description: body.description,
+              });
+              return bible.getKeyProp(body.id, seriesId);
             });
             res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: true, prop: bible.getKeyProp(body.id) }));
+            res.end(JSON.stringify({ success: true, prop }));
             return;
           }
 
@@ -217,27 +249,27 @@ export class StudioServer {
           if (genArtMatch && req.method === "POST") {
             const seriesId = genArtMatch[1];
             const body = await this.parseJsonBody(req);
-            const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
-            const gen = new ConceptArtGenerator(bible);
-            let result;
             const allowMock = body.allowMock !== undefined ? Boolean(body.allowMock) : true;
-            if (body.type === "location") {
-              result = await gen.generateLocationConceptArt({
-                seriesId,
-                locationId: body.id,
-                promptOverride: body.promptOverride,
-                provider: body.provider || "mock",
-                allowMock,
-              });
-            } else {
-              result = await gen.generateCharacterConceptArt({
-                seriesId,
-                characterId: body.id,
-                promptOverride: body.promptOverride,
-                provider: body.provider || "mock",
-                allowMock,
-              });
-            }
+            const result = await this.withBible(`data/series/${seriesId}/story_bible.db`, async (bible) => {
+              const gen = new ConceptArtGenerator(bible);
+              if (body.type === "location") {
+                return await gen.generateLocationConceptArt({
+                  seriesId,
+                  locationId: body.id,
+                  promptOverride: body.promptOverride,
+                  provider: body.provider || "mock",
+                  allowMock,
+                });
+              } else {
+                return await gen.generateCharacterConceptArt({
+                  seriesId,
+                  characterId: body.id,
+                  promptOverride: body.promptOverride,
+                  provider: body.provider || "mock",
+                  allowMock,
+                });
+              }
+            });
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ success: true, result }));
             return;
@@ -248,16 +280,17 @@ export class StudioServer {
           if (genScriptMatch && req.method === "POST") {
             const seriesId = genScriptMatch[1];
             const body = await this.parseJsonBody(req);
-            const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
-            const generator = new StoryToScreenplayGenerator(bible);
-            const result = await generator.generateScreenplay({
-              seriesId,
-              prompt: body.prompt,
-              storyText: body.storyText,
-              episodeNumber: body.episodeNumber,
-              targetScenes: body.targetScenes || 3,
-              tone: body.tone,
-              skipAudit: true,
+            const result = await this.withBible(`data/series/${seriesId}/story_bible.db`, async (bible) => {
+              const generator = new StoryToScreenplayGenerator(bible);
+              return await generator.generateScreenplay({
+                seriesId,
+                prompt: body.prompt,
+                storyText: body.storyText,
+                episodeNumber: body.episodeNumber,
+                targetScenes: body.targetScenes || 3,
+                tone: body.tone,
+                skipAudit: true,
+              });
             });
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ success: true, result }));
@@ -275,10 +308,11 @@ export class StudioServer {
             const scriptPath = join(scriptsDir, `ep${String(epNum).padStart(2, "0")}.txt`);
             await writeFile(scriptPath, body.rawScreenplay, "utf8");
 
-            const bible = new BibleManager(`data/series/${seriesId}/story_bible.db`);
-            const normalized = await normalizeScript(body.rawScreenplay, bible, {
-              seriesId,
-              skipAudit: true,
+            const normalized = await this.withBible(`data/series/${seriesId}/story_bible.db`, async (bible) => {
+              return await normalizeScript(body.rawScreenplay, bible, {
+                seriesId,
+                skipAudit: true,
+              });
             });
 
             res.writeHead(200, { "Content-Type": "application/json" });
@@ -293,6 +327,7 @@ export class StudioServer {
             const body = await this.parseJsonBody(req);
             const epNum = body.episodeNumber || 1;
 
+            if (body.scriptPath) containedPath(resolve("data"), resolve(body.scriptPath));
             const pipeline = new EpisodicPipeline(`data/series/${seriesId}/story_bible.db`);
 
             // Start production in async worker
@@ -315,6 +350,7 @@ export class StudioServer {
                   provider: body.provider || "mock",
                   skipAudit: body.skipAudit ?? false,
                   skipRender: body.skipRender ?? false,
+                  budgetCapUsd: body.budgetCapUsd,
                   onProgress: onProgressCallback,
                 });
                 this.broadcastEvent(seriesId, epNum, {
@@ -325,15 +361,16 @@ export class StudioServer {
               } catch (err: any) {
                 this.broadcastEvent(seriesId, epNum, {
                   type: "error",
-                  error: err.message,
+                  error: redact(err.message),
                   timestamp: new Date().toISOString(),
                 });
-              }
+                throw err;
+              } finally { pipeline.close(); }
             };
 
             // Non-blocking kickoff if async requested
             if (body.async) {
-              runProduction();
+              void runProduction().catch((error) => log.error("Production failed", error));
               res.writeHead(202, { "Content-Type": "application/json" });
               res.end(JSON.stringify({ success: true, message: "Bắt đầu sản xuất tập phim", seriesId, episodeNumber: epNum }));
             } else {
@@ -344,17 +381,144 @@ export class StudioServer {
             return;
           }
 
+          // Two-Way NLE Round-Trip: Ingest Edited FCP7 XML / OTIO Timeline
+          const nleIngestMatch = pathname.match(/^\/api\/series\/([^/]+)\/episodes\/(\d+)\/nle\/ingest$/);
+          if (nleIngestMatch && req.method === "POST") {
+            const seriesId = nleIngestMatch[1];
+            const epNum = parseInt(nleIngestMatch[2], 10);
+            const body = await this.parseJsonBody(req);
+
+            let content = body.content || body.xmlContent || body.otioContent;
+            const inputPath = body.filePath || body.xmlPath || body.otioPath;
+            if (!content && inputPath) {
+              const safePath = containedPath(process.cwd(), normalize(resolve(inputPath)));
+              const projectRoot = normalize(resolve(process.cwd()));
+              const isWin = process.platform === "win32";
+              const normSafe = isWin ? safePath.toLowerCase() : safePath;
+              const normRoot = isWin ? projectRoot.toLowerCase() : projectRoot;
+              const rel = relative(normRoot, normSafe);
+              if (rel.startsWith("..") || isAbsolute(rel)) {
+                res.writeHead(403, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Access denied: filePath outside project boundary" }));
+                return;
+              }
+              if (existsSync(safePath)) {
+                content = await readFile(safePath, "utf-8");
+              }
+            }
+
+            if (!content) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "Missing required 'content' (XML or OTIO string) or valid 'filePath'" }));
+              return;
+            }
+
+            const ingested = parseNleTimeline(content, body.format);
+
+            // Attempt to load original timeline from assembly output or construct baseline from Bible
+            const epNumStr = String(epNum).padStart(2, "0");
+            const candidatePaths = [
+              join("output", "series", seriesId, `ep-${epNumStr}`, "assembly", "timeline.json"),
+              join("output", "series", seriesId, `ep${epNum}`, "assembly", "timeline.json"),
+              join("output", "series", seriesId, `ep-${epNumStr}`, "timeline.json"),
+              join("data", "series", seriesId, "episodes", `ep${epNum}`, "assembly", "timeline.json"),
+            ];
+            const assemblyTimelinePath = candidatePaths.find((p) => existsSync(p)) || candidatePaths[0];
+            let originalTimeline: UnifiedTimeline;
+
+            if (existsSync(assemblyTimelinePath)) {
+              const rawTl = await readFile(assemblyTimelinePath, "utf-8");
+              originalTimeline = JSON.parse(rawTl) as UnifiedTimeline;
+            } else {
+              // Reconstruct baseline timeline using approved shot takes from Bible
+              originalTimeline = await this.withBible(`data/series/${seriesId}/story_bible.db`, async (bible) => {
+                const takes = bible.listShotTakes(seriesId, epNum);
+                const approvedTakes = takes.filter((t) => t.is_approved === 1);
+                const shots: TimelineVideoShot[] = approvedTakes.map((t, idx) => ({
+                  shotId: t.shot_id,
+                  sceneId: "scene_1",
+                  startFrame: idx * 90,
+                  endFrame: (idx + 1) * 90,
+                  durationFrames: 90,
+                  startSec: idx * 3.0,
+                  endSec: (idx + 1) * 3.0,
+                  durationSec: 3.0,
+                  shotType: "medium",
+                  visualPrompt: t.prompt || "Shot visual prompt",
+                  approvedClipPath: t.local_path,
+                  trimStartSec: 0,
+                }));
+                return {
+                  seriesId,
+                  episodeNumber: epNum,
+                  fps: 30,
+                  sampleRate: 48000,
+                  targetTotalFrames: shots.length * 90,
+                  targetTotalDurationSec: shots.length * 3.0,
+                  videoTrack: shots,
+                  dialogueTrack: [],
+                  sfxTrack: [],
+                  ambienceTrack: [],
+                  subtitleTrack: [],
+                  stems: {},
+                  metrics: {
+                    videoDurationSec: shots.length * 3.0,
+                    audioDurationSec: shots.length * 3.0,
+                    driftSec: 0,
+                    driftFrames: 0,
+                    isWithinTolerance: true,
+                    toleranceSec: 0.05,
+                  },
+                };
+              });
+            }
+
+            const diff = compareWithTimeline(originalTimeline, ingested);
+            let applied = false;
+            let updatedTimeline: UnifiedTimeline | undefined = undefined;
+
+            if (body.apply === true) {
+              applied = await this.withBible(`data/series/${seriesId}/story_bible.db`, async (bible) => {
+                return applyNleEditsToBible(diff, bible, seriesId, epNum);
+              });
+              try {
+                updatedTimeline = applyNleEditsToTimeline(originalTimeline, diff, ingested);
+                await mkdir(dirname(assemblyTimelinePath), { recursive: true });
+                await writeFile(assemblyTimelinePath, JSON.stringify(updatedTimeline, null, 2), "utf-8");
+                log.info(`[NLE INGEST] Đã cập nhật file assembly timeline: ${assemblyTimelinePath}`);
+              } catch (writeErr: any) {
+                log.warn(`[NLE INGEST] Lỗi cập nhật timeline.json: ${writeErr.message}`);
+              }
+            }
+
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                success: true,
+                seriesId,
+                episodeNumber: epNum,
+                diff,
+                applied,
+                timelineUpdated: Boolean(updatedTimeline),
+              })
+            );
+            return;
+          }
+
           // 404 Not Found
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: `Route not found: ${req.method} ${pathname}` }));
         } catch (err: any) {
-          log.error(`Studio API Error: ${err.message}`);
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: err.message }));
+          log.error(`Studio API Error: ${redact(err.message)}`);
+          res.writeHead(err instanceof HttpError ? err.status : err instanceof ZodError ? 400 : 500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: redact(err.message) }));
         }
       });
 
       this.server.listen(this.port, this.host, () => {
+        const address = this.server!.address();
+        if (address && typeof address !== "string") this.port = address.port;
+        this.api.startWorker();
         const url = `http://${this.host}:${this.port}`;
         resolvePromise(url);
       });
@@ -365,7 +529,9 @@ export class StudioServer {
     });
   }
 
-  public close(): Promise<void> {
+  public async close(): Promise<void> {
+    await this.api.close();
+    for (const clients of this.sseClients.values()) for (const client of clients) client.end();
     return new Promise((resolveClose) => {
       if (!this.server) {
         resolveClose();
@@ -382,7 +548,6 @@ export class StudioServer {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
     });
 
     const key = `${seriesId}_${epNum}`;
@@ -417,11 +582,45 @@ export class StudioServer {
       return;
     }
 
-    const safePath = normalize(resolve(rawPath));
+    const safePath = containedPath(process.cwd(), normalize(resolve(rawPath)));
     const projectRoot = normalize(resolve(process.cwd()));
-    if (!safePath.startsWith(projectRoot) && !safePath.includes("output") && !safePath.includes("assets")) {
+    const isWin = process.platform === "win32";
+    const normSafe = isWin ? safePath.toLowerCase() : safePath;
+    const normRoot = isWin ? projectRoot.toLowerCase() : projectRoot;
+    const rel = relative(normRoot, normSafe);
+    if (rel.startsWith("..") || isAbsolute(rel) || rel === "") {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Access denied to requested path" }));
+      return;
+    }
+
+    const lowerPath = safePath.toLowerCase();
+    const fileName = basename(safePath);
+    if (
+      fileName.startsWith(".") ||
+      lowerPath.includes(".git") ||
+      lowerPath.endsWith(".env") ||
+      lowerPath.endsWith(".db") ||
+      lowerPath.endsWith(".sqlite") ||
+      lowerPath.endsWith(".ts") ||
+      lowerPath.endsWith(".js") ||
+      lowerPath.endsWith(".json")
+    ) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Access denied to sensitive or non-media files" }));
+      return;
+    }
+
+    const ext = extname(safePath).toLowerCase();
+    const ALLOWED_EXTS = new Set([
+      ".mp4", ".mov", ".mkv", ".webm",
+      ".jpg", ".jpeg", ".png", ".webp",
+      ".wav", ".mp3", ".m4a", ".aac",
+      ".srt", ".vtt", ".ass", ".otio", ".xml",
+    ]);
+    if (!ALLOWED_EXTS.has(ext)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Access denied: unapproved media extension" }));
       return;
     }
 
@@ -431,22 +630,74 @@ export class StudioServer {
       return;
     }
 
-    const ext = extname(safePath).toLowerCase();
     let contentType = "application/octet-stream";
     if (ext === ".mp4") contentType = "video/mp4";
     else if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
     else if (ext === ".png") contentType = "image/png";
     else if (ext === ".wav") contentType = "audio/wav";
     else if (ext === ".mp3") contentType = "audio/mpeg";
+    else if (ext === ".srt") contentType = "text/plain; charset=utf-8";
+    else if (ext === ".vtt") contentType = "text/vtt; charset=utf-8";
+    else if (ext === ".ass") contentType = "text/x-ssa; charset=utf-8";
 
     const fileStat = await stat(safePath);
+    if (fileStat.isDirectory()) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Access denied: cannot stream directories" }));
+      return;
+    }
     const fileSize = fileStat.size;
     const range = req.headers.range;
 
     if (range) {
-      const parts = range.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+      if (!match) {
+        res.writeHead(416, {
+          "Content-Range": `bytes */${fileSize}`,
+          "Content-Type": contentType,
+        });
+        res.end();
+        return;
+      }
+
+      let start: number;
+      let end: number;
+
+      if (match[1] === "" && match[2] !== "") {
+        // Suffix byte range: bytes=-500 (requesting last 500 bytes)
+        const suffixLen = parseInt(match[2], 10);
+        if (isNaN(suffixLen) || suffixLen <= 0) {
+          res.writeHead(416, {
+            "Content-Range": `bytes */${fileSize}`,
+            "Content-Type": contentType,
+          });
+          res.end();
+          return;
+        }
+        start = Math.max(0, fileSize - suffixLen);
+        end = fileSize - 1;
+      } else if (match[1] !== "") {
+        start = parseInt(match[1], 10);
+        end = match[2] !== "" ? parseInt(match[2], 10) : fileSize - 1;
+      } else {
+        res.writeHead(416, {
+          "Content-Range": `bytes */${fileSize}`,
+          "Content-Type": contentType,
+        });
+        res.end();
+        return;
+      }
+
+      if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
+        res.writeHead(416, {
+          "Content-Range": `bytes */${fileSize}`,
+          "Content-Type": contentType,
+        });
+        res.end();
+        return;
+      }
+
+      end = Math.min(end, fileSize - 1);
       const chunkSize = end - start + 1;
       const stream = createReadStream(safePath, { start, end });
 
@@ -479,16 +730,17 @@ export class StudioServer {
         const dbPath = join(seriesDir, ent.name, "story_bible.db");
         if (existsSync(dbPath)) {
           try {
-            const bible = new BibleManager(dbPath);
-            const meta = bible.getSeriesMetadata(ent.name) || { id: ent.name, title: ent.name };
-            const chars = bible.listCharacters(ent.name);
-            const locs = bible.listLocations(ent.name);
-            const history = bible.getCanonHistory(ent.name);
-            list.push({
-              ...meta,
-              characterCount: chars.length,
-              locationCount: locs.length,
-              episodeCount: history.length,
+            await this.withBible(dbPath, (bible) => {
+              const meta = bible.getSeriesMetadata(ent.name) || { id: ent.name, title: ent.name };
+              const chars = bible.listCharacters(ent.name);
+              const locs = bible.listLocations(ent.name);
+              const history = bible.getCanonHistory(ent.name);
+              list.push({
+                ...meta,
+                characterCount: chars.length,
+                locationCount: locs.length,
+                episodeCount: history.length,
+              });
             });
           } catch {}
         }
@@ -499,31 +751,30 @@ export class StudioServer {
 
   private async getSeriesBibleData(seriesId: string): Promise<any> {
     const dbPath = join("data", "series", seriesId, "story_bible.db");
-    const bible = new BibleManager(existsSync(dbPath) ? dbPath : ":memory:");
-    return {
-      metadata: bible.getSeriesMetadata(seriesId) || { id: seriesId, title: seriesId },
-      characters: bible.listCharacters(seriesId),
-      locations: bible.listLocations(seriesId),
-      props: bible.listKeyProps(seriesId),
-      worldState: bible.getAllWorldState(seriesId),
-      canonHistory: bible.getCanonHistory(seriesId),
-    };
+    return await this.withBible(existsSync(dbPath) ? dbPath : ":memory:", (bible) => {
+      return {
+        metadata: bible.getSeriesMetadata(seriesId) || { id: seriesId, title: seriesId },
+        characters: bible.listCharacters(seriesId),
+        locations: bible.listLocations(seriesId),
+        props: bible.listKeyProps(seriesId),
+        worldState: bible.getAllWorldState(seriesId),
+        canonHistory: bible.getCanonHistory(seriesId),
+      };
+    });
   }
 
-  private parseJsonBody(req: IncomingMessage): Promise<any> {
-    return new Promise((resolvePromise, reject) => {
-      let body = "";
-      req.on("data", (chunk) => {
-        body += chunk;
-      });
-      req.on("end", () => {
-        try {
-          resolvePromise(body ? JSON.parse(body) : {});
-        } catch (err) {
-          reject(new Error("Invalid JSON body"));
-        }
-      });
-      req.on("error", reject);
-    });
+  private async withBible<T>(dbPath: string, fn: (bible: BibleManager) => T | Promise<T>): Promise<T> {
+    const bible = new BibleManager(dbPath);
+    try {
+      return await fn(bible);
+    } finally {
+      try {
+        bible.close();
+      } catch {}
+    }
+  }
+
+  private async parseJsonBody(req: IncomingMessage): Promise<any> {
+    return readJson(req);
   }
 }

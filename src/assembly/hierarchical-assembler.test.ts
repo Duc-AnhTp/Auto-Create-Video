@@ -1,3 +1,4 @@
+import { probeVideoFile } from "../media/media-validator.js";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, unlinkSync } from "node:fs";
 import { rm, mkdir, writeFile, readFile } from "node:fs/promises";
@@ -259,6 +260,30 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
       const manifest2 = await assembler2.assemble();
       expect(manifest2.scenes[0].isCacheHit).toBe(true);
       expect(manifest2.scenes[1].isCacheHit).toBe(true);
+
+      // Run 2b: passing enableColorMatch: true explicitly MUST also trigger Cache Hit because default is true!
+      const assembler2b = new HierarchicalFilmAssembler({
+        seriesId: "test_series",
+        episodeNumber: 1,
+        title: "Tập 1: Thành Phố Ngầm",
+        scenes,
+        enableColorMatch: true,
+        outputDir: join(testDir, "ep-01-run1"),
+      });
+      const manifest2b = await assembler2b.assemble();
+      expect(manifest2b.scenes[0].isCacheHit).toBe(true);
+      expect(manifest2b.scenes[1].isCacheHit).toBe(true);
+
+      // A different delivery format must invalidate previously rendered scenes.
+      const manifest3 = await new HierarchicalFilmAssembler({
+        seriesId: "test_series", episodeNumber: 1, scenes,
+        width: 320, height: 180, fps: 24, aspectRatio: "16:9",
+        outputDir: join(testDir, "ep-01-run1"), detectBlackFrames: false,
+      }).assemble();
+      expect(manifest3.scenes.every(scene => !scene.isCacheHit)).toBe(true);
+      const media = await probeVideoFile(manifest3.masterOutputs.masterVideoPath);
+      expect(media.videoStream?.width).toBe(320);
+      expect(media.videoStream?.height).toBe(180);
     });
   });
 
@@ -407,6 +432,8 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
         sfxCues,
         bgmTrack,
         subtitleCues,
+        burnSubtitles: true,
+        width: 320, height: 180, aspectRatio: "16:9",
         pacingReport: {
           overallAverageShotDurationSec: 4.0,
           overallCutsPerMinute: 15.0,
@@ -421,6 +448,10 @@ describe("Hierarchical Film Assembler & Delivery Package Acceptance Tests", () =
       // 1. Check Master outputs
       expect(existsSync(manifest.masterOutputs.masterVideoPath)).toBe(true);
       expect(existsSync(manifest.masterOutputs.masterAudioPath)).toBe(true);
+      const hardsub = await probeVideoFile(manifest.masterOutputs.masterHardsubVideoPath!);
+      expect(hardsub.isValid).toBe(true);
+      expect(hardsub.hasAudio).toBe(true);
+      expect(hardsub.durationSec).toBeCloseTo(8, 0);
       expect(manifest.pacingReport?.overallAverageShotDurationSec).toBe(4.0);
       expect(manifest.pacingReport?.pacingDynamismScore).toBe(0.65);
 

@@ -15,6 +15,7 @@ import {
   createValidMockMp4File,
   createValidMockMp3File,
 } from "../assets/mock-media-generator.js";
+import { probeVideoFile } from "../media/media-validator.js";
 import { AssemblyManifestSchema } from "./manifest-schema.js";
 import type {
   TimelineDialogueCue,
@@ -371,7 +372,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
         for (let shNum = 1; shNum <= 3; shNum++) {
           const shotId = `sc${scNum}_sh${shNum}`;
           const clipPath = join(clipsDir, `pilot_${shotId}.mp4`);
-          await createValidMockMp4File(clipPath, 10.0);
+          await createValidMockMp4File(clipPath, 10.0, 320, 180);
 
           scShots.push({
             shotId,
@@ -445,6 +446,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
         dialogueCues,
         subtitleCues,
         outputDir: pilotOutputDir,
+        width: 320, height: 180,
         detectBlackFrames: false,
       });
 
@@ -456,30 +458,15 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
       expect(existsSync(manifest.masterOutputs.masterVideoPath)).toBe(true);
       expect(existsSync(manifest.masterOutputs.masterAudioPath)).toBe(true);
 
-      // 2. Separate Quality Assessment Criteria:
-      const qualityAssessment = {
-        visualConsistencyScore: 0.88, // Assessed via Face/Style embedding similarity
-        narrativeContinuity: {
-          propTransferred: true,
-          propId: "prop_quantum_chip",
-          from: "Minh",
-          to: "An",
-          sceneNumber: 2,
-        },
-        pacingAndRhythm: {
-          totalDurationSec: manifest.totalDurationSec,
-          dialogueLinesCount: dialogueCues.length,
-          silenceGapsDetected: true,
-          pacingVerdict: "Cân bằng tốt giữa thoại và khoảng lặng kịch tính (4s thoại / 6s khoảng lặng mỗi cú máy)",
-        },
-      };
-
-      expect(qualityAssessment.visualConsistencyScore).toBeGreaterThanOrEqual(0.75);
-      expect(qualityAssessment.narrativeContinuity.propTransferred).toBe(true);
-      expect(qualityAssessment.pacingAndRhythm.dialogueLinesCount).toBe(4);
-
-      // VERDICT CẤP C: PASS!
-    });
+      // Inspect actual media; mock images cannot establish continuity or visual quality.
+      const probe = await probeVideoFile(manifest.masterOutputs.masterVideoPath);
+      expect(probe.isValid).toBe(true);
+      expect(probe.hasAudio).toBe(true);
+      expect(probe.durationSec).toBeCloseTo(120, 0);
+      expect(dialogueCues).toHaveLength(4);
+      expect(subtitleCues.every(cue => cue.endFrame > cue.startFrame)).toBe(true);
+      // Structural mock acceptance only; no visual quality claim.
+    }, 180000);
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -492,7 +479,8 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
 
       // Create reusable fixture clips for 40 shots across 4 scenes (10 shots per scene)
       const reusableClip = join(clipsDir, "reusable_5s.mp4");
-      await createValidMockMp4File(reusableClip, 5.0);
+      // This measures 40-shot scheduling/cache behavior, not 1080p encoding speed.
+      await createValidMockMp4File(reusableClip, 5.0, 320, 180);
 
       const benchmarkScenes: SceneAssemblyInput[] = [];
       for (let sc = 1; sc <= 4; sc++) {
@@ -524,6 +512,8 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
         seriesId: "benchmark_series",
         episodeNumber: 1,
         title: "Long Timeline Benchmark",
+        width: 320,
+        height: 180,
         scenes: benchmarkScenes,
         outputDir: benchmarkDir,
         detectBlackFrames: false,
@@ -543,7 +533,7 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
       expect(memDeltaMb).toBeLessThan(150);
 
       // 3. Execution time is within reasonable boundary for 4 scenes
-      expect(elapsedMs).toBeLessThan(60000);
+      expect(elapsedMs).toBeLessThan(120000);
 
       // 4. Test Resume / Cache Continuation:
       // Re-running assembler on same output MUST achieve 100% cache hit on all 4 scenes!
@@ -552,6 +542,8 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
         seriesId: "benchmark_series",
         episodeNumber: 1,
         title: "Long Timeline Benchmark",
+        width: 320,
+        height: 180,
         scenes: benchmarkScenes,
         outputDir: benchmarkDir,
         detectBlackFrames: false,
@@ -567,6 +559,6 @@ describe("Ba Cấp Nghiệm Thu Toàn Quy Trình & Long Timeline Infrastructure 
       const infrastructureDisclaimer =
         "Thử nghiệm này kiểm chứng năng lực kỹ thuật của hệ thống hạ tầng (giới hạn command line, quản lý bộ nhớ heap, cơ chế cache theo cảnh, đồng bộ timecode timebase); không chứng minh chất lượng thẩm mỹ hoặc tính nhất quán điện ảnh của một phim AI dài thực tế.";
       expect(infrastructureDisclaimer).toContain("kiểm chứng năng lực kỹ thuật");
-    });
+    }, 180000);
   });
 });

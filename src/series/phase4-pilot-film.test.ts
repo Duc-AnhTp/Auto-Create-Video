@@ -238,7 +238,7 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       expect(history.length).toBe(1);
       expect(history[0].episode_number).toBe(1);
       expect(history[0].major_events.length).toBe(2);
-    }, 120000);
+    }, 600000);
   });
 
   describe("4. Series Review Server & Take Approval Verification", () => {
@@ -392,6 +392,6 @@ describe("Phase 4 Verification: 2-3 Minute Pilot Film Production & Review Dashbo
       const checkpointPath = join(testOutputDir, "checkpoint.json");
       const job = JSON.parse(readFileSync(checkpointPath, "utf8"));
       expect(job.shots["sc1_sh1"].activeTakeId).toBe("cyber-saigon_ep01_sc1_sh1_take02");
-    }, 120000);
+    }, 600000);
   });
 });

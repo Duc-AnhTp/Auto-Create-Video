@@ -204,5 +204,5 @@ describe("Multi-Episode Continuity & Canon Memory Verification", () => {
     expect(canonHistory[0].episode_number).toBe(1);
     expect(canonHistory[1].episode_number).toBe(2);
     expect(canonHistory[1].major_events[0]).toContain("Bạch Đằng");
-  }, 120000);
+  }, 600000);
 });

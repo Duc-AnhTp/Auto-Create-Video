@@ -61,6 +61,7 @@ import { CinematicDirectorEngine } from "./cinematic-director.js";
 import type { FoleyGenerator } from "../audio/foley-generator.js";
 import { log } from "../utils/logger.js";
 import { createValidMockMp4File, hasFfmpeg } from "../assets/mock-media-generator.js";
+import { resolveVideoDimensions } from "../media/dimension-resolver.js";
 
 /**
  * Computes deterministic audio fingerprint encompassing all dialogue lines, speakers, sfx cues, and bgm.
@@ -205,6 +206,7 @@ export interface EpisodicPipelineOptions {
   /** Cooperative boundary: finish in-flight work before pausing or cancelling. */
   checkpoint?: () => Promise<void>;
   expectedEpisodeNumber?: number;
+  exportResolution?: "720p" | "1080p";
 }
 
 export interface EpisodicPipelineResult {
@@ -1757,12 +1759,17 @@ export class EpisodicPipeline {
             }),
           }));
 
+          const effectiveAspect = effectiveConfig.aspectRatio || script.aspectRatio || "9:16";
+          const dims = resolveVideoDimensions(effectiveAspect, options.exportResolution);
+
           const hierarchicalAssembler = new HierarchicalFilmAssembler({
             seriesId,
             episodeNumber: script.episodeNumber,
             title: script.title,
             fps: effectiveConfig.fps || script.fps || 30,
-            aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
+            aspectRatio: dims.aspectRatio as any,
+            width: dims.width,
+            height: dims.height,
             scenes: scenesInput,
             outputDir: join(outputDir, "assembly"),
             requireApprovedShots: true,
@@ -1932,12 +1939,17 @@ export class EpisodicPipeline {
           }),
         }));
 
+        const effectiveAspect = effectiveConfig.aspectRatio || script.aspectRatio || "9:16";
+        const dims = resolveVideoDimensions(effectiveAspect, options.exportResolution);
+
         const hierarchicalAssembler = new HierarchicalFilmAssembler({
           seriesId,
           episodeNumber: script.episodeNumber,
           title: script.title,
           fps: effectiveConfig.fps || script.fps || 30,
-          aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
+          aspectRatio: dims.aspectRatio as any,
+          width: dims.width,
+          height: dims.height,
           scenes: scenesInput,
           outputDir: join(outputDir, "assembly"),
           enableColorMatch: (effectiveConfig as any).enableColorMatch ?? true,

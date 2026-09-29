@@ -12,6 +12,8 @@ import type { TimelineSubtitleCue } from "../series/timeline-schema.js";
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createValidMockMp4File } from "../assets/mock-media-generator.js";
+import { probeVideoFile } from "./media-validator.js";
 
 describe("AssSubtitleBuilder", () => {
   it("formats timestamps into valid ASS H:MM:SS.cc format", () => {
@@ -114,13 +116,36 @@ describe("AssSubtitleBuilder", () => {
     expect(ass).toContain("Thám tử: {\\r}Khu vực này đã bị phong tỏa.");
   });
 
-  it("safely escapes Windows drive paths for FFmpeg subtitles filter syntax", () => {
-    const rawWindowsPath = "D:\\Projects\\Series\\ep1\\subtitles.ass";
-    const escaped = rawWindowsPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-    expect(escaped).toBe("D\\:/Projects/Series/ep1/subtitles.ass");
-    expect(`subtitles='${escaped}'`).toBe("subtitles='D\\:/Projects/Series/ep1/subtitles.ass'");
+  it("exports 1:1 square resolution with appropriate dimensions", () => {
+    const mockCues: TimelineSubtitleCue[] = [
+      {
+        subtitleId: "sub_sq",
+        shotId: "shot_sq",
+        dialogueId: "dia_sq",
+        speakerName: "Thám tử",
+        displayText: "Video vuông.",
+        startFrame: 0,
+        endFrame: 60,
+        startSec: 0,
+        endSec: 2.0,
+        durationSec: 2.0,
+      },
+    ];
+
+    const ass = exportToAss(mockCues, { aspectRatio: "1:1" });
+    expect(ass).toContain("PlayResX: 1080");
+    expect(ass).toContain("PlayResY: 1080");
   });
 
+  it("rejects corrupt media instead of substituting a successful mock render", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ass-corrupt-"));
+    try {
+      const input = join(dir, "invalid.mp4"), ass = join(dir, "subtitles.ass");
+      writeFileSync(input, "not a video");
+      writeFileSync(ass, exportToAss([], { aspectRatio: "16:9" }));
+      await expect(burnAssSubtitles(input, ass, join(dir, "output.mp4"))).rejects.toThrow();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   it("defensively strips bracketed and parenthesized acting instructions from subtitle cues", () => {
     const mockCues: TimelineSubtitleCue[] = [
       {
@@ -165,19 +190,24 @@ describe("AssSubtitleBuilder", () => {
     expect(ass).not.toMatch(/\{\\k\d+\}\\N/);
   });
 
-  it("burnAssSubtitles burns or passes through ASS subtitles to output video", async () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "ass-burn-test-"));
+  it("burnAssSubtitles renders Vietnamese subtitles using real media, including quoted paths", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "ass-burn thử 'quoted'-"));
     try {
       const mockVid = join(tempDir, "input.mp4");
       const mockAss = join(tempDir, "subtitles.ass");
       const outVid = join(tempDir, "output.mp4");
 
-      writeFileSync(mockVid, "MOCK_VIDEO_DATA");
-      writeFileSync(mockAss, "[Script Info]\nTitle: Test\n");
+      await createValidMockMp4File(mockVid, 1, 320, 180);
+      writeFileSync(mockAss, exportToAss([{
+        subtitleId: "sub_1", shotId: "shot_1", dialogueId: "d1", speakerName: "Lan",
+        displayText: "Chiếc chìa khóa bên sông", startFrame: 0, endFrame: 30,
+        startSec: 0, endSec: 1, durationSec: 1,
+      }], { aspectRatio: "16:9", style: "clean" }));
 
       const res = await burnAssSubtitles(mockVid, mockAss, outVid);
       expect(res).toBe(outVid);
       expect(existsSync(outVid)).toBe(true);
+      expect((await probeVideoFile(outVid)).isValid).toBe(true);
     } finally {
       if (existsSync(tempDir)) {
         rmSync(tempDir, { recursive: true, force: true });

@@ -12,6 +12,7 @@ export const ProductionRequestSchema = z.object({
   budgetCapUsd: z.number().finite().positive().optional(),
   maxReRolls: z.number().int().min(0).max(2).default(2),
   resume: z.boolean().default(true),
+  exportResolution: z.enum(["720p", "1080p"]).default("1080p").optional(),
 }).strict().superRefine((value, ctx) => {
   if (value.mode === "production" && (value.provider === "mock" || !value.budgetCapUsd)) {
     ctx.addIssue({ code: "custom", message: "Production requires a real provider and an explicit budget cap." });

@@ -44,6 +44,7 @@ while (!stopping) {
       maxReRolls: job.request.maxReRolls,
       allowMockMedia: job.request.mode === "mock",
       useHierarchicalAssembly: true,
+      exportResolution: job.request.exportResolution || "1080p",
       autoCommitCanon: true,
       checkpoint,
       expectedEpisodeNumber: job.request.episodeNumber,

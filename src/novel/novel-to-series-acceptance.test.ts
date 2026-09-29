@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+// These multi-episode integration cases generate real media with FFmpeg.
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { join } from "node:path";
 import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -18,7 +19,7 @@ import { HierarchicalFilmAssembler } from "../assembly/hierarchical-assembler.js
 import { EpisodicPipeline } from "../series/episodic-pipeline.js";
 import { isFfmpegAvailable } from "../media/ffmpeg.js";
 
-describe("Phase P5: End-to-End Acceptance Test Suite (16 Groups)", () => {
+describe("Phase P5: End-to-End Acceptance Test Suite (16 Groups)", { timeout: 180000 }, () => {
   let bible: BibleManager;
   const seriesId = "series_acceptance_pilot";
   const testOutputDir = join("data", "test_output", "acceptance_pilot_test");

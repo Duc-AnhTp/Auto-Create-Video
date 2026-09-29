@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { readFile, rm } from "node:fs/promises";
+import { probeAudioFile } from "../media/media-validator.js";
 import {
   generateValidMockMp3,
   generateValidMockMp4,
@@ -57,8 +58,10 @@ describe("MockMediaGenerator (Container/Codec Compliant Mock Media)", () => {
     await createValidMockMp3File(p, 1.5);
     const diskBuf = await readFile(p);
     expect(diskBuf.length).toBeGreaterThan(500);
-    expect(diskBuf[0]).toBe(0xff);
-    expect(diskBuf[1]).toBe(0xfb);
+    // Encoded MP3 may start with an ID3 tag; validate its audio stream instead.
+    const probe = await probeAudioFile(p);
+    expect(probe.isValid).toBe(true);
+    expect(probe.durationSec).toBeCloseTo(1.5, 1);
   });
 
   it("writes valid mock MP4 file to disk", async () => {

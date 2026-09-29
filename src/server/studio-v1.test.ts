@@ -12,6 +12,17 @@ describe("Studio v1 contracts", () => {
     expect((await axios.get(url+"/api/v1/jobs/"+data.jobId)).data.job.status).toBe("queued");
     expect((await axios.post(url+"/api/v1/jobs/"+data.jobId+"/pause",{})).data.job.status).toBe("paused");
   });
+  it("accepts custom exportResolution in job request", async () => {
+    const { data, status } = await axios.post(url + "/api/v1/jobs", {
+      seriesId: "test-pilot",
+      episodeNumber: 1,
+      rawScreenplay: "TẬP 1: Test Resolution",
+      exportResolution: "720p",
+    });
+    expect(status).toBe(202);
+    const jobRes = await axios.get(url + "/api/v1/jobs/" + data.jobId);
+    expect(jobRes.data.job.request.exportResolution).toBe("720p");
+  });
   it("rejects traversal, unbudgeted production and cross-origin writes",async()=>{
     const request={seriesId:"../private",episodeNumber:1,rawScreenplay:"test"};
     expect((await axios.post(url+"/api/v1/jobs",request,{validateStatus:()=>true})).status).toBe(400);

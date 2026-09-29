@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { burnAssSubtitles } from "../media/ass-subtitle-builder.js";
 import { mkdir, writeFile, readFile, copyFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
@@ -325,7 +326,10 @@ export class HierarchicalFilmAssembler {
 
     for (const scene of scenes) {
       const sceneNumStr = scene.sceneNumber.toString().padStart(2, "0");
-      const sceneHash = computeSceneContentHash(scene);
+      const sceneHash = createHash("sha256").update(JSON.stringify({
+        content: computeSceneContentHash(scene), width, height, fps,
+        enableColorMatch: this.options.enableColorMatch ?? true, lutPath: this.options.lutPath,
+      })).digest("hex");
       const outSceneVideoPath = join(scenesDir, `scene_${sceneNumStr}.mp4`);
       const sceneMetaPath = join(scenesDir, `scene_${sceneNumStr}.meta.json`);
 
@@ -579,33 +583,18 @@ export class HierarchicalFilmAssembler {
     if (this.options.burnSubtitles) {
       log.info("  Đang burn-in phụ đề động (.ass) vào video master...");
       masterHardsubVideoPath = join(outputDir, "master-video-hardsub.mp4");
-      if ((await isFfmpegAvailable()) && existsSync(finalMasterMp4Path)) {
+      if (hasFfmpeg) {
         try {
-          const escapedAss = assPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-          await runFfmpeg([
-            "-y",
-            "-i",
-            finalMasterMp4Path,
-            "-vf",
-            `subtitles='${escapedAss}'`,
-            "-c:a",
-            "copy",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            masterHardsubVideoPath,
-          ]);
+          await burnAssSubtitles(finalMasterMp4Path, assPath, masterHardsubVideoPath);
           log.info(`  Video hardsub hoàn tất: ${masterHardsubVideoPath}`);
-        } catch (hardsubErr: any) {
-          log.warn(`  Burn-in phụ đề thất bại, tạo fallback: ${hardsubErr.message}`);
+        } catch (err: any) {
+          log.warn(`  Cảnh báo: Không thể burn-in phụ đề ASS (${err?.message || err}). Sử dụng mock fallback.`);
           await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
         }
       } else {
         await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
       }
     }
-
     // Construct UnifiedTimeline for NLE export (accounting for crossfade transitions)
     let sceneCursorSec = 0;
     const flatVideoTrack = assembledSceneRecords.flatMap((sc) => {

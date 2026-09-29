@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { resolve, join, isAbsolute } from "node:path";
+import { tmpdir } from "node:os";
 import type { TimelineSubtitleCue } from "../series/timeline-schema.js";
 import { hasFfmpeg } from "../assets/mock-media-generator.js";
 
 export interface AssSubtitleOptions {
-  /** Video orientation / aspect ratio: "9:16" (default for mobile) or "16:9" */
-  aspectRatio?: "9:16" | "16:9";
+  /** Video orientation / aspect ratio: "9:16" (default for mobile), "16:9", "1:1", "4:5" */
+  aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5" | string;
   /** Font family for subtitles, e.g. "Arial", "Montserrat", "Impact" */
   fontFamily?: string;
   /** Primary text color in ASS BGR hex, e.g. "&H00FFFFFF" (White) */
@@ -137,18 +138,22 @@ export function exportToAss(
   subtitles: TimelineSubtitleCue[],
   options: AssSubtitleOptions = {}
 ): string {
-  const isPortrait = options.aspectRatio !== "16:9";
-  const playResX = isPortrait ? 1080 : 1920;
-  const playResY = isPortrait ? 1920 : 1080;
+  const aspect = options.aspectRatio || "9:16";
+  const isLandscape = aspect === "16:9";
+  const isSquare = aspect === "1:1";
+  const isPortrait = !isLandscape && !isSquare;
+
+  const playResX = isLandscape ? 1920 : 1080;
+  const playResY = isLandscape ? 1080 : isSquare ? 1080 : 1920;
   const fontFamily = options.fontFamily || "Arial";
-  const fontSize = options.fontSize || (isPortrait ? 54 : 44);
+  const fontSize = options.fontSize || (isPortrait ? 54 : isSquare ? 48 : 44);
   const primaryColor = options.primaryColor || "&H00FFFFFF"; // White (AABBGGRR)
   const highlightColor = options.highlightColor || "&H0000FFFF"; // Bright Yellow
   const outlineColor = options.outlineColor || "&H00000000"; // Black
 
   // Safe Title Area Avoidance: clears TikTok/Shorts bottom seekbars and right action buttons
   const isSafeTitle = options.safeTitleAvoidance ?? isPortrait;
-  const marginV = options.marginV || (isSafeTitle && isPortrait ? 280 : isPortrait ? 240 : 90);
+  const marginV = options.marginV || (isSafeTitle && isPortrait ? 280 : isPortrait ? 240 : isSquare ? 140 : 90);
   const marginR = options.marginR || (isSafeTitle && isPortrait ? 160 : 40);
   const marginL = options.marginL || (isSafeTitle && isPortrait ? 60 : 40);
 
@@ -265,20 +270,18 @@ export async function burnAssSubtitles(
     throw new Error(`ASS subtitle file not found: ${assSubtitlePath}`);
   }
 
-  if (!(await hasFfmpeg())) {
-    // In mock/test environments without ffmpeg, copy input to output
-    await copyFile(videoInputPath, videoOutputPath);
-    return videoOutputPath;
-  }
+  if (!options.ffmpegPath && !(await hasFfmpeg())) throw new Error("FFmpeg is required to burn ASS subtitles");
 
   const ffmpegBin = options.ffmpegPath || "ffmpeg";
-  const safeAssPath = resolve(assSubtitlePath).replace(/\\/g, "/").replace(/:/g, "\\:");
-  const filterArg = `ass='${safeAssPath}'`;
+  // Use a fixed relative filter filename: filter escaping otherwise breaks drive
+  // letters, apostrophes and brackets even though spawn receives an argument array.
+  const workspace = await mkdtemp(join(tmpdir(), "studio-ass-"));
+  const filterArg = "ass=filename=subtitles.ass";
 
   const args = [
     "-y",
     "-i",
-    videoInputPath,
+    resolve(videoInputPath),
     "-vf",
     filterArg,
     "-c:v",
@@ -289,21 +292,54 @@ export async function burnAssSubtitles(
     String(options.crf ?? 20),
     "-c:a",
     options.audioCodec || "copy",
-    videoOutputPath,
+    resolve(videoOutputPath),
   ];
 
-  return new Promise((res, rej) => {
-    const proc = spawn(ffmpegBin, args);
-    let err = "";
-    proc.stderr.on("data", (d) => (err += d.toString()));
-    proc.on("close", (code) => {
-      if (code === 0) {
-        res(videoOutputPath);
-      } else {
-        rej(new Error(`FFmpeg burn-in ASS subtitles failed (exit ${code}): ${err}`));
-      }
-    });
-    proc.on("error", rej);
-  });
-}
+  try {
+    await copyFile(assSubtitlePath, join(workspace, "subtitles.ass"));
+    return await new Promise<string>((res, rej) => {
+      const binary = isAbsolute(ffmpegBin) || !/[\\/]/.test(ffmpegBin) ? ffmpegBin : resolve(ffmpegBin);
+      const proc = spawn(binary, args, { cwd: workspace, windowsHide: true });
+      let timedOut = false;
+      let settled = false;
 
+      const timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          proc.kill("SIGKILL");
+        } catch {}
+      }, 120000);
+
+      let err = "";
+      proc.stderr.on("data", (d) => (err += d.toString()));
+      proc.on("close", (code) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        if (timedOut) {
+          rej(new Error("ASS render timed out"));
+        } else if (code === 0) {
+          res(videoOutputPath);
+        } else {
+          rej(new Error(`FFmpeg burn-in ASS subtitles failed (exit ${code}): ${err}`));
+        }
+      });
+      proc.on("error", (error) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        rej(error);
+      });
+    });
+  } finally {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await rm(workspace, { recursive: true, force: true });
+        break;
+      } catch {
+        if (attempt === 4) break;
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    }
+  }
+}

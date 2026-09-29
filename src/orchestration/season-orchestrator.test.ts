@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+// These multi-episode integration cases generate real media with FFmpeg.
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { join } from "node:path";
 import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -7,7 +8,7 @@ import { SourceIngestionEngine, TextChunker, StoryAnalysisEngine } from "../nove
 import { SeriesPlanner } from "../series/series-planner.js";
 import { SeasonOrchestrator, type EpisodeExecutionStatus } from "./season-orchestrator.js";
 
-describe("Phase P4: Season Orchestrator & Multi-Episode Production Batch", () => {
+describe("Phase P4: Season Orchestrator & Multi-Episode Production Batch", { timeout: 180000 }, () => {
   let bible: BibleManager;
   const seriesId = "series_season_test_p4";
   const testOutputDir = join("data", "test_output", "season_orchestrator_test");

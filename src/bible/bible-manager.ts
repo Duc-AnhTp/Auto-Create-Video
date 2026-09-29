@@ -417,6 +417,19 @@ export interface SourceWorkRecord {
   updated_at?: string;
 }
 
+export interface SourceRevisionRecord {
+  id: string; // e.g. `${sourceId}_rev${revision}`
+  source_id: string;
+  series_id: string;
+  revision: number;
+  content_hash: string;
+  raw_text: string;
+  normalized_text: string;
+  normalization_rules_json?: string;
+  metadata_json?: string;
+  created_at?: string;
+}
+
 export interface SourceUnitRecord {
   id: string; // e.g. "unit_src_cyber_ch01"
   source_id: string;
@@ -668,6 +681,7 @@ export class BibleManager {
     provider_rate_cards: Map<string, ProviderRateCardRecord>;
     // V6 Novel Ingestion & Series Planning
     source_works: Map<string, SourceWorkRecord>;
+    source_revisions: Map<string, SourceRevisionRecord>;
     source_units: Map<string, SourceUnitRecord>;
     source_blocks: Map<string, SourceBlockRecord>;
     story_beats: Map<string, StoryBeatRecord>;
@@ -709,6 +723,7 @@ export class BibleManager {
       series_budgets: new Map(),
       provider_rate_cards: new Map(),
       source_works: new Map(),
+      source_revisions: new Map(),
       source_units: new Map(),
       source_blocks: new Map(),
       story_beats: new Map(),
@@ -5217,6 +5232,74 @@ ${negativeConstraints.map((c) => `❌ ${c}`).join("\n")}
     } else {
       this.memoryStore.source_works.delete(id);
     }
+  }
+
+  // ── Source Revision Operations (Immutable Provenance) ─────────────────────
+
+  public recordSourceRevision(rev: SourceRevisionRecord): void {
+    const now = rev.created_at || new Date().toISOString();
+    const clean: SourceRevisionRecord = {
+      ...rev,
+      normalization_rules_json: rev.normalization_rules_json ?? "{}",
+      metadata_json: rev.metadata_json ?? "{}",
+      created_at: now,
+    };
+
+    if (this.db && !this.isFallback) {
+      this.db
+        .prepare(`
+          INSERT INTO source_revisions (
+            id, source_id, series_id, revision, content_hash,
+            raw_text, normalized_text, normalization_rules_json,
+            metadata_json, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            content_hash = excluded.content_hash,
+            raw_text = excluded.raw_text,
+            normalized_text = excluded.normalized_text,
+            normalization_rules_json = excluded.normalization_rules_json,
+            metadata_json = excluded.metadata_json
+        `)
+        .run(
+          clean.id,
+          clean.source_id,
+          clean.series_id,
+          clean.revision,
+          clean.content_hash,
+          clean.raw_text,
+          clean.normalized_text,
+          clean.normalization_rules_json,
+          clean.metadata_json,
+          clean.created_at
+        );
+    } else {
+      this.memoryStore.source_revisions.set(clean.id, clean);
+    }
+  }
+
+  public getSourceRevision(sourceId: string, revision: number): SourceRevisionRecord | null {
+    if (this.db && !this.isFallback) {
+      const row = this.db
+        .prepare("SELECT * FROM source_revisions WHERE source_id = ? AND revision = ?")
+        .get(sourceId, revision);
+      return (row as SourceRevisionRecord) ?? null;
+    }
+    const found = Array.from(this.memoryStore.source_revisions.values()).find(
+      (r) => r.source_id === sourceId && r.revision === revision
+    );
+    return found ?? null;
+  }
+
+  public listSourceRevisions(sourceId: string): SourceRevisionRecord[] {
+    if (this.db && !this.isFallback) {
+      const rows = this.db
+        .prepare("SELECT * FROM source_revisions WHERE source_id = ? ORDER BY revision ASC")
+        .all(sourceId);
+      return (rows as SourceRevisionRecord[]) ?? [];
+    }
+    return Array.from(this.memoryStore.source_revisions.values())
+      .filter((r) => r.source_id === sourceId)
+      .sort((a, b) => a.revision - b.revision);
   }
 
   // ── Source Unit Operations (Chapters / Scenes) ────────────────────────────

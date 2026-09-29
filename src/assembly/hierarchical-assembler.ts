@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync, readFileSync } from "node:fs";
 import { burnAssSubtitles } from "../media/ass-subtitle-builder.js";
 import { mkdir, writeFile, readFile, copyFile } from "node:fs/promises";
 import { join, dirname, resolve } from "node:path";
@@ -78,6 +78,7 @@ export interface HierarchicalAssemblerOptions {
   enablePeakImpactLinking?: boolean;
   enableColorMatch?: boolean;
   lutPath?: string;
+  allowMockMedia?: boolean;
   pacingReport?: {
     overallAverageShotDurationSec: number;
     overallCutsPerMinute: number;
@@ -88,18 +89,30 @@ export interface HierarchicalAssemblerOptions {
 
 /**
  * Computes deterministic SHA-256 hash for a scene's content.
- * Any change to shot order, take ID, clip path, trim ranges, or transitions changes the hash.
+ * Any change to shot order, take ID, clip path, file byte content, trim ranges, or transitions changes the hash.
  */
 export function computeSceneContentHash(scene: SceneAssemblyInput): string {
-  const payload = scene.shots.map((s) => ({
-    shotId: s.shotId,
-    takeId: s.takeId,
-    sourceClipPath: s.sourceClipPath,
-    trimStartSec: s.trimStartSec ?? 0,
-    trimEndSec: s.trimEndSec,
-    transitionIn: s.transitionIn,
-    transitionOut: s.transitionOut,
-  }));
+  const payload = scene.shots.map((s) => {
+    let fileHash = "";
+    if (s.sourceClipPath && existsSync(s.sourceClipPath)) {
+      try {
+        const buf = readFileSync(s.sourceClipPath);
+        fileHash = createHash("sha256").update(buf).digest("hex");
+      } catch {
+        // Fallback gracefully if file cannot be read
+      }
+    }
+    return {
+      shotId: s.shotId,
+      takeId: s.takeId,
+      sourceClipPath: s.sourceClipPath,
+      fileHash,
+      trimStartSec: s.trimStartSec ?? 0,
+      trimEndSec: s.trimEndSec,
+      transitionIn: s.transitionIn,
+      transitionOut: s.transitionOut,
+    };
+  });
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
@@ -588,11 +601,20 @@ export class HierarchicalFilmAssembler {
           await burnAssSubtitles(finalMasterMp4Path, assPath, masterHardsubVideoPath);
           log.info(`  Video hardsub hoàn tất: ${masterHardsubVideoPath}`);
         } catch (err: any) {
-          log.warn(`  Cảnh báo: Không thể burn-in phụ đề ASS (${err?.message || err}). Sử dụng mock fallback.`);
-          await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
+          log.warn(`  Cảnh báo: Không thể burn-in phụ đề ASS (${err?.message || err}).`);
+          if (this.options.allowMockMedia) {
+            log.warn("  Sử dụng mock fallback cho hardsub video (allowMockMedia=true).");
+            await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
+          } else {
+            throw new Error(`[ASSEMBLY ERROR] Failed to burn ASS subtitles into master video: ${err?.message || err}`);
+          }
         }
       } else {
-        await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
+        if (this.options.allowMockMedia) {
+          await createValidMockMp4File(masterHardsubVideoPath, totalVideoDurationSec, width, height);
+        } else {
+          throw new Error("[ASSEMBLY ERROR] FFmpeg is required to burn ASS subtitles in production.");
+        }
       }
     }
     // Construct UnifiedTimeline for NLE export (accounting for crossfade transitions)

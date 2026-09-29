@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, createWriteStream } from "node:fs";
 import { unlink, rename, mkdir, copyFile, writeFile, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import axios, { type AxiosResponse } from "axios";
+import { validateSafePublicUrl } from "../utils/url-security.js";
 import { log } from "../utils/logger.js";
 
 export interface VideoStreamInfo {
@@ -372,6 +374,14 @@ export async function downloadVideoSafely(
       if (!existsSync(localCleanPath)) {
         throw new Error(`Local source video file does not exist: ${localCleanPath}`);
       }
+      const resolvedSource = resolve(localCleanPath);
+      const allowedRoots = [resolve(process.cwd()), resolve(tmpdir()), dirname(resolve(destinationPath))];
+      const isAllowed = allowedRoots.some(
+        (root) => resolvedSource === root || resolvedSource.startsWith(root + "\\") || resolvedSource.startsWith(root + "/")
+      );
+      if (!isAllowed) {
+        throw new Error(`Local source video path outside allowed workspace: ${localCleanPath}`);
+      }
       if (resolve(localCleanPath) === resolve(destinationPath)) {
         // Already at destination, just validate
         if (validateWithProbe) {
@@ -386,9 +396,16 @@ export async function downloadVideoSafely(
     }
     // 3. HTTP / HTTPS CDN URL
     else if (url.startsWith("http://") || url.startsWith("https://")) {
+      const urlCheck = validateSafePublicUrl(url);
+      if (!urlCheck.safe) {
+        throw new Error(`SSRF policy rejected video URL: ${urlCheck.reason}`);
+      }
+
       const response: AxiosResponse = await axios.get(url, {
-        responseType: "arraybuffer",
+        responseType: "stream",
         timeout: timeoutMs,
+        maxContentLength: 2 * 1024 * 1024 * 1024,
+        maxBodyLength: 2 * 1024 * 1024 * 1024,
         validateStatus: (status) => status >= 200 && status < 300,
       });
 
@@ -397,33 +414,43 @@ export async function downloadVideoSafely(
         throw new Error(`Expected video content but received Content-Type '${contentType}' from ${url}`);
       }
 
-      if (response.data && typeof response.data.pipe === "function") {
-        await new Promise<void>((resolvePromise, rejectPromise) => {
-          const writer = createWriteStream(tempPath);
-          response.data.pipe(writer);
+      const maxBytes = 2 * 1024 * 1024 * 1024; // 2GB
+      let receivedBytes = 0;
 
-          let errorHandled = false;
-          const onError = (err: Error) => {
-            if (!errorHandled) {
-              errorHandled = true;
-              writer.close(() => rejectPromise(err));
+      await new Promise<void>((resolvePromise, rejectPromise) => {
+        const writer = createWriteStream(tempPath);
+        let errorHandled = false;
+
+        const onError = (err: Error) => {
+          if (!errorHandled) {
+            errorHandled = true;
+            writer.close(() => rejectPromise(err));
+          }
+        };
+
+        if (response.data && typeof response.data.on === "function") {
+          response.data.on("data", (chunk: Buffer) => {
+            receivedBytes += chunk.length;
+            if (receivedBytes > maxBytes) {
+              response.data.destroy?.();
+              onError(new Error(`Video stream exceeded max size limit of ${maxBytes} bytes`));
             }
-          };
-
-          writer.on("error", onError);
+          });
           response.data.on("error", onError);
+          writer.on("error", onError);
           writer.on("finish", () => {
             writer.close(() => resolvePromise());
           });
-        });
-      } else {
-        const buffer = Buffer.isBuffer(response.data)
-          ? response.data
-          : response.data instanceof ArrayBuffer
-          ? Buffer.from(response.data)
-          : Buffer.from(response.data || "");
-        await writeFile(tempPath, buffer);
-      }
+          response.data.pipe(writer);
+        } else {
+          const buffer = Buffer.isBuffer(response.data)
+            ? response.data
+            : response.data instanceof ArrayBuffer
+            ? Buffer.from(response.data)
+            : Buffer.from(response.data || "");
+          writeFile(tempPath, buffer).then(resolvePromise, rejectPromise);
+        }
+      });
     } else {
       throw new Error(`Unsupported video URL scheme: ${url}`);
     }
@@ -441,16 +468,45 @@ export async function downloadVideoSafely(
       }
     }
 
-    // 6. Atomic swap: Rename tempPath to destinationPath (handling Windows existing target)
-    try {
-      if (existsSync(destinationPath)) {
-        await unlink(destinationPath);
+    // 6. Atomic swap with rollback: stage to destinationPath, preserving original on failure
+    const backupPath = `${destinationPath}.bak.${Date.now()}`;
+    let backedUp = false;
+    if (existsSync(destinationPath)) {
+      try {
+        await rename(destinationPath, backupPath);
+        backedUp = true;
+      } catch {
+        await copyFile(destinationPath, backupPath);
+        backedUp = true;
       }
-      await rename(tempPath, destinationPath);
-    } catch {
-      // Fallback for Windows file lock / cross-device boundary
-      await copyFile(tempPath, destinationPath);
-      await unlink(tempPath).catch(() => {});
+    }
+
+    try {
+      try {
+        await rename(tempPath, destinationPath);
+      } catch {
+        // Fallback for Windows cross-device boundary
+        await copyFile(tempPath, destinationPath);
+        await unlink(tempPath).catch(() => {});
+      }
+      // Promotion succeeded: remove backup
+      if (backedUp && existsSync(backupPath)) {
+        await unlink(backupPath).catch(() => {});
+      }
+    } catch (promoteErr) {
+      // Promotion failed: restore destination from backup
+      if (backedUp && existsSync(backupPath)) {
+        try {
+          if (existsSync(destinationPath)) {
+            await unlink(destinationPath).catch(() => {});
+          }
+          await rename(backupPath, destinationPath);
+        } catch {
+          await copyFile(backupPath, destinationPath).catch(() => {});
+          await unlink(backupPath).catch(() => {});
+        }
+      }
+      throw promoteErr;
     }
     return destinationPath;
   } catch (err: any) {

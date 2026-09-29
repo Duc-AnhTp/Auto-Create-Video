@@ -351,6 +351,24 @@ CREATE TABLE IF NOT EXISTS source_works (
 
 CREATE INDEX IF NOT EXISTS idx_source_works_series ON source_works (series_id);
 
+-- Immutable source revisions tracking
+CREATE TABLE IF NOT EXISTS source_revisions (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  series_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  content_hash TEXT NOT NULL,
+  raw_text TEXT NOT NULL,
+  normalized_text TEXT NOT NULL,
+  normalization_rules_json TEXT NOT NULL DEFAULT '{}',
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES source_works (id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_source_revisions_unique ON source_revisions (source_id, revision);
+CREATE INDEX IF NOT EXISTS idx_source_revisions_series ON source_revisions (series_id, source_id);
+
 -- Structural units in source (chapters, acts, scenes, sections)
 CREATE TABLE IF NOT EXISTS source_units (
   id TEXT PRIMARY KEY, -- e.g. "unit_src_cyber_ch01"

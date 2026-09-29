@@ -20,6 +20,10 @@ export class StudioApi {
   private timers = new Set<ReturnType<typeof setInterval>>();
   private closing = false;
   private maintenance = new Set<string>();
+
+  isUnderMaintenance(seriesId: string): boolean {
+    return this.maintenance.has(seriesId);
+  }
   constructor(private dbPath = resolve("data/studio-jobs.db"), private workersEnabled = true) {
     this.store = new JobStore(dbPath);
     if (workersEnabled) { const timer = setInterval(() => this.startWorker(), 3000); timer.unref(); this.timers.add(timer); }

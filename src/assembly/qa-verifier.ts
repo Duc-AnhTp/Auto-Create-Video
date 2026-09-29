@@ -212,11 +212,12 @@ export async function verifyAssemblyQa(
         "null",
         "-",
       ];
-      // Note: FFmpeg writes blackdetect output to stderr
+      // Note: FFmpeg writes blackdetect output to stderr; captureStderr captures it on exit code 0
       try {
-        await runFfmpeg(args, { timeoutMs: 30000 });
+        const stderrOutput = await runFfmpeg(args, { timeoutMs: 30000, captureStderr: true });
+        blackSegments = parseBlackdetectStderr(stderrOutput);
       } catch (procErr: any) {
-        // FFmpeg may return 0 or if there's stderr message, runFfmpeg might resolve or reject with stderr
+        // FFmpeg may reject with stderr on non-zero exit or error
         const errText = procErr.message || "";
         blackSegments = parseBlackdetectStderr(errText);
       }

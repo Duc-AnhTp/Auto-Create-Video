@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { basename } from "node:path";
-import type { BibleManager, SourceWorkRecord } from "../bible/bible-manager.js";
+import type { BibleManager, SourceWorkRecord, SourceRevisionRecord } from "../bible/bible-manager.js";
 
 export interface NormalizationRules {
   normalizeLineEndings?: boolean;
@@ -198,6 +198,22 @@ export class SourceIngestionEngine {
     };
 
     bible.upsertSourceWork(workRecord);
+
+    if (isNewRevision) {
+      const revisionRecord: SourceRevisionRecord = {
+        id: `${sourceId}_rev${revision}`,
+        source_id: sourceId,
+        series_id: options.seriesId,
+        revision,
+        content_hash: contentHash,
+        raw_text: rawText,
+        normalized_text: normalizedText,
+        normalization_rules_json: JSON.stringify(rulesApplied),
+        metadata_json: JSON.stringify(options.metadata || {}),
+        created_at: new Date().toISOString(),
+      };
+      bible.recordSourceRevision(revisionRecord);
+    }
 
     return {
       work: workRecord,

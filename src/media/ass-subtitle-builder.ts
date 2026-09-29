@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
-import { resolve, join, isAbsolute } from "node:path";
+import { copyFile, mkdtemp, rm, mkdir } from "node:fs/promises";
+import { resolve, join, isAbsolute, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import type { TimelineSubtitleCue } from "../series/timeline-schema.js";
 import { hasFfmpeg } from "../assets/mock-media-generator.js";
@@ -296,6 +296,7 @@ export async function burnAssSubtitles(
   ];
 
   try {
+    await mkdir(dirname(resolve(videoOutputPath)), { recursive: true });
     await copyFile(assSubtitlePath, join(workspace, "subtitles.ass"));
     return await new Promise<string>((res, rej) => {
       const binary = isAbsolute(ffmpegBin) || !/[\\/]/.test(ffmpegBin) ? ffmpegBin : resolve(ffmpegBin);

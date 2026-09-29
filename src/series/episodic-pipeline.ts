@@ -480,6 +480,10 @@ export class EpisodicPipeline {
       }
     }
 
+    // Story beat coverage tracking
+    let beatCoveragePassed = true;
+    let missingMandatoryBeatIds: string[] = [];
+
     // Determine Output Directory
     const epNumStr = String(script.episodeNumber).padStart(2, "0");
     const outputDir = options.outputDir || join("output", "series", seriesId, `ep-${epNumStr}`);
@@ -1718,6 +1722,8 @@ export class EpisodicPipeline {
       }
 
       // Verify mandatory beat coverage in Story Bible if a series plan exists
+      beatCoveragePassed = true;
+      missingMandatoryBeatIds = [];
       try {
         const activePlan = this.bible.getActiveSeriesPlan(seriesId);
         if (activePlan) {
@@ -1728,6 +1734,8 @@ export class EpisodicPipeline {
             script.episodeNumber
           );
           if (!beatAudit.isValid) {
+            beatCoveragePassed = false;
+            missingMandatoryBeatIds = beatAudit.missingBeatIds;
             for (const w of beatAudit.warnings) {
               log.warn(`⚠️ [BEAT TRACEABILITY WARNING] ${w}`);
             }
@@ -2001,8 +2009,8 @@ export class EpisodicPipeline {
     // AND explicitly flagged with _testOnlyAllowMockCommit === true.
     let shouldCommit = false;
     const lifecycle = this.bible.getEpisodeLifecycle(seriesId, script.episodeNumber);
-    const isTestDatabase = this.biblePath === ":memory:" || (Boolean(this.biblePath) && this.biblePath.includes("test"));
-    const isIsolatedTestCommit = options._testOnlyAllowMockCommit === true && isTestDatabase;
+    const isTestDatabase = this.biblePath === ":memory:" || (Boolean(this.biblePath) && (this.biblePath.includes("test") || process.env.NODE_ENV === "test"));
+    const isIsolatedTestCommit = options._testOnlyAllowMockCommit === true && isTestDatabase && (process.env.NODE_ENV === "test" || this.biblePath === ":memory:");
 
     const allShots = script.scenes.flatMap((s) => s.shots);
     const unapprovedCanonShots = allShots.filter((sh) => {
@@ -2030,8 +2038,30 @@ export class EpisodicPipeline {
       }
     } else {
       // Production path: Lifecycle record must exist and have status 'approved' (Requirement G.1 & G.2)
-      if (!lifecycle) {
-        if (options.autoCommitCanon !== false && !options.requireApproval && unapprovedCanonShots.length === 0 && faceQaFailCount === 0 && faceQaUnavailableCount === 0 && auditPassed) {
+      if (!auditPassed) {
+        log.warn(`  [CANON COMMIT BLOCKED] QA Audit thất bại (auditPassed=false). Từ chối commit canon.`);
+        shouldCommit = false;
+      } else if (faceQaUnavailableCount > 0) {
+        log.warn(`  [CANON COMMIT BLOCKED] Còn ${faceQaUnavailableCount} shot Face QA UNAVAILABLE. Từ chối commit canon khi chưa có kết quả visual QA thực tế.`);
+        shouldCommit = false;
+      } else if (faceQaFailCount > 0) {
+        log.warn(`  [CANON COMMIT BLOCKED] Còn ${faceQaFailCount} shot Face QA FAIL chưa được giải quyết.`);
+        shouldCommit = false;
+      } else if (unapprovedCanonShots.length > 0) {
+        log.warn(`  [CANON COMMIT BLOCKED] Còn ${unapprovedCanonShots.length} shot chưa có take được phê duyệt (${unapprovedCanonShots.map(s => s.shotId).join(", ")}). Từ chối commit canon.`);
+        shouldCommit = false;
+      } else if (!beatCoveragePassed) {
+        log.warn(`  [CANON COMMIT BLOCKED] Thiếu ${missingMandatoryBeatIds.length} mandatory story beat (${missingMandatoryBeatIds.join(", ")}). Đánh dấu lifecycle needs_review=true và từ chối commit canon.`);
+        this.bible.setEpisodeLifecycle({
+          seriesId,
+          episodeNumber: script.episodeNumber,
+          status: "draft",
+          needsReview: true,
+          reviewNotes: `Thiếu ${missingMandatoryBeatIds.length} mandatory story beat(s): ${missingMandatoryBeatIds.join(", ")}`,
+        });
+        shouldCommit = false;
+      } else if (!lifecycle) {
+        if (options.autoCommitCanon !== false && !options.requireApproval) {
           this.bible.setEpisodeLifecycle({
             seriesId,
             episodeNumber: script.episodeNumber,
@@ -2051,12 +2081,6 @@ export class EpisodicPipeline {
         shouldCommit = false;
       } else if (options.storyboardReviewRequired === true && !lifecycle.storyboard_approved_at) {
         log.warn(`  [CANON COMMIT BLOCKED] Storyboard chưa được phê duyệt (storyboardReviewRequired=true). Từ chối commit canon.`);
-        shouldCommit = false;
-      } else if (faceQaFailCount > 0) {
-        log.warn(`  [CANON COMMIT BLOCKED] Còn ${faceQaFailCount} shot Face QA FAIL chưa được giải quyết.`);
-        shouldCommit = false;
-      } else if (unapprovedShots.length > 0) {
-        log.warn(`  [CANON COMMIT BLOCKED] Còn ${unapprovedShots.length} shot chưa có take được phê duyệt (${unapprovedShots.map(s => s.shotId).join(", ")}). Từ chối commit canon.`);
         shouldCommit = false;
       } else {
         shouldCommit = options.autoCommitCanon !== false;

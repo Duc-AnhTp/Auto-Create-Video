@@ -28,6 +28,7 @@ export interface SeasonOrchestratorOptions {
   resume?: boolean;
   budgetCapUsd?: number;
   commitCanon?: boolean;
+  _testOnlyAllowMockCommit?: boolean;
   continueOnError?: boolean;
   useHierarchicalAssembly?: boolean;
   transitionDurationSec?: number;
@@ -308,9 +309,9 @@ export class SeasonOrchestrator {
       // Check Resumability: if episode was already completed and resume is true
       if (resume) {
         const existingCheckpoint = await this.pipeline.loadCheckpoint(epOutputDir);
+        // Fail-closed: must have a valid specHash that matches current specHash
         const specMatches =
-          !existingCheckpoint?.specHash ||
-          existingCheckpoint.specHash === currentSpecHash;
+          Boolean(existingCheckpoint?.specHash && existingCheckpoint.specHash === currentSpecHash);
 
         if (
           existingCheckpoint &&
@@ -326,21 +327,32 @@ export class SeasonOrchestrator {
             ? candidateVideo
             : null;
 
-          if (finalVideo || options.skipRender) {
-            let measuredDuration = plannedEp.target_duration_sec;
-            if (finalVideo) {
-              try {
-                const probe = await probeVideoFile(finalVideo);
-                if (probe.isValid && probe.durationSec > 0) {
-                  measuredDuration = Math.round(probe.durationSec);
-                }
-              } catch {
-                // Keep planned duration as fallback
-              }
-            }
+          let validVideoSkipped = false;
+          let measuredDuration = plannedEp.target_duration_sec;
 
+          if (options.skipRender) {
+            validVideoSkipped = true;
+          } else if (finalVideo) {
+            try {
+              const probe = await probeVideoFile(finalVideo);
+              if (probe.isValid && probe.durationSec > 0) {
+                measuredDuration = Math.round(probe.durationSec);
+                validVideoSkipped = true;
+              } else {
+                log.warn(
+                  `⚠️ [SEASON RESUME INVALID] Video tập ${epNum} ('${finalVideo}') không hợp lệ theo ffprobe (${probe.error || "0s duration"}). Re-run tập.`
+                );
+              }
+            } catch (probeErr: any) {
+              log.warn(
+                `⚠️ [SEASON RESUME PROBE FAILED] Không thể probe video tập ${epNum}: ${probeErr.message}. Re-run tập.`
+              );
+            }
+          }
+
+          if (validVideoSkipped) {
             log.info(
-              `⚡ [SEASON RESUME] Tập ${epNum} ('${plannedEp.title}') đã hoàn thành trước đó (specHash khớp). Bỏ qua và tái sử dụng artifact.`
+              `⚡ [SEASON RESUME] Tập ${epNum} ('${plannedEp.title}') đã hoàn thành trước đó (specHash khớp & video hợp lệ). Bỏ qua và tái sử dụng artifact.`
             );
             epStatus.status = "skipped";
             epStatus.outputPath = finalVideo || join(epOutputDir, "script-normalized.json");
@@ -354,7 +366,7 @@ export class SeasonOrchestrator {
           }
         } else if (existingCheckpoint && !specMatches) {
           log.warn(
-            `🔄 [SEASON RESUME MISMATCH] Tập ${epNum} specHash đã thay đổi (cũ: ${existingCheckpoint.specHash}, mới: ${currentSpecHash}). Re-run tập.`
+            `🔄 [SEASON RESUME MISMATCH] Tập ${epNum} specHash đã thay đổi (cũ: ${existingCheckpoint.specHash || "none"}, mới: ${currentSpecHash}). Re-run tập.`
           );
         }
       }
@@ -403,7 +415,7 @@ export class SeasonOrchestrator {
           resume: resume,
           budgetCapUsd: options.budgetCapUsd,
           commitCanon: options.commitCanon ?? false,
-          _testOnlyAllowMockCommit: options.commitCanon, // Allow test commit when requested
+          _testOnlyAllowMockCommit: options._testOnlyAllowMockCommit ?? false,
           useHierarchicalAssembly: options.useHierarchicalAssembly ?? true, // Default to true for multi-episode season assembly
           transitionDurationSec: options.transitionDurationSec,
           specHash: effectiveSpecHash,

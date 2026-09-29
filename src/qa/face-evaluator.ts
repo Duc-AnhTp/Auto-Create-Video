@@ -12,6 +12,7 @@
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import axios from "axios";
 
 export type BackendAvailability = "AVAILABLE" | "NOT_INSTALLED" | "UNAVAILABLE";
 export type LipSyncStatus = "SUPPORTED" | "NOT_SUPPORTED" | "UNAVAILABLE";
@@ -422,6 +423,152 @@ export class MockVisualQaBackend implements VisualQaBackend {
 
   public async extractImageEmbedding(imagePath: string): Promise<{ embedding?: number[]; error?: string }> {
     return { embedding: generateDeterministicEmbedding(`mock_ref_${imagePath}`) };
+  }
+}
+
+export interface HttpVisualQaBackendOptions {
+  endpoint?: string;
+  timeoutMs?: number;
+  apiKey?: string;
+  name?: string;
+}
+
+/**
+ * Functional HTTP / Remote Visual QA Backend Adapter.
+ * Connects to a microservice running InsightFace / ArcFace / ONNX runtime.
+ * Fails gracefully and reports UNAVAILABLE when service is offline or unreachable.
+ */
+export class HttpVisualQaBackend implements VisualQaBackend {
+  public name: string;
+  public endpoint: string;
+  public timeoutMs: number;
+  public apiKey?: string;
+
+  constructor(options: HttpVisualQaBackendOptions = {}) {
+    this.name = options.name || "http_insightface";
+    this.endpoint =
+      options.endpoint ||
+      process.env.VISUAL_QA_ENDPOINT ||
+      "http://127.0.0.1:8188/api/visual-qa";
+    this.timeoutMs = options.timeoutMs ?? 15000;
+    this.apiKey = options.apiKey || process.env.VISUAL_QA_API_KEY;
+  }
+
+  public async checkReadiness(): Promise<VisualQaBackendStatus> {
+    try {
+      const resp = await axios.get(`${this.endpoint}/health`, {
+        timeout: Math.min(this.timeoutMs, 5000),
+        headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
+      });
+
+      if (resp.status >= 200 && resp.status < 300 && resp.data?.status === "ok") {
+        return {
+          status: "AVAILABLE",
+          availability: "AVAILABLE",
+          isAvailable: true,
+          backendName: this.name,
+          version: resp.data?.version || "insightface-arcface-v1",
+          details: resp.data?.model || "InsightFace ArcFace 512-d embeddings backend",
+          lipSyncSupported: Boolean(resp.data?.lipSyncSupported),
+          lipSyncStatus: resp.data?.lipSyncSupported ? "SUPPORTED" : "NOT_SUPPORTED",
+        };
+      }
+      return {
+        status: "UNAVAILABLE",
+        availability: "UNAVAILABLE",
+        isAvailable: false,
+        backendName: this.name,
+        notes: `Visual QA endpoint returned status ${resp.status}`,
+        lipSyncSupported: false,
+        lipSyncStatus: "NOT_SUPPORTED",
+      };
+    } catch (err: any) {
+      return {
+        status: "UNAVAILABLE",
+        availability: "UNAVAILABLE",
+        isAvailable: false,
+        backendName: this.name,
+        notes: `Cannot reach Visual QA backend at ${this.endpoint}: ${err.message}`,
+        details: `Endpoint ${this.endpoint} unreachable.`,
+        lipSyncSupported: false,
+        lipSyncStatus: "UNAVAILABLE",
+        disclaimer: "Visual QA backend is unavailable. Automated PASS is forbidden.",
+      };
+    }
+  }
+
+  public async checkLipSyncSupport(): Promise<{ status: string; isAvailable: boolean; modelName: string; notes: string }> {
+    try {
+      const ready = await this.checkReadiness();
+      return {
+        status: ready.lipSyncStatus,
+        isAvailable: ready.lipSyncSupported,
+        modelName: ready.details || this.name,
+        notes: ready.notes || (ready.lipSyncSupported ? "Lip-sync verified" : "Lip-sync not enabled on remote host"),
+      };
+    } catch {
+      return {
+        status: "UNAVAILABLE",
+        isAvailable: false,
+        modelName: this.name,
+        notes: "Cannot probe remote lip-sync capabilities.",
+      };
+    }
+  }
+
+  public async extractFramesAndEmbeddings(
+    videoPath: string,
+    options?: { sampleRateFps?: number; maxFrames?: number }
+  ): Promise<{ frames: FrameEvaluationSample[]; error?: string }> {
+    if (!existsSync(videoPath)) {
+      return { frames: [], error: `Video file not found: ${videoPath}` };
+    }
+
+    try {
+      const resp = await axios.post(
+        `${this.endpoint}/evaluate-video`,
+        {
+          videoPath,
+          sampleRateFps: options?.sampleRateFps ?? 2,
+          maxFrames: options?.maxFrames ?? 12,
+        },
+        {
+          timeout: this.timeoutMs,
+          headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
+        }
+      );
+
+      if (resp.status >= 200 && resp.status < 300 && Array.isArray(resp.data?.frames)) {
+        return { frames: resp.data.frames };
+      }
+      return { frames: [], error: `Visual QA service returned HTTP ${resp.status}` };
+    } catch (err: any) {
+      return { frames: [], error: `Visual QA service request failed: ${err.message}` };
+    }
+  }
+
+  public async extractImageEmbedding(imagePath: string): Promise<{ embedding?: number[]; error?: string }> {
+    if (!existsSync(imagePath)) {
+      return { error: `Reference image not found: ${imagePath}` };
+    }
+
+    try {
+      const resp = await axios.post(
+        `${this.endpoint}/extract-image`,
+        { imagePath },
+        {
+          timeout: this.timeoutMs,
+          headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
+        }
+      );
+
+      if (resp.status >= 200 && resp.status < 300 && Array.isArray(resp.data?.embedding)) {
+        return { embedding: resp.data.embedding };
+      }
+      return { error: `Visual QA service returned HTTP ${resp.status}` };
+    } catch (err: any) {
+      return { error: `Visual QA image embedding extraction failed: ${err.message}` };
+    }
   }
 }
 

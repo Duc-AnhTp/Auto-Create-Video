@@ -20,7 +20,7 @@ import type { UnifiedTimeline, TimelineVideoShot } from "../series/timeline-sche
 import { log } from "../utils/logger.js";
 import { StudioApi } from "./studio-api.js";
 import { checkRequestOrigin, containedPath, HttpError, readJson } from "./http-safety.js";
-import { SeriesId } from "./studio-contract.js";
+import { SeriesId, ProductionRequestSchema } from "./studio-contract.js";
 import { ZodError } from "zod";
 import { redact } from "../utils/redact.js";
 import { SettingsManager } from "./settings-manager.js";
@@ -321,14 +321,65 @@ export class StudioServer {
           }
 
           // Produce Episode
+          // Produce Episode
           const produceMatch = pathname.match(/^\/api\/series\/([^/]+)\/episodes\/produce$/);
           if (produceMatch && req.method === "POST") {
             const seriesId = produceMatch[1];
             const body = await this.parseJsonBody(req);
             const epNum = body.episodeNumber || 1;
 
+            if (this.api.isUnderMaintenance(seriesId)) {
+              res.writeHead(409, { "Content-Type": "application/json" });
+              res.end(
+                JSON.stringify({
+                  error: "PROJECT_MAINTENANCE",
+                  message: `Series '${seriesId}' is currently locked for maintenance.`,
+                })
+              );
+              return;
+            }
+
             if (body.scriptPath) containedPath(resolve("data"), resolve(body.scriptPath));
             const pipeline = new EpisodicPipeline(`data/series/${seriesId}/story_bible.db`);
+
+            // Check if job should be routed and tracked via durable JobStore
+            let jobId: string | undefined;
+            if (this.api.store) {
+              try {
+                let screenplayText = body.rawScreenplay;
+                if (!screenplayText && body.scriptPath && existsSync(body.scriptPath)) {
+                  try {
+                    screenplayText = await readFile(body.scriptPath, "utf8");
+                  } catch {}
+                }
+                const parsed = ProductionRequestSchema.safeParse({
+                  seriesId,
+                  episodeNumber: epNum,
+                  rawScreenplay: screenplayText || `// Episode ${epNum} screenplay`,
+                  provider:
+                    body.provider === "api_kling" ||
+                    body.provider === "api_runway" ||
+                    body.provider === "api_veo" ||
+                    body.provider === "api_seedance" ||
+                    body.provider === "local_comfyui"
+                      ? body.provider
+                      : "mock",
+                  mode:
+                    body.provider && body.provider !== "mock" && !body.dryRun && body.budgetCapUsd
+                      ? "production"
+                      : "mock",
+                  budgetCapUsd: body.budgetCapUsd,
+                  resume: body.resume ?? true,
+                });
+                if (parsed.success) {
+                  const job = this.api.store.enqueue(parsed.data);
+                  jobId = job.id;
+                  this.api.startWorker();
+                }
+              } catch (storeErr: any) {
+                log.warn(`[STUDIO SERVER] Could not enqueue to JobStore: ${storeErr?.message}`);
+              }
+            }
 
             // Start production in async worker
             const onProgressCallback = (step: number, totalSteps: number, message: string) => {
@@ -337,6 +388,7 @@ export class StudioServer {
                 step,
                 totalSteps,
                 message,
+                jobId,
                 timestamp: new Date().toISOString(),
               });
             };
@@ -356,12 +408,14 @@ export class StudioServer {
                 this.broadcastEvent(seriesId, epNum, {
                   type: "complete",
                   result,
+                  jobId,
                   timestamp: new Date().toISOString(),
                 });
               } catch (err: any) {
                 this.broadcastEvent(seriesId, epNum, {
                   type: "error",
                   error: redact(err.message),
+                  jobId,
                   timestamp: new Date().toISOString(),
                 });
                 throw err;
@@ -372,11 +426,11 @@ export class StudioServer {
             if (body.async) {
               void runProduction().catch((error) => log.error("Production failed", error));
               res.writeHead(202, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: true, message: "Bắt đầu sản xuất tập phim", seriesId, episodeNumber: epNum }));
+              res.end(JSON.stringify({ success: true, message: "Bắt đầu sản xuất tập phim", seriesId, episodeNumber: epNum, jobId }));
             } else {
               await runProduction();
               res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ success: true, seriesId, episodeNumber: epNum }));
+              res.end(JSON.stringify({ success: true, seriesId, episodeNumber: epNum, jobId }));
             }
             return;
           }

@@ -163,6 +163,10 @@ export class StoryToScreenplayGenerator {
       rawScreenplay = this.generateRuleBasedScreenplay(options, canonSummary, episodeNumber);
     }
 
+    if (options.enableCompactCinemaNotation) {
+      rawScreenplay = PromptOptimizer.expandCompactCinemaNotation(rawScreenplay);
+    }
+
     // Clean up code blocks if LLM output markdown fences
     rawScreenplay = this.stripMarkdownFences(rawScreenplay);
 
@@ -1016,6 +1020,14 @@ ${pacingRule}
   5. Cú máy cận cảnh phản ứng tâm lý (Close-up reaction shot)`;
     }
 
+    let compactDirective = "";
+    if (options.enableCompactCinemaNotation) {
+      compactDirective = `\n- ĐỊNH DẠNG SHORTHAND (COMPACT CINEMA NOTATION): Hãy xuất các cú máy theo định dạng viết tắt rút gọn token:
+  C<cảnh>.<cú_máy> [<MÃ_CÚ_MÁY>|<thời_lượng>s]: <mô_tả_hình_ảnh>
+  (Ví dụ: C1.1 [EST|4s]: Toàn cảnh khu phố cổ lúc nửa đêm.)
+  Mã cú máy hợp lệ: EST (establishing), WIDE, TWO (two-shot), OTS, OTS_BA, CU (close-up), ECU (extreme close-up), MED, ACT (action).`;
+    }
+
     const shotCountDirective = options.targetShotsPerScene
       ? `\n- Số cú máy mục tiêu mỗi cảnh: ${options.targetShotsPerScene} cú máy.`
       : "";
@@ -1027,7 +1039,7 @@ ${canonSummary}
 ${inputSection}${beatsSection}
 YÊU CẦU:
 - Số cảnh mục tiêu: ${targetScenes} cảnh.${shotCountDirective}
-- Nhịp phim: ${options.tone || "Kịch tính, điện ảnh, giàu cảm xúc"}.${coverageDirective}
+- Nhịp phim: ${options.tone || "Kịch tính, điện ảnh, giàu cảm xúc"}.${coverageDirective}${compactDirective}
 - Xuất đúng định dạng kịch bản phân cảnh thuần túy (không kèm lời chào hay giải thích ngoài kịch bản).`;
   }
 

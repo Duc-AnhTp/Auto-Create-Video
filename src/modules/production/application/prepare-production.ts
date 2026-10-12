@@ -83,7 +83,7 @@ const isDryRun = Boolean(options.dryRun);
               return { id: charId, name: charRec?.name || charId };
             });
             const prevShots = scene.shots;
-            scene.shots = CinematicDirectorEngine.enforce180DegreeAxis(scene.shots, chars);
+            scene.shots = CinematicDirectorEngine.enforce180DegreeAxis(scene.shots, chars, script.aspectRatio);
             if (scene.shots !== prevShots) {
               axisAdjustedCount++;
             }

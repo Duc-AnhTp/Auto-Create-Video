@@ -141,10 +141,11 @@ export class PromptOptimizer {
         });
       } else if (distance <= 3) {
         // Intermediate distance: Concise (1 sentence)
+        const firstSentence = s.logline ? s.logline.split(/\.\s+/)[0].replace(/\.+$/, "") : s.title;
         result.push({
           episodeNumber: s.episode_number,
           tier: "concise",
-          text: `Tập ${s.episode_number}: ${s.logline ? s.logline.split("./index.js")[0] : s.title}.`,
+          text: `Tập ${s.episode_number}: ${firstSentence}.`,
         });
       } else {
         // Distant past: Accumulate into macro tier
@@ -156,7 +157,7 @@ export class PromptOptimizer {
       const minEp = macroOldEpisodes[0].episode_number;
       const maxEp = macroOldEpisodes[macroOldEpisodes.length - 1].episode_number;
       const keyEvents = macroOldEpisodes
-        .map((e) => e.logline ? e.logline.split("./index.js")[0] : e.title)
+        .map((e) => e.logline ? e.logline.split(/\.\s+/)[0].replace(/\.+$/, "") : e.title)
         .slice(0, 3)
         .join(" -> ");
 

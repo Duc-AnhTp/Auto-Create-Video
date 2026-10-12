@@ -15,7 +15,7 @@ import type { FinalizeServiceStore } from "../ports/finalize-service-store.js";
 import type { EpisodeSummaryRecord } from "../../../contracts/story.js";
 import { type SceneAssemblyInput } from "../../media/index.js";
 import { extractNarrativeDeltaFromScript } from "./episode-fingerprints.js";
-import { isFfmpegAvailable, runFfmpeg } from "../../media/index.js";
+import { isFfmpegAvailable, runFfmpeg, resolveVideoDimensions } from "../../media/index.js";
 import { log } from "../../../platform/observability/logger.js";
 export interface FinalizeProductionOptions {
     media: Pick<MediaFactories, "createFilmAssembler">;
@@ -222,12 +222,16 @@ export async function finalizeProduction(options: FinalizeProductionOptions): Pr
             return { success: false, error: "TIMELINE_INVALID", canonCommitted: false };
         }
     }
+    const effectiveAspect = (script.aspectRatio || "9:16") as "9:16" | "16:9" | "1:1";
+    const dims = resolveVideoDimensions(effectiveAspect, (options as any).exportResolution);
     const hierarchicalAssembler = options.media.createFilmAssembler({
         seriesId,
         episodeNumber,
         title: script.title,
         fps: script.fps || 30,
-        aspectRatio: script.aspectRatio || "9:16",
+        aspectRatio: effectiveAspect,
+        width: dims.width,
+        height: dims.height,
         scenes: scenesInput,
         dialogueCues,
         sfxCues,

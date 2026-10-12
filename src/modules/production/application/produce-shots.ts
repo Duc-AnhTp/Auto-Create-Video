@@ -6,16 +6,18 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { createValidMockMp4File } from "../../media/index.js";
-
+import {
+  createValidMockMp4File,
+  hashFile,
+  downloadVideoSafely,
+  probeVideoFile,
+  decomposeShotDuration,
+  extractLastFrame,
+  stitchPassClips,
+  CinematicDirectorEngine,
+} from "../../media/index.js";
 import { type ShotExecutionSpec, type VideoJobStatus } from "../../../contracts/video.js";
-
-import { hashFile } from "../../media/index.js";
 import { atomicCopyFile as copyFile } from "../../../platform/filesystem/atomic-publication.js";
-
-import { downloadVideoSafely, probeVideoFile } from "../../media/index.js";
-
-import { decomposeShotDuration, extractLastFrame, stitchPassClips } from "../../media/index.js";
 
 import { log } from "../../../platform/observability/logger.js";
 import { CharacterTurnaroundBridge } from "./character-turnaround-bridge.js";
@@ -195,12 +197,13 @@ let seriesId = input.seriesId;
             if (isMultiCharShot && charBId) {
               const charARec = ctx.bible.getCharacter(charAId, seriesId);
               const charBRec = ctx.bible.getCharacter(charBId, seriesId);
+              const isVertical = script.aspectRatio === "9:16";
               regionalCond = {
                 enabled: true,
                 characterAPrompt: `${charARec?.name || "Nhân vật 1"}: ${charARec?.visual_summary || "Ánh mắt sắc bén"}`,
                 characterBPrompt: `${charBRec?.name || "Nhân vật 2"}: ${charBRec?.visual_summary || "Biểu cảm tập trung"}`,
-                characterASide: "left",
-                characterBSide: "right",
+                characterASide: isVertical ? "bottom" : "left",
+                characterBSide: isVertical ? "top" : "right",
               };
             }
           }
@@ -210,7 +213,7 @@ let seriesId = input.seriesId;
             backend: provider,
             priority: shot.shotType === "close_up" || shot.shotType === "action" ? "hero" : "standard",
             durationSec: pass.durationSec,
-            prompt: shot.visualPrompt,
+            prompt: CinematicDirectorEngine.sanitizeVisualPrompt(shot.visualPrompt, script.aspectRatio),
             aspectRatio: script.aspectRatio,
             referenceImage: shot.referenceImage,
             characterReferenceImage: charFaceRef,

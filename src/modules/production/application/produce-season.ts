@@ -41,6 +41,10 @@ export interface SeasonOrchestratorOptions {
   checkpoint?: () => Promise<void>;
   requireApproval?: boolean;
   onEpisodeComplete?: (epResult: EpisodeExecutionStatus) => void;
+  enablePromptOptimization?: boolean;
+  enableCompactCinemaNotation?: boolean;
+  enableMicroRepairOnAuditViolation?: boolean;
+  modelTier?: "flagship" | "fast" | "economy";
 }
 
 /**
@@ -360,6 +364,10 @@ export class ProduceSeason {
           episodeNumber: epNum,
           customLlmInvoker: options.customLlmInvoker,
           skipAudit: options.skipAudit ?? false,
+          enablePromptOptimization: options.enablePromptOptimization ?? true,
+          enableCompactCinemaNotation: options.enableCompactCinemaNotation ?? true,
+          enableMicroRepairOnAuditViolation: options.enableMicroRepairOnAuditViolation ?? true,
+          modelTier: options.modelTier,
         });
 
         // Save raw screenplay to episode directory for full traceability

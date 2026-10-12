@@ -77,14 +77,18 @@ describe("PromptOptimizer", () => {
     // Episode 4 & 3 (N-2, N-3) must be concise
     const ep4 = decayed.find((d) => d.episodeNumber === 4);
     expect(ep4?.tier).toBe("concise");
+    expect(ep4?.text).toBe("Tập 4: Nam đột nhập sào huyệt giải cứu Mai.");
+    expect(ep4?.text).not.toContain("Bí mật thân thế hé lộ");
 
     const ep3 = decayed.find((d) => d.episodeNumber === 3);
     expect(ep3?.tier).toBe("concise");
+    expect(ep3?.text).toBe("Tập 3: Mai bị bắt cóc.");
 
     // Episode 1..2 (< N-3) must be merged into macro tier
     const macro = decayed.find((d) => d.tier === "macro");
     expect(macro).toBeDefined();
     expect(macro?.text).toContain("Tiền truyện Tập 1-2");
+    expect(macro?.text).toContain("Nam tìm thấy cổ vật bí ẩn trong hang đá -> Nam và Mai trốn chạy qua thung lũng");
   });
 
   it("filters active characters strictly for the target scene", () => {

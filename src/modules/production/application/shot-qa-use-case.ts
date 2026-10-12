@@ -6,11 +6,9 @@ import type { RerollReservationStore } from "../ports/reroll-reservation-store.j
 import { existsSync } from "node:fs";
 import { mkdir,readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createValidMockMp4File } from "../../media/index.js";
+import { createValidMockMp4File, readReference, downloadVideoSafely, probeVideoFile, hashFile, CinematicDirectorEngine } from "../../media/index.js";
 import { type BackendProvider, type ShotExecutionSpec, type VideoJobStatus } from "../../../contracts/video.js";
-import { readReference } from "../../media/index.js";
 import { atomicCopyFile as copyFile } from "../../../platform/filesystem/atomic-publication.js";
-import { downloadVideoSafely,probeVideoFile,hashFile } from "../../media/index.js";
 import {
 FaceQaEvaluator
 } from "../adapters/qa/face-evaluator.js";
@@ -129,7 +127,8 @@ public async rerollShot(options: {
     await mkdir(videoShotsDir, { recursive: true });
 
     if(provider!=="mock"&&shot.referenceImage&&!await readReference(ctx.bible,shot.referenceImage,false))throw new WorkflowError("REFERENCE_PROVENANCE_REQUIRED", "REFERENCE_PROVENANCE_REQUIRED", "failed");
-    const prompt = options.promptOverride || shot.visualPrompt;
+    const rawPrompt = options.promptOverride || shot.visualPrompt;
+    const prompt = CinematicDirectorEngine.sanitizeVisualPrompt(rawPrompt, script.aspectRatio);
 
     const requestHash = createHash("sha256").update(JSON.stringify({ seriesId: options.seriesId, episode: options.episodeNumber, shot, prompt, provider, hedge: options.hedge })).digest("hex");
     if (options.operationId && !this.reservations) throw new WorkflowError("REROLL_STORE_REQUIRED", "Reroll recovery store is required");
@@ -214,12 +213,13 @@ public async rerollShot(options: {
       if (isMultiCharShot && charBId) {
         const charARec = ctx.bible.getCharacter(charAId, options.seriesId);
         const charBRec = ctx.bible.getCharacter(charBId, options.seriesId);
+        const isVertical = script.aspectRatio === "9:16";
         regionalCond = {
           enabled: true,
           characterAPrompt: `${charARec?.name || "Nhân vật 1"}: ${charARec?.visual_summary || "Ánh mắt sắc bén"}`,
           characterBPrompt: `${charBRec?.name || "Nhân vật 2"}: ${charBRec?.visual_summary || "Biểu cảm tập trung"}`,
-          characterASide: "left",
-          characterBSide: "right",
+          characterASide: isVertical ? "bottom" : "left",
+          characterBSide: isVertical ? "top" : "right",
         };
       }
     }

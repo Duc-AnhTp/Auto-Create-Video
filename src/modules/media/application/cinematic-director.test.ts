@@ -119,6 +119,12 @@ describe("CinematicDirectorEngine (Giai Đoạn 1: Cinematic Directing & Audio F
     const guardedShots = CinematicDirectorEngine.enforce180DegreeAxis(rawShots, chars);
     expect(guardedShots[0].visualPrompt).toContain("Duy trì trục máy quay 180 độ nhất quán: nhân vật chính diện ở bên trái");
     expect(guardedShots[1].visualPrompt).toContain("Duy trì trục máy quay 180 độ nhất quán: nhân vật chính diện ở bên phải");
+
+    // In 9:16 vertical aspect ratio, depth-stacked vertical composition is enforced
+    const verticalShots = CinematicDirectorEngine.enforce180DegreeAxis(rawShots, chars, "9:16");
+    expect(verticalShots[0].visualPrompt).toContain("Duy trì trục máy quay nhất quán cho khung hình dọc 9:16");
+    expect(verticalShots[0].visualPrompt).toContain("depth-stacked vertical composition");
+    expect(verticalShots[1].visualPrompt).toContain("Duy trì trục máy quay nhất quán cho khung hình dọc 9:16");
   });
 
   it("calculates spatial audio stereo pan based on character positions", () => {
@@ -161,5 +167,19 @@ describe("CinematicDirectorEngine (Giai Đoạn 1: Cinematic Directing & Audio F
     expect(result.rawScreenplay).toContain("180 độ");
     expect(result.script.scenes.length).toBeGreaterThanOrEqual(1);
     expect(result.script.scenes[0].shots.length).toBe(5);
+  });
+
+  it("sanitizes visual prompt for 9:16 vertical video", () => {
+    const rawWidescreenPrompt = "A dramatic anamorphic widescreen 16:9 view of the city skyline";
+    const sanitized = CinematicDirectorEngine.sanitizeVisualPrompt(rawWidescreenPrompt, "9:16");
+    expect(sanitized).not.toContain("widescreen");
+    expect(sanitized).not.toContain("16:9");
+    expect(sanitized).not.toContain("anamorphic");
+    expect(sanitized).toContain("vertical 9:16 portrait composition");
+    expect(sanitized).toContain("mobile cinematic framing");
+
+    // 16:9 prompt remains untouched
+    const horizontalPrompt = "Wide panoramic shot of mountains";
+    expect(CinematicDirectorEngine.sanitizeVisualPrompt(horizontalPrompt, "16:9")).toBe(horizontalPrompt);
   });
 });

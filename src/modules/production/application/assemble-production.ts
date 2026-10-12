@@ -265,11 +265,15 @@ log.step(6, 8, "Hậu kỳ: Ghép shot xfade & mux soundtrack tổng thể");
           if (await hasFfmpeg()) {
             const transitionSec = effectiveConfig.transitionDurationSec;
             const durations = shotVideoEntries.map((e) => e.shot.durationSec);
+            const targetRatio = (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any;
+            const targetDims = resolveVideoDimensions(targetRatio, options.exportResolution as any);
             const stitch = buildCrossfadeStitchFilter(shotVideos, durations, {
               crossfadeSec: transitionSec,
               targetDurationSec: audioDurationSec > 0 ? audioDurationSec : undefined,
               fps: effectiveConfig.fps || script.fps || 30,
-              aspectRatio: (effectiveConfig.aspectRatio || script.aspectRatio || "9:16") as any,
+              aspectRatio: targetRatio,
+              width: targetDims.width,
+              height: targetDims.height,
             });
             const ffmpegArgs = ["-y"];
             for (const v of shotVideos) {

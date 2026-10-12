@@ -859,8 +859,10 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
 
       if (cacheableSystemBlocks.length > 0) {
         systemParam = [...cacheableSystemBlocks, { type: "text", text: systemPrompt }];
+        headers["anthropic-beta"] = "prompt-caching-2024-07-31";
       } else if (canCacheStandaloneSystemPrompt) {
         systemParam = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
+        headers["anthropic-beta"] = "prompt-caching-2024-07-31";
       }
 
       const res = await axios.post(

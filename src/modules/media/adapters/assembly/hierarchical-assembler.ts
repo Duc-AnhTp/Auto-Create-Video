@@ -69,7 +69,7 @@ export interface HierarchicalAssemblerOptions {
   detectBlackFrames?: boolean;
   requireApprovedShots?: boolean;
   burnSubtitles?: boolean;
-  subtitleStyle?: "karaoke" | "pop_in" | "clean" | "impact_bounce";
+  subtitleStyle?: "karaoke" | "pop_in" | "clean" | "impact_bounce" | "short_drama_punch";
   safeTitleAvoidance?: boolean;
   enablePeakImpactLinking?: boolean;
   enableColorMatch?: boolean;
@@ -318,9 +318,9 @@ export class HierarchicalFilmAssembler {
       episodeNumber,
       title = "Episodic Master",
       fps = 30,
-      width = 720,
-      height = 1280,
       aspectRatio = "9:16",
+      width = (this.options.aspectRatio === "16:9" ? 1280 : (this.options.aspectRatio === "1:1" ? 720 : 720)),
+      height = (this.options.aspectRatio === "16:9" ? 720 : (this.options.aspectRatio === "1:1" ? 720 : 1280)),
       scenes,
       dialogueCues = [],
       sfxCues = [],
@@ -700,7 +700,7 @@ export class HierarchicalFilmAssembler {
       assPath,
       exportToAss(subtitleCues, {
         aspectRatio: aspectRatio as any,
-        style: this.options.subtitleStyle || "karaoke",
+        style: this.options.subtitleStyle || (aspectRatio === "9:16" ? "short_drama_punch" : "karaoke"),
         safeTitleAvoidance: this.options.safeTitleAvoidance ?? (aspectRatio === "9:16"),
         enablePeakImpactLinking: this.options.enablePeakImpactLinking ?? true,
       }),

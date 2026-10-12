@@ -357,23 +357,33 @@ export class CinematicDirectorEngine {
    * Enforces 180-degree axis rule across an array of shots in a scene.
    * Ensures that character screen sides remain consistent across consecutive shots.
    */
-  public static enforce180DegreeAxis(shots: Shot[], characters: Array<{ id: string; name: string }>): Shot[] {
+  public static enforce180DegreeAxis(
+    shots: Shot[],
+    characters: Array<{ id: string; name: string }>,
+    aspectRatio?: string
+  ): Shot[] {
     if (shots.length === 0 || characters.length < 2) return shots;
     const charAId = characters[0].id;
     const charBId = characters[1].id;
+    const isVertical = aspectRatio === "9:16";
 
     return shots.map((shot) => {
       let prompt = shot.visualPrompt;
+      const shotIsVertical = isVertical || (shot as any).aspectRatio === "9:16";
       if (shot.shotType === "over_the_shoulder") {
         if (shot.characterId === charAId) {
-          // A is in focus (left of frame), B is shoulder foreground (right)
-          if (!prompt.includes("trục") && !prompt.includes("180")) {
-            prompt += " Duy trì trục máy quay 180 độ nhất quán: nhân vật chính diện ở bên trái, vai tiền cảnh ở bên phải.";
+          // A is in focus, B is shoulder foreground
+          if (!prompt.includes("trục") && !prompt.includes("180") && !prompt.includes("depth-stacked")) {
+            prompt += shotIsVertical
+              ? " Duy trì trục máy quay nhất quán cho khung hình dọc 9:16: vai tiền cảnh ở góc dưới, nhân vật chính diện hội tụ ở phần trên của khung hình (depth-stacked vertical composition)."
+              : " Duy trì trục máy quay 180 độ nhất quán: nhân vật chính diện ở bên trái, vai tiền cảnh ở bên phải.";
           }
         } else if (shot.characterId === charBId) {
-          // B is in focus (right of frame), A is shoulder foreground (left)
-          if (!prompt.includes("trục") && !prompt.includes("180")) {
-            prompt += " Duy trì trục máy quay 180 độ nhất quán: nhân vật chính diện ở bên phải, vai tiền cảnh ở bên trái.";
+          // B is in focus, A is shoulder foreground
+          if (!prompt.includes("trục") && !prompt.includes("180") && !prompt.includes("depth-stacked")) {
+            prompt += shotIsVertical
+              ? " Duy trì trục máy quay nhất quán cho khung hình dọc 9:16: vai tiền cảnh ở góc dưới, nhân vật chính diện hội tụ ở phần trên của khung hình (depth-stacked vertical composition)."
+              : " Duy trì trục máy quay 180 độ nhất quán: nhân vật chính diện ở bên phải, vai tiền cảnh ở bên trái.";
           }
         }
       }
@@ -400,5 +410,24 @@ export class CinematicDirectorEngine {
       return 0.25; // Subtle right panning
     }
     return 0.0; // Center
+  }
+
+  /**
+   * Sanitizes visual prompt based on target aspect ratio.
+   * Strips widescreen terms for 9:16 and appends vertical framing directives.
+   */
+  public static sanitizeVisualPrompt(prompt: string, aspectRatio?: string): string {
+    if (!prompt) return prompt;
+    if (aspectRatio === "9:16") {
+      let cleaned = prompt
+        .replace(/\b(widescreen|16:9|anamorphic|2\.39:1|panoramic(?:\s+horizontal)?|ultra-wide|cinemascope)\b/gi, "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+      if (!cleaned.toLowerCase().includes("9:16") && !cleaned.toLowerCase().includes("portrait") && !cleaned.toLowerCase().includes("vertical")) {
+        cleaned += ", vertical 9:16 portrait composition, mobile cinematic framing, centered subject";
+      }
+      return cleaned;
+    }
+    return prompt;
   }
 }

@@ -73,8 +73,8 @@ export interface ShotExecutionSpec {
     enabled: boolean;
     characterAPrompt?: string;
     characterBPrompt?: string;
-    characterASide?: "left" | "right";
-    characterBSide?: "left" | "right";
+    characterASide?: "left" | "right" | "top" | "bottom";
+    characterBSide?: "left" | "right" | "top" | "bottom";
   };
   seed?: number;
   metadata?: Record<string, unknown>;

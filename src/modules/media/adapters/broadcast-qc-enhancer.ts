@@ -20,6 +20,9 @@ export interface ConformanceOptions {
   /** Apply +2.5dB boost around 3.5kHz speech presence band for clear audio on smartphone speakers */
   enableVoicePresenceBoost?: boolean;
   videoFilters?:string[];
+  aspectRatio?: "9:16" | "16:9" | string;
+  firstShotDurationSec?: number;
+  subtitleAssPath?: string;
 }
 
 export interface ConformanceResult {
@@ -192,6 +195,9 @@ export class BroadcastQcEnhancer {
         masterVideoPath: outputPath,
         targetStandard: standard,
         mockFallback: true,
+        aspectRatio: options.aspectRatio,
+        firstShotDurationSec: options.firstShotDurationSec,
+        subtitleAssPath: options.subtitleAssPath,
       });
 
       return {
@@ -247,6 +253,9 @@ export class BroadcastQcEnhancer {
       masterVideoPath: outputPath,
       targetStandard: standard,
       mockFallback: isMockMode,
+      aspectRatio: options.aspectRatio,
+      firstShotDurationSec: options.firstShotDurationSec,
+      subtitleAssPath: options.subtitleAssPath,
     });
 
     return {

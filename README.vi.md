@@ -15,8 +15,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Node: 22+](https://img.shields.io/badge/Node.js-22%2B-brightgreen?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript: 5+](https://img.shields.io/badge/TypeScript-5%2B-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests: 392 Passed](https://img.shields.io/badge/Ki%E1%BB%83m%20Th%E1%BB%AD-392%20Pass%20(100%25)-success?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
-[![Database: SQLite v6](https://img.shields.io/badge/Story%20Bible-SQLite%20v6-cyan?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![Kiểm thử](https://github.com/Duc-AnhTp/Auto-Create-Video/actions/workflows/test.yml/badge.svg)](https://github.com/Duc-AnhTp/Auto-Create-Video/actions/workflows/test.yml)
+[![Database: SQLite v8](https://img.shields.io/badge/Story%20Bible-SQLite%20v8-cyan?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
 [**🇬🇧 English**](README.md) · [**🇻🇳 Tiếng Việt**](README.vi.md) · [**🖥️ Web Studio UI**](#-giao-di%E1%BB%87n-web-cinema-production-studio) · [**🎯 Hai Phân Hệ**](#-t%E1%BB%95ng-quan-hai-ph%C3%A2n-h%E1%BB%87-dual-engine) · [**🚀 Bắt Đầu Nhanh**](#-b%E1%BA%AFt-%C4%91%E1%BA%A7u-nhanh-3-ph%C3%BAt) · [**📚 Chuyên Sâu**](#-chuy%C3%AAn-s%C3%A2u-h%E1%BB%87-th%E1%BB%91ng-s%E1%BA%A3n-xu%E1%BA%A5t-phim-t%E1%BB%AB-ti%E1%BB%83u-thuy%E1%BA%BFt) · [**💻 Tra Cứu CLI**](#-b%E1%BA%A3ng-tra-c%E1%BB%A9u-l%E1%BB%87nh-cli-%C4%91%E1%BA%A7y-%C4%91%E1%BB%A7)
 
@@ -26,7 +26,7 @@
 
 ## 🌟 Điểm Nhấn Đột Phá
 
-- 🎬 **Hệ Thống Làm Phim Dài Tập Từ Tiểu Thuyết (v2.0):** Nhập toàn văn tiểu thuyết hàng trăm chương, duy trì tính nhất quán của nhân vật và cốt truyện xuyên suốt các tập qua **Story Bible SQLite v6**, lập kế hoạch mùa phim với **độ phủ 100% các tình tiết bắt buộc (mandatory beats)**.
+- 🎬 **Hệ Thống Làm Phim Dài Tập Từ Tiểu Thuyết (v2.0):** Nhập toàn văn tiểu thuyết hàng trăm chương, duy trì tính nhất quán của nhân vật và cốt truyện xuyên suốt các tập qua **Story Bible SQLite v8**, lập kế hoạch mùa phim với **độ phủ 100% các tình tiết bắt buộc (mandatory beats)**.
 - 🖥️ **Phòng Sản Xuất Phim Kỹ Thuật Số (Studio Web UI):** Giao diện điều hành thời gian thực chạy tại `http://localhost:3000` / `http://localhost:3456`, tích hợp hộp kiểm định khuôn mặt ArcFace 512-D, bảng kịch bản phân cảnh song song (dual-view), bộ đo âm lượng 4 kênh stems động và phong cách Dark Obsidian với phông chữ JetBrains Mono.
 - 💰 **Sổ Cái Tài Chính & Ngân Sách 4 Trạng Thái:** Cơ chế giữ ngân sách nguyên tử (atomic reservation) ngăn ngừa bội chi khi chạy đa luồng (`estimated` → `reserved` → `confirmed` / `uncertain`), tự động dừng khi chạm ngưỡng trần (`budget cap`).
 - 🎞️ **Dựng Phim Phân Cấp (Hierarchical Film Assembler):** Kiến trúc dựng 2 tầng (`Shot Takes` → `Ghép Cảnh Scene` → `Tập Phim Master`) xuất file MP4 1080p, 4 audio stems tách biệt (Thoại, SFX, Môi trường Ambience, Nhạc nền Ducked BGM), phụ đề SRT/VTT và timeline chuẩn công nghiệp NLE (FCP7 XML & OTIO).
@@ -41,8 +41,12 @@ Khởi chạy phòng sản xuất phim điện ảnh ngay trên trình duyệt v
 
 ```bash
 npm run studio
-# Tự động mở http://localhost:3456 (hoặc đổi cổng qua --port 3000)
+# Biên dịch và mở Studio React tại http://localhost:3456 (hoặc đổi cổng qua --port 3000)
 ```
+
+React là Studio chính. `/studio-next` và `/studio-legacy` cùng mở giao diện React.
+
+Xem [kiến trúc module và nghiệm thu refactor](docs/SOLID_REFACTOR_2026-10-08.md) để biết quy tắc phụ thuộc, entrypoint và kết quả kiểm chứng.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -75,7 +79,7 @@ Auto-Create-Video tích hợp trọn vẹn hai phân hệ sản xuất chuyên b
 |---|---|---|
 | **Đầu vào chính** | Tiểu thuyết, truyện chữ, kịch bản nhiều hồi (`.txt`, `.md`) | Link bài báo mạng (VnExpress, TechCrunch, blog, ...) |
 | **Định dạng video** | Phim dài tập (9:16 Shorts/Reels hoặc 16:9 Cinema) | Video ngắn 60–90 giây dọc (chuẩn 9:16) |
-| **Bộ nhớ cốt truyện**| SQLite Story Bible v6 (Nhân vật, trang phục, thương tật, đạo cụ)| Schema `script.json` phi trạng thái kiểm thực bằng Zod |
+| **Bộ nhớ cốt truyện**| SQLite Story Bible v8 (Nhân vật, trang phục, thương tật, đạo cụ)| Schema `script.json` phi trạng thái kiểm thực bằng Zod |
 | **Công nghệ hình ảnh**| AI Video Diffusion (Runway Gen-3, Kling, Hunyuan, ComfyUI) | HyperFrames + Puppeteer + GSAP (12 mẫu đồ họa động) |
 | **Kiến trúc dựng** | Phân cấp 2 tầng (Takes cú máy → Ghép cảnh → Master tập) | Dòng thời gian chuẩn xác đến từng từ giọng đọc |
 | **Kiến trúc âm thanh**| 4 Stems tách biệt (Thoại, SFX, Ambience, Ducked BGM) | Bộ chọn SFX ngữ cảnh 3 tầng + tự động ducking nhạc nền |
@@ -279,7 +283,7 @@ Mọi tác vụ của hệ thống được vận hành qua `npm run series -- <
 |---|---|---|
 | **Hệ thống** | `npm run setup` | Chẩn đoán toàn diện môi trường (FFmpeg, SQLite, Puppeteer, API keys). |
 | **Giao diện** | `npm run studio` | Mở Studio Web UI tại `http://localhost:3456` (hoặc cổng tùy chọn `--port`). |
-| **Kiểm thử** | `npm test` | Chạy toàn bộ 392 bài kiểm tra unit & integration test. |
+| **Kiểm thử** | `npm test` | Chạy toàn bộ bộ kiểm thử Vitest hiện tại; xem CI trực tiếp ở huy hiệu phía trên. |
 | **Kiểm tra kiểu**| `npm run typecheck` | Biên dịch TypeScript và bảo đảm không có bất kỳ lỗi cú pháp nào. |
 | **Nhập truyện**| `npm run series -- series:ingest` | Nhập văn bản nguồn với băm SHA-256 và tọa độ đoạn (`--input <path>`). |
 | **Phân tích** | `npm run series -- series:analyze` | Phân tích đồ thị nhân vật, flashback và tri thức 4 chiều. |
@@ -354,7 +358,7 @@ ANTHROPIC_API_KEY=your_claude_api_key
 
 | Cấp Độ Trưởng Thành | Danh Sách Tính Năng | Bằng Chứng Kỹ Thuật |
 |---|---|---|
-| **✅ 1. Sẵn Sàng Vận Hành (Production Ready)** | • Nhập tiểu thuyết SHA-256 & Tọa độ không mất mát<br/>• Story Bible SQLite v6 có composite key<br/>• Sổ cái bao phủ 100% tình tiết bắt buộc<br/>• Điều phối mùa phim tự động với Checkpoint Resume<br/>• Sổ cái chi phí 4 trạng thái (Atomic Reservation)<br/>• Dựng phim phân cấp 2 tầng (Hierarchical Assembly)<br/>• 4 Audio Stems Tách Rời (Thoại, SFX, Ambience, Ducked BGM)<br/>• Xuất timeline NLE (FCP7 XML & OTIO)<br/>• Kiểm định QA tự động (`driftSec <= 0.1s`)<br/>• 12 mẫu motion graphic HyperFrames + GSAP | Đạt 100% trên 54 file kiểm thử (392/392 tests pass), 0 lỗi biên dịch TypeScript, và vượt qua toàn bộ 16 nhóm nghiệm thu trong `novel-to-series-acceptance.test.ts`. |
+| **✅ 1. Sẵn Sàng Vận Hành (Production Ready)** | • Nhập tiểu thuyết SHA-256 & Tọa độ không mất mát<br/>• Story Bible SQLite v8 có composite key<br/>• Sổ cái bao phủ 100% tình tiết bắt buộc<br/>• Điều phối mùa phim tự động với Checkpoint Resume<br/>• Sổ cái chi phí 4 trạng thái (Atomic Reservation)<br/>• Dựng phim phân cấp 2 tầng (Hierarchical Assembly)<br/>• 4 Audio Stems Tách Rời (Thoại, SFX, Ambience, Ducked BGM)<br/>• Xuất timeline NLE (FCP7 XML & OTIO)<br/>• Kiểm định QA tự động (`driftSec <= 0.1s`)<br/>• 12 mẫu motion graphic HyperFrames + GSAP | Trạng thái kiểm thử và typecheck hiện tại được cập nhật qua CI trực tiếp; các tiêu chí nghiệm thu nằm trong `novel-to-series-acceptance.test.ts`. |
 | **🧪 2. Đang Thử Nghiệm (Beta / Active Iteration)** | • So khớp vector ArcFace 512-D và tự động reroll<br/>• Nối shot tự hồi quy bằng trích xuất frame cuối<br/>• Bộ ngắt mạch Provider Circuit Breaker (Closed/Open/Half-Open) | Đã hoàn thiện mã nguồn và kiểm thử logic; các dịch vụ đám mây thực tế chịu ảnh hưởng bởi độ trễ mạng và giới hạn rate limit. |
 | **⚠️ 3. Giới Hạn Đã Biết (Roadmap)** | • Nhép khẩu hình môi theo âm vị (Wav2Lip/SadTalker)<br/>• Bảo đảm toán học "100% hình ảnh không biến đổi"<br/>• Tự động hóa kiểm thử trên giao diện GUI DaVinci Resolve | Thoại được neo chính xác theo timecode cú máy, nhưng mô hình nhép môi AI đang trong giai đoạn nghiên cứu. File XML/OTIO được xác thực đúng cú pháp schema mà chưa mở GUI trực tiếp trên CI. |
 
@@ -394,7 +398,7 @@ ANTHROPIC_API_KEY=your_claude_api_key
 - [x] **v1.5:** Tích hợp LucyLab nhân bản giọng Việt và ElevenLabs đa ngôn ngữ.
 - [x] **v2.0 (Hiện tại):** Hệ thống sản xuất phim điện ảnh nhiều tập từ tiểu thuyết:
   - [x] Nhập tác phẩm SHA-256 và chia nhỏ tọa độ không mất mát.
-  - [x] Nâng cấp Story Bible SQLite v6 với khóa composite `series_id`.
+  - [x] Nâng cấp Story Bible SQLite v8 với khóa composite `series_id`.
   - [x] Lập kế hoạch phim với độ phủ 100% mandatory beats.
   - [x] Điều phối sản xuất cả mùa với sổ cái ngân sách 4 trạng thái.
   - [x] Dựng phim phân cấp (Shot → Scene → Master) kèm 4 audio stems.
@@ -412,7 +416,7 @@ Cộng đồng mã nguồn mở luôn được chào đón đóng góp! Quy trì
 
 1. Fork repository và tạo nhánh tính năng mới (`git checkout -b feature/tinh-nang-moi`).
 2. Viết mã nguồn tuân thủ phong cách TypeScript và chú thích nhất quán của dự án.
-3. Đảm bảo toàn bộ 392 bài kiểm thử đều vượt qua và không có bất kỳ cảnh báo biên dịch nào:
+3. Chạy bộ kiểm thử và typecheck hiện tại trước khi phát hành:
    ```bash
    npm test
    npm run typecheck
@@ -447,3 +451,13 @@ Auto-Create-Video kế thừa và phát triển từ những công trình mã ng
 Xây dựng với tất cả tâm huyết dành cho những nhà sáng tạo nội dung và nhà làm phim AI tương lai.
 
 </div>
+
+
+## Optimization A–E
+
+- [Vận hành, migration và đối soát](docs/OPTIMIZATION_OPERATIONS.md)
+- [Báo cáo triển khai và kiểm chứng](docs/OPTIMIZATION_HANDOVER.md)
+
+## Khắc phục audit và vận hành an toàn
+
+Studio chỉ phục vụ trên loopback. Resume audio thiếu bằng chứng chuyển `needs_review`; tạo mới yêu cầu `--regenerate-audio` hoặc hành động rõ ràng trong Studio. Xem [ma trận F01–F17, migration và rollback](docs/AUDIT_REMEDIATION_2026-10-12.md).

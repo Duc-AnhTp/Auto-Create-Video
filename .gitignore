@@ -16,5 +16,8 @@ SFX/
 *.db
 *.db-shm
 *.db-wal
+*.db.pre-*.bak
 *.sqlite
 test-output-review/
+# Generated project state and media; source fixtures live under scripts/.
+data/

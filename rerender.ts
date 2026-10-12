@@ -6,16 +6,18 @@
 import { readFile, writeFile, copyFile } from "node:fs/promises";
 import { join, dirname, basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ScriptSchema } from "./src/render/script-schema.js";
-import { loadConfig } from "./src/config.js";
-import { getDurationSec, concatWithSilence, mixSfxOntoVoice, mixBgmWithDucking, type SfxMixSpec } from "./src/assets/audio-tools.js";
-import { indexSfxLibrary, pickSfxForScene, defaultPlayback } from "./src/assets/sfx-selector.js";
+import { ScriptSchema } from "./src/modules/media/adapters/render/script-schema.js";
+import { loadConfig } from "./src/bootstrap/config.js";
+import { getDurationSec, concatWithSilence, mixSfxOntoVoice, mixBgmWithDucking, type SfxMixSpec } from "./src/modules/media/adapters/assets/audio-tools.js";
+import { indexSfxLibrary, pickSfxForScene, defaultPlayback } from "./src/modules/media/adapters/assets/sfx-selector.js";
 import { existsSync } from "node:fs";
-import { composeHtml, resolveSceneImageRefs } from "./src/render/html-composer.js";
-import { renderWithHyperframes } from "./src/render/hyperframes-runner.js";
+import { composeHtml, resolveSceneImageRefs } from "./src/modules/media/adapters/render/html-composer.js";
+import { renderWithHyperframes } from "./src/modules/media/adapters/render/hyperframes-runner.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TPL_DIR = join(__dirname, "src", "render", "templates");
+const TPL_DIR = existsSync(join(__dirname, "src", "modules", "media", "adapters", "render", "templates"))
+  ? join(__dirname, "src", "modules", "media", "adapters", "render", "templates")
+  : join(__dirname, "dist", "modules", "media", "adapters", "render", "templates");
 const SFX_DIR = join(__dirname, "assets", "sfx");
 const SCENE_GAP_SEC = 0.3;
 
@@ -25,13 +27,7 @@ const HYPERFRAMES_CONFIG = {
   paths: { blocks: "compositions", components: "compositions/components", assets: "assets" },
 };
 
-async function main() {
-  const outputDir = process.argv[2];
-  if (!outputDir) {
-    console.error("Usage: npx tsx rerender.ts <outputDir>");
-    process.exit(2);
-  }
-
+export async function rerenderExisting(outputDir: string) {
   const cfg = loadConfig({ validateProvider: false });
   console.log(`Re-rendering: ${outputDir}`);
 
@@ -125,8 +121,8 @@ async function main() {
     }
   }
 
-  const totalDur = await getDurationSec(voiceMp3);
-  console.log(`voice.mp3 total: ${totalDur.toFixed(2)}s`);
+  const voiceDurationSec = await getDurationSec(voiceMp3);
+  console.log(`voice.mp3 total: ${voiceDurationSec.toFixed(2)}s`);
 
   // Determine bg image
   const bgImagePath = join(outputDir, "images", "bg.jpg");
@@ -189,8 +185,13 @@ async function main() {
 
   // Render
   const videoPath = join(outputDir, "video.mp4");
-  await renderWithHyperframes({ compositionDir: outputDir, outputPath: videoPath });
+  const renderDurationSec = cursor + 3;
+  await renderWithHyperframes({ compositionDir: outputDir, outputPath: videoPath, durationSec: renderDurationSec });
   console.log(`\nDone: ${videoPath}`);
 }
 
-main().catch((e) => { console.error("Re-render failed:", e); process.exit(1); });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const outputDir = process.argv[2];
+  if (!outputDir) { console.error("Usage: npx tsx rerender.ts <outputDir>"); process.exitCode = 2; }
+  else rerenderExisting(outputDir).catch((error) => { console.error("Re-render failed:", error); process.exitCode = 1; });
+}

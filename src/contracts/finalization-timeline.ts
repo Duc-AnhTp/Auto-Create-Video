@@ -1,0 +1,13 @@
+import {z} from 'zod';
+import {TimelineDialogueCueSchema as Dialogue,TimelineSfxCueSchema as Sfx,TimelineAmbienceCueSchema as Ambience,TimelineBgmCueSchema as Bgm,TimelineSubtitleCueSchema as Subtitle,secToFrame} from './timeline.js';
+/** Decode the two existing on-disk audio timeline formats without rewriting the source file. */
+export function decodeFinalizationTimeline(value:unknown,fps:number){
+ const timing=(start:number,duration:number)=>({startSec:start,durationSec:duration,endSec:start+duration,startFrame:secToFrame(start,fps),durationFrames:secToFrame(duration,fps),endFrame:secToFrame(start+duration,fps)});
+ const legacyTiming={startSec:z.number().nonnegative(),durationSec:z.number().nonnegative()};
+ const dialogue=z.union([Dialogue,z.object({id:z.string(),speaker:z.string(),text:z.string(),...legacyTiming,audioPath:z.string().optional(),volume:z.number().optional()}).transform(cue=>Dialogue.parse({dialogueId:cue.id,shotId:cue.id,characterId:cue.speaker,speakerName:cue.speaker,rawText:cue.text,subtitleText:cue.text,ttsText:cue.text,...timing(cue.startSec,cue.durationSec),audioPath:cue.audioPath,volume:cue.volume}))]);
+ const sfx=z.union([Sfx,z.object({id:z.string(),name:z.string(),...legacyTiming,audioPath:z.string().optional(),volume:z.number().optional()}).transform(cue=>Sfx.parse({cueId:cue.id,name:cue.name,...timing(cue.startSec,cue.durationSec),audioPath:cue.audioPath,volume:cue.volume}))]);
+ const ambience=z.union([Ambience,z.object({name:z.string(),audioPath:z.string(),volume:z.number().optional(),startSec:z.number().nonnegative().optional(),durationSec:z.number().nonnegative().optional()}).transform(cue=>Ambience.parse({cueId:cue.name,name:cue.name,audioPath:cue.audioPath,volume:cue.volume,...timing(cue.startSec??0,cue.durationSec??0)}))]);
+ const bgm=z.union([Bgm,z.object({name:z.string(),volume:z.number().optional(),audioPath:z.string().optional(),durationSec:z.number().nonnegative().optional()}).transform(cue=>cue.audioPath?Bgm.parse({audioPath:cue.audioPath,baseVolume:cue.volume,duckingWindows:[],...timing(0,cue.durationSec??0)}):undefined)]);
+ const subtitle=z.union([Subtitle,z.object({id:z.string(),text:z.string(),...legacyTiming}).transform(cue=>Subtitle.parse({subtitleId:cue.id,shotId:cue.id,dialogueId:cue.id,speakerName:'Narrator',displayText:cue.text,...timing(cue.startSec,cue.durationSec)}))]);
+ return z.object({dialogueTrack:z.array(dialogue).optional(),sfxTrack:z.array(sfx).optional(),sfxTracks:z.array(sfx).optional(),ambienceTrack:z.union([z.array(ambience),ambience]).optional(),bgmTrack:bgm.optional(),subtitleTrack:z.array(subtitle).optional(),subtitleCues:z.array(subtitle).optional()}).parse(value);
+}

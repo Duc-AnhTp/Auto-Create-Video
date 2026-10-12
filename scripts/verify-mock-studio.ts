@@ -4,16 +4,16 @@ import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import assert from "node:assert/strict";
-import type { StudioJob } from "../src/server/studio-contract.js";
+import type { StudioJob } from "../src/contracts/requests.js";
 
 for (const key of Object.keys(process.env)) if (/(KEY|TOKEN|SECRET|PASSWORD)/i.test(key)) delete process.env[key];
 process.env.NODE_ENV = "test";
 process.env.DOTENV_CONFIG_PATH = resolve("output/upgrade/nonexistent-test.env");
-await import("../src/utils/media-runtime.js");
-const { StudioServer } = await import("../src/server/studio-server.js");
-const { EpisodicScriptSchema } = await import("../src/series/series-schema.js");
-const { probeVideoFile, probeAudioFile } = await import("../src/media/media-validator.js");
-const { BibleManager } = await import("../src/bible/bible-manager.js");
+await import("../src/platform/processes/media-runtime.js");
+const { StudioServer } = await import("../src/bootstrap/studio-server.js");
+const { EpisodicScriptSchema } = await import("../src/contracts/episode.js");
+const { probeVideoFile, probeAudioFile } = await import("../src/modules/media/adapters/media-validator.js");
+const { SqliteStoryStore } = await import("../src/bootstrap/sqlite-story-store.js");
 
 const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
 const seriesId = `mock-acceptance-${stamp}`;
@@ -95,7 +95,7 @@ try {
   await waitForJob(resumed.jobId);
   assert.equal((await stat(firstPath)).mtimeMs, before.mtime, "Clean resume regenerated the shot");
   assert.equal(createHash("sha256").update(await readFile(firstPath)).digest("hex"), before.hash);
-  const bible = new BibleManager(resolve("data/series", seriesId, "story_bible.db"));
+  const bible = new SqliteStoryStore(resolve("data/series", seriesId, "story_bible.db"));
   try { assert.equal(bible.getCanonHistory(seriesId).length, 0, "Mock must not commit production canon"); } finally { bible.close(); }
   const report = { passed: true, scope: "mock software acceptance only; no AI quality claim", seriesId, base, results, cleanResumePreservedMedia: true, mockCanonUnchanged: true };
   await writeFile(join(reportDir, "report.json"), JSON.stringify(report, null, 2));

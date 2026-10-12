@@ -15,8 +15,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 [![Node: 22+](https://img.shields.io/badge/Node.js-22%2B-brightgreen?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript: 5+](https://img.shields.io/badge/TypeScript-5%2B-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Tests: Vitest](https://img.shields.io/badge/Tests-Passing-success?style=for-the-badge&logo=vitest&logoColor=white)](https://vitest.dev)
-[![Database: SQLite v6](https://img.shields.io/badge/Story%20Bible-SQLite%20v6-cyan?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
+[![Tests](https://github.com/Duc-AnhTp/Auto-Create-Video/actions/workflows/test.yml/badge.svg)](https://github.com/Duc-AnhTp/Auto-Create-Video/actions/workflows/test.yml)
+[![Database: SQLite v8](https://img.shields.io/badge/Story%20Bible-SQLite%20v8-cyan?style=for-the-badge&logo=sqlite&logoColor=white)](https://sqlite.org)
 
 [**🇬🇧 English**](README.md) · [**🇻🇳 Tiếng Việt**](README.vi.md) · [**🖥️ Web Studio UI**](#-cinema-production-studio-web-ui) · [**🎯 Dual-Engine**](#-dual-engine-overview) · [**🚀 Quick Start**](#-quick-start) · [**📚 Deep Dive**](#-deep-dive-novel-to-series-production-engine) · [**💻 CLI Reference**](#-complete-cli-reference)
 
@@ -26,7 +26,7 @@
 
 ## 🌟 Highlights & Breakthroughs
 
-- 🎬 **Episodic Cinema Series Engine (v2.0):** Ingest entire novels (100+ chapters), maintain character canon across episodes with **Story Bible SQLite v6**, and assemble multi-episode seasons with **100% mandatory beat coverage**.
+- 🎬 **Episodic Cinema Series Engine (v2.0):** Ingest entire novels (100+ chapters), maintain character canon across episodes with **Story Bible SQLite v8**, and assemble multi-episode seasons with **100% mandatory beat coverage**.
 - 🖥️ **Full-Flow Cinema Studio Web UI:** Real-time production control console running at `http://localhost:3000` / `http://localhost:3456`, featuring ArcFace 512-D face lightbox inspection, screenplay dual-view, dynamic audio stems VU equalizer, and dark obsidian aesthetics styled with JetBrains Mono.
 - 💰 **4-State Budget & Financial Ledger:** Multi-worker atomic reservations preventing overspending (`estimated` → `reserved` → `confirmed` / `uncertain`) with hard budget caps.
 - 🎞️ **Hierarchical Film Assembler:** Two-tier rendering pipeline (`Shot Takes` → `Scene Stitching` → `Episode Master`) outputting 1080p video, 4 isolated audio stems (Dialogue, SFX, Ambience, Ducked BGM), SRT/VTT subtitles, and standard NLE interchange timelines (FCP7 XML & OTIO).
@@ -41,8 +41,12 @@ Launch the in-browser interactive production environment with a single command:
 
 ```bash
 npm run studio
-# Opens http://localhost:3456 (or custom port via --port 3000)
+# Builds and opens the React Studio at http://localhost:3456 (or custom port via --port 3000)
 ```
+
+React is the main Studio. `/studio-next` and `/studio-legacy` both open the same React interface.
+
+See [module architecture and refactor acceptance](docs/SOLID_REFACTOR_2026-10-08.md) for dependency rules, entrypoints, and verification.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -75,7 +79,7 @@ Auto-Create-Video integrates two specialized production engines in one repositor
 |---|---|---|
 | **Primary Input** | Full novels, book chapters, long screenplays (`.txt`, `.md`) | News article URLs (VnExpress, TechCrunch, blogs, etc.) |
 | **Target Output** | Multi-episode film series (9:16 Shorts/Reels or 16:9 Cinema) | 60–90 second viral social video (9:16 vertical) |
-| **Memory & Canon** | SQLite Story Bible v6 (Characters, wardrobe, injuries, props) | Stateless `script.json` schema validation via Zod |
+| **Memory & Canon** | SQLite Story Bible v8 (Characters, wardrobe, injuries, props) | Stateless `script.json` schema validation via Zod |
 | **Visual Generation** | AI Video Diffusion (Runway Gen-3, Kling, Hunyuan, ComfyUI) | HyperFrames + Puppeteer + GSAP (12 motion templates) |
 | **Assembly Architecture** | Hierarchical 2-tier (Shot Takes → Scenes → Master Episode) | Frame-accurate timeline synchronization per spoken word |
 | **Audio Architecture** | 4 Isolated Stems (Dialogue, SFX, Ambience, Ducked BGM) | Contextual 3-tier SFX mixing + dynamic BGM ducking |
@@ -279,7 +283,7 @@ All platform operations are exposed via `npm run series -- <command>` and standa
 |---|---|---|
 | **System** | `npm run setup` | Run comprehensive environment diagnostic doctor (FFmpeg, SQLite, APIs). |
 | **Studio** | `npm run studio` | Launch web production console at `http://localhost:3456` (or custom `--port`). |
-| **Tests** | `npm test` | Run complete test suite (392 tests, 54 test files). |
+| **Tests** | `npm test` | Run the current Vitest suite; see the live CI badge above for status. |
 | **Typecheck** | `npm run typecheck` | Verify zero TypeScript compilation errors. |
 | **Ingestion** | `npm run series -- series:ingest` | Ingest novel text with SHA-256 hash and block coordinates (`--input <path>`). |
 | **Analysis** | `npm run series -- series:analyze` | Analyze entity graph, flashback beats, and 4D epistemic knowledge. |
@@ -354,7 +358,7 @@ To uphold engineering integrity, platform capabilities are classified into three
 
 | Maturity Tier | Capabilities Included | Technical Evidence |
 |---|---|---|
-| **✅ 1. Operational & Validated (Production Ready)** | • SHA-256 Novel Ingestion & Coordinate Mapping<br/>• Story Bible SQLite v6 with Composite Keys<br/>• 100% Mandatory Beat Coverage Ledger<br/>• Season Batch Orchestrator with Checkpoint Resume<br/>• 4-State Budget Ledger (Atomic Reservation)<br/>• 2-Tier Hierarchical Film Assembler<br/>• 4 Isolated Audio Stems (Dialogue, SFX, Ambience, Ducked BGM)<br/>• FCP7 XML & OTIO Timeline Interchange<br/>• Automated QA Verifier (`driftSec <= 0.1s`)<br/>• HyperFrames 12 Motion Templates + GSAP Engine | 100% pass across 54 test files (392/392 tests), zero TypeScript compilation errors, and complete Section I acceptance test verification in `novel-to-series-acceptance.test.ts`. |
+| **✅ 1. Operational & Validated (Production Ready)** | • SHA-256 Novel Ingestion & Coordinate Mapping<br/>• Story Bible SQLite v8 with Composite Keys<br/>• 100% Mandatory Beat Coverage Ledger<br/>• Season Batch Orchestrator with Checkpoint Resume<br/>• 4-State Budget Ledger (Atomic Reservation)<br/>• 2-Tier Hierarchical Film Assembler<br/>• 4 Isolated Audio Stems (Dialogue, SFX, Ambience, Ducked BGM)<br/>• FCP7 XML & OTIO Timeline Interchange<br/>• Automated QA Verifier (`driftSec <= 0.1s`)<br/>• HyperFrames 12 Motion Templates + GSAP Engine | Current test and typecheck status is reported by the live CI badge; acceptance coverage is maintained in `novel-to-series-acceptance.test.ts`. |
 | **🧪 2. Experimental (Beta / Active Iteration)** | • ArcFace 512-D Face Cosine Similarity Auto-Reroll<br/>• Autoregressive Shot Extension via Last-Frame Chaining<br/>• Provider Circuit Breaker FSM (Closed/Open/Half-Open) | Implemented with integration test coverage; live provider API endpoints subject to remote cloud latency and rate limits. |
 | **⚠️ 3. Known Limitations (Roadmap)** | • Phonetic Lip-Sync Morphing (Wav2Lip/SadTalker)<br/>• 100% Deterministic Visual Diffusion Consistency<br/>• Headless NLE GUI Automation Testing | Spoken audio is frame-accurately anchored to shot timecodes, but acoustic lip-mesh morphing is in active R&D. NLE XML/OTIO structures are schema-validated without live DaVinci GUI hooks. |
 
@@ -394,7 +398,7 @@ To uphold engineering integrity, platform capabilities are classified into three
 - [x] **v1.5:** LucyLab Vietnamese voice cloning and ElevenLabs multilingual TTS integration.
 - [x] **v2.0 (Current):** Full Novel-to-Series Production Engine:
   - [x] SHA-256 source ingestion & zero-loss coordinate chunking.
-  - [x] Story Bible SQLite v6 migration with composite series keys.
+  - [x] Story Bible SQLite v8 migration with composite series keys.
   - [x] Series planner with 100% mandatory beat coverage ledger.
   - [x] Season batch orchestrator with 4-state financial ledger.
   - [x] Hierarchical film assembly (Shot → Scene → Master) with 4 audio stems.
@@ -412,7 +416,7 @@ Contributions are welcome! Please follow standard development practices:
 
 1. Fork the repository and create a feature branch (`git checkout -b feature/cinema-enhancement`).
 2. Implement your changes adhering to existing TypeScript idioms and comment styles.
-3. Verify that all 392 tests pass and there are zero TypeScript compiler warnings:
+3. Run the current test suite and typecheck before release:
    ```bash
    npm test
    npm run typecheck
@@ -447,3 +451,13 @@ Auto-Create-Video stands on the shoulders of remarkable open-source engineering:
 Built with ❤️ for AI Cinema Creators & Content Pioneers.
 
 </div>
+
+
+## Optimization A–E
+
+- [Vận hành, migration và đối soát](docs/OPTIMIZATION_OPERATIONS.md)
+- [Báo cáo triển khai và kiểm chứng](docs/OPTIMIZATION_HANDOVER.md)
+
+## Audit remediation and recovery
+
+Studio is loopback-only. Unverifiable audio resumes require review; a new generation requires `--regenerate-audio` or the explicit Studio action. See the [F01–F17 implementation matrix, migration and rollback guide](docs/AUDIT_REMEDIATION_2026-10-12.md).

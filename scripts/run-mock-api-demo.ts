@@ -1,4 +1,4 @@
-import { StudioServer } from "../src/server/studio-server.js";
+import { StudioServer } from "../src/bootstrap/studio-server.js";
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, join } from "node:path";

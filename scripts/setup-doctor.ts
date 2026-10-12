@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import "../src/utils/media-runtime.js";
+import "../src/platform/processes/media-runtime.js";
 import { existsSync, copyFileSync, statfsSync } from "node:fs";
 import { join } from "node:path";
 import axios from "axios";

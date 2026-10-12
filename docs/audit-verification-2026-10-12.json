@@ -1,0 +1,196 @@
+{
+  "date": "2026-10-12",
+  "environment": {
+    "platform": "win32",
+    "architecture": "x64",
+    "node": "v24.13.1"
+  },
+  "acceptance": "local_checks_passed; Linux/Node22/container gates remain unverified",
+  "findings": [
+    {
+      "id": "F01",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F02",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F03",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F04",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F05",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F06",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F07",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F08",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F09",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F10",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F11",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F12",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F13",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F14",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F15",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F16",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    },
+    {
+      "id": "F17",
+      "implementation": "implemented",
+      "regression": "verified locally; platform gates pending"
+    }
+  ],
+  "schemas": {
+    "queue": 3,
+    "storyBible": 13,
+    "checkpoint": 2,
+    "audioManifest": 1
+  },
+  "checks": {
+    "fullFrozenSuite": {
+      "report": "output/audit-acceptance-frozen.json",
+      "files": 135,
+      "total": 923,
+      "passed": 923,
+      "failed": 0,
+      "pending": 0,
+      "success": true
+    },
+    "mediaAfterProbeSignalFix": {
+      "report": "output/audit-media-acceptance.json",
+      "files": 32,
+      "total": 214,
+      "passed": 214,
+      "failed": 0,
+      "pending": 0,
+      "success": true
+    },
+    "probeAbortRegression": {
+      "report": "output/audit-probe-abort-final.json",
+      "files": 1,
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "pending": 0,
+      "success": true
+    },
+    "typecheck": {
+      "passed": true,
+      "scope": [
+        "application",
+        "Studio",
+        "tooling/tests"
+      ],
+      "log": "output/audit-typecheck-final.log"
+    },
+    "architecture": {
+      "passed": true,
+      "files": 477,
+      "runtimeEdges": 1073,
+      "violations": 0
+    },
+    "build": {
+      "passed": true,
+      "log": "output/audit-build-final.log",
+      "transientPublicationFailureLog": "output/audit-build-publication-eperm.log",
+      "rollbackPreservedPriorBuild": true
+    },
+    "compiledCli": {
+      "passed": true,
+      "log": "output/audit-cli-smoke-final.log"
+    },
+    "runtimeSmoke": {
+      "passed": true,
+      "log": "output/audit-runtime-final.log"
+    },
+    "browserSmoke": {
+      "passed": true,
+      "tabs": 17,
+      "flows": {
+        "createSeries": true,
+        "createCharacter": true,
+        "mockReference": true,
+        "saveDraft": true,
+        "mockProduction": true,
+        "registeredArtifact": true,
+        "targetedReroll": true,
+        "rerollReviewGate": true,
+        "masterPreserved": true
+      },
+      "log": "output/audit-browser-final.log"
+    },
+    "diffCheck": {
+      "passed": true
+    }
+  },
+  "unverified": [
+    {
+      "check": "container smoke",
+      "reason": "Docker Desktop Linux engine returned HTTP 500; docker info exit code 1",
+      "log": "output/audit-container-engine.log"
+    },
+    {
+      "check": "Linux CI and Node 22",
+      "reason": "CI matrix configured but not executed from this local session"
+    }
+  ],
+  "notes": [
+    "The full frozen suite ran before the final probe signal propagation change; the full affected media suite and new abort/deadline regressions passed after that change.",
+    "Test counts overlap and must not be summed.",
+    "No paid API calls in test/smoke.",
+    "Migrations tested with temporary databases; production rollout requires stopped processes and consistent backups."
+  ]
+}

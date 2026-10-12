@@ -1,1 +1,14 @@
-{"extends":"./tsconfig.json","exclude":["node_modules","dist","output","src/**/*.test.ts","src/test-setup.ts"]}
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmitOnError": true
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "output",
+    "src/**/*.test.ts",
+    "src/test-setup.ts",
+    "src/__test-utils__/**"
+  ]
+}

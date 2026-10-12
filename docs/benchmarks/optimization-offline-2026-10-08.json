@@ -1,0 +1,4824 @@
+{
+  "fixtureVersion": 2,
+  "createdAt": "2026-10-07T17:15:45.018Z",
+  "root": "output/optimization-benchmark/2026-10-07T16-57-41-770Z",
+  "node": "v24.13.1",
+  "ffmpeg": "ffmpeg version 6.1.1-essentials_build-www.gyan.dev Copyright (c) 2000-2023 the FFmpeg developers\r",
+  "ffprobe": "ffprobe version 4.0.2 Copyright (c) 2007-2018 the FFmpeg developers\r",
+  "sourceHead": "dee282acf589e6e3eb358eddde609b09a466b749",
+  "cpu": "12th Gen Intel(R) Core(TM) i5-12450H",
+  "dimensions": "72x128 vertical / 128x72 horizontal offline fixtures; not production 1080p/4K",
+  "rssScope": "Node process RSS; FFmpeg child RSS excluded",
+  "encodeCounterScope": "encode counts media output processes without stream copy; streamCopy includes video-copy/audio-encode mux",
+  "eventLoopLagScope": "Node histogram, 10ms resolution for async media work; synchronous context/repair samples report blocking duration and leave histogram p95 unavailable",
+  "runs": 5,
+  "providerVerification": "unverified",
+  "tokenUsage": "unavailable",
+  "dollarSavings": null,
+  "summaries": [
+    {
+      "key": "vertical-45s/cold",
+      "samples": 5,
+      "medianMs": 7151.317000000001,
+      "minMs": 6616.8845,
+      "maxMs": 7821.8586,
+      "peakRssBytes": 181338112,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56162133,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56162133,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56162133,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56162133,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56162133,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/concat-encode-baseline",
+      "samples": 5,
+      "medianMs": 7616.569400000008,
+      "minMs": 7222.877,
+      "maxMs": 7775.558799999999,
+      "peakRssBytes": 183189504,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56065539,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56065539,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56065539,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56065539,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 56065539,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/warm",
+      "samples": 5,
+      "medianMs": 2384.2609999999986,
+      "minMs": 2288.321100000001,
+      "maxMs": 2548.705500000011,
+      "peakRssBytes": 124289024,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/resume",
+      "samples": 5,
+      "medianMs": 2366.66859999999,
+      "minMs": 2062.1372999999985,
+      "maxMs": 2510.5675000000047,
+      "peakRssBytes": 123670528,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/shot-edit",
+      "samples": 5,
+      "medianMs": 3065.407199999987,
+      "minMs": 2997.4804000000004,
+      "maxMs": 4357.146499999995,
+      "peakRssBytes": 124764160,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 97720820,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 97720820,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 97720820,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 97720820,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 97720820,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/dialogue-edit",
+      "samples": 5,
+      "medianMs": 2471.4627000000037,
+      "minMs": 2348.3997000000018,
+      "maxMs": 2519.793300000001,
+      "peakRssBytes": 132395008,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 100313817,
+          "probe": 20,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/render-options",
+      "samples": 5,
+      "medianMs": 3921.7477,
+      "minMs": 3526.3515000000043,
+      "maxMs": 4927.994499999993,
+      "peakRssBytes": 133160960,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 99163869,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 99163869,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 99163869,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 99163869,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 99163869,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/filters-two-encodes",
+      "samples": 5,
+      "medianMs": 906.6970000000001,
+      "minMs": 761.8525000000081,
+      "maxMs": 924.8386000000028,
+      "peakRssBytes": 124428288,
+      "counters": [
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        }
+      ]
+    },
+    {
+      "key": "vertical-45s/filters-fused",
+      "samples": 5,
+      "medianMs": 494.2532000000065,
+      "minMs": 425.3701999999903,
+      "maxMs": 533.2825999999986,
+      "peakRssBytes": 124436480,
+      "counters": [
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/cold",
+      "samples": 5,
+      "medianMs": 20779.338600000017,
+      "minMs": 20303.39319999999,
+      "maxMs": 22145.394900000014,
+      "peakRssBytes": 139161600,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194489454,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194489454,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194489454,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194489454,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194489454,
+          "encode": 8,
+          "probe": 25,
+          "streamCopy": 2
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/concat-encode-baseline",
+      "samples": 5,
+      "medianMs": 23056.912399999972,
+      "minMs": 22379.1446,
+      "maxMs": 23723.887099999993,
+      "peakRssBytes": 132358144,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194087524,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194087524,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194087524,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194087524,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 15,
+          "hashBytes": 194087524,
+          "encode": 9,
+          "probe": 25,
+          "streamCopy": 1
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/warm",
+      "samples": 5,
+      "medianMs": 3001.198800000013,
+      "minMs": 2769.60619999998,
+      "maxMs": 3225.5455000000075,
+      "peakRssBytes": 142008320,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/resume",
+      "samples": 5,
+      "medianMs": 3029.2185000000172,
+      "minMs": 2953.9593999999925,
+      "maxMs": 3131.581499999971,
+      "peakRssBytes": 141828096,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/shot-edit",
+      "samples": 5,
+      "medianMs": 4770.383899999957,
+      "minMs": 4609.985400000005,
+      "maxMs": 9624.449699999997,
+      "peakRssBytes": 142213120,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 329756463,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 329756463,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 329756463,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 329756463,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 329756463,
+          "encode": 1,
+          "probe": 23,
+          "streamCopy": 2,
+          "cacheHit": 1
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/dialogue-edit",
+      "samples": 5,
+      "medianMs": 2980.7589000000153,
+      "minMs": 2645.4902999999467,
+      "maxMs": 3152.3352000000014,
+      "peakRssBytes": 147812352,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 22,
+          "hashBytes": 343010549,
+          "probe": 20,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/render-options",
+      "samples": 5,
+      "medianMs": 6197.4211999999825,
+      "minMs": 5579.109899999981,
+      "maxMs": 6367.86050000001,
+      "peakRssBytes": 141864960,
+      "counters": [
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 337764094,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 337764094,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 337764094,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 337764094,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        },
+        {
+          "mediaProcess": 2,
+          "hash": 20,
+          "hashBytes": 337764094,
+          "encode": 2,
+          "probe": 24,
+          "streamCopy": 2,
+          "cacheHit": 1
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/filters-two-encodes",
+      "samples": 5,
+      "medianMs": 1832.421399999992,
+      "minMs": 1706.4275999999954,
+      "maxMs": 1889.824499999988,
+      "peakRssBytes": 138985472,
+      "counters": [
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        }
+      ]
+    },
+    {
+      "key": "horizontal-150s/filters-fused",
+      "samples": 5,
+      "medianMs": 1010.0577000000048,
+      "minMs": 984.1125000000175,
+      "maxMs": 1108.4663999999175,
+      "peakRssBytes": 138989568,
+      "counters": [
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/cold",
+      "samples": 5,
+      "medianMs": 22157.98589999997,
+      "minMs": 21593.246700000018,
+      "maxMs": 22860.456500000088,
+      "peakRssBytes": 142012416,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 175190673,
+          "encode": 24,
+          "probe": 75,
+          "streamCopy": 6
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 175190673,
+          "encode": 24,
+          "probe": 75,
+          "streamCopy": 6
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 175190673,
+          "encode": 24,
+          "probe": 75,
+          "streamCopy": 6
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 175190673,
+          "encode": 24,
+          "probe": 75,
+          "streamCopy": 6
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 175190673,
+          "encode": 24,
+          "probe": 75,
+          "streamCopy": 6
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/concat-encode-baseline",
+      "samples": 5,
+      "medianMs": 24087.99650000001,
+      "minMs": 23626.576899999985,
+      "maxMs": 24786.876700000023,
+      "peakRssBytes": 135311360,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 174851580,
+          "encode": 27,
+          "probe": 75,
+          "streamCopy": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 174851580,
+          "encode": 27,
+          "probe": 75,
+          "streamCopy": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 174851580,
+          "encode": 27,
+          "probe": 75,
+          "streamCopy": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 174851580,
+          "encode": 27,
+          "probe": 75,
+          "streamCopy": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 45,
+          "hashBytes": 174851580,
+          "encode": 27,
+          "probe": 75,
+          "streamCopy": 3
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/warm",
+      "samples": 5,
+      "medianMs": 7323.068299999926,
+      "minMs": 6979.673199999961,
+      "maxMs": 7885.616999999969,
+      "peakRssBytes": 142184448,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/resume",
+      "samples": 5,
+      "medianMs": 7542.866400000057,
+      "minMs": 7390.015000000014,
+      "maxMs": 9322.902000000002,
+      "peakRssBytes": 141893632,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/shot-edit",
+      "samples": 5,
+      "medianMs": 10119.274500000058,
+      "minMs": 9433.19709999999,
+      "maxMs": 10755.966400000034,
+      "peakRssBytes": 143978496,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 296888514,
+          "encode": 3,
+          "probe": 69,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 296888514,
+          "encode": 3,
+          "probe": 69,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 296888514,
+          "encode": 3,
+          "probe": 69,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 296888514,
+          "encode": 3,
+          "probe": 69,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 296888514,
+          "encode": 3,
+          "probe": 69,
+          "streamCopy": 6,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/dialogue-edit",
+      "samples": 5,
+      "medianMs": 7380.766999999993,
+      "minMs": 6899.038900000043,
+      "maxMs": 7496.646499999915,
+      "peakRssBytes": 166227968,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 66,
+          "hashBytes": 308902893,
+          "probe": 60,
+          "cacheHit": 9
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/render-options",
+      "samples": 5,
+      "medianMs": 11849.443800000008,
+      "minMs": 11322.255600000033,
+      "maxMs": 12008.039299999946,
+      "peakRssBytes": 141930496,
+      "counters": [
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 304164681,
+          "encode": 6,
+          "probe": 72,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 304164681,
+          "encode": 6,
+          "probe": 72,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 304164681,
+          "encode": 6,
+          "probe": 72,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 304164681,
+          "encode": 6,
+          "probe": 72,
+          "streamCopy": 6,
+          "cacheHit": 3
+        },
+        {
+          "mediaProcess": 6,
+          "hash": 60,
+          "hashBytes": 304164681,
+          "encode": 6,
+          "probe": 72,
+          "streamCopy": 6,
+          "cacheHit": 3
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/filters-two-encodes",
+      "samples": 5,
+      "medianMs": 846.0113000000129,
+      "minMs": 833.19020000007,
+      "maxMs": 857.4882000000216,
+      "peakRssBytes": 141930496,
+      "counters": [
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        },
+        {
+          "encode": 2,
+          "probe": 2
+        }
+      ]
+    },
+    {
+      "key": "season-three-episodes/filters-fused",
+      "samples": 5,
+      "medianMs": 440.6482000000542,
+      "minMs": 409.20329999993555,
+      "maxMs": 496.27619999996386,
+      "peakRssBytes": 141942784,
+      "counters": [
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        },
+        {
+          "encode": 1,
+          "probe": 1
+        }
+      ]
+    },
+    {
+      "key": "context-1000/full-index",
+      "samples": 5,
+      "medianMs": 202.18530000001192,
+      "minMs": 166.90730000007898,
+      "maxMs": 330.3771999999881,
+      "peakRssBytes": 166744064,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-1000/cached-index",
+      "samples": 5,
+      "medianMs": 25.216999999945983,
+      "minMs": 22.77569999988191,
+      "maxMs": 38.03309999988414,
+      "peakRssBytes": 174714880,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-1000/pruning-off",
+      "samples": 5,
+      "medianMs": 0.1425000000745058,
+      "minMs": 0.09749999991618097,
+      "maxMs": 0.29820000007748604,
+      "peakRssBytes": 177377280,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-1000/pruning-on",
+      "samples": 5,
+      "medianMs": 2.8807000000961125,
+      "minMs": 1.7112999998498708,
+      "maxMs": 5.239799999864772,
+      "peakRssBytes": 166211584,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-1000/prompt-cache-off",
+      "samples": 5,
+      "medianMs": 0.11309999995864928,
+      "minMs": 0.08030000003054738,
+      "maxMs": 0.20940000005066395,
+      "peakRssBytes": 166211584,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-1000/prompt-cache-on",
+      "samples": 5,
+      "medianMs": 1.6462000000756234,
+      "minMs": 1.5113999999593943,
+      "maxMs": 2.4058000000659376,
+      "peakRssBytes": 166215680,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-10000/full-index",
+      "samples": 5,
+      "medianMs": 2335.8567999999505,
+      "minMs": 2276.185700000031,
+      "maxMs": 2384.6126999999397,
+      "peakRssBytes": 466669568,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-10000/cached-index",
+      "samples": 5,
+      "medianMs": 324.0131999999285,
+      "minMs": 280.4438999998383,
+      "maxMs": 360.1198000002187,
+      "peakRssBytes": 466690048,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-10000/pruning-off",
+      "samples": 5,
+      "medianMs": 0.10469999979250133,
+      "minMs": 0.09789999993517995,
+      "maxMs": 0.17949999985285103,
+      "peakRssBytes": 390176768,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-10000/pruning-on",
+      "samples": 5,
+      "medianMs": 20.810100000118837,
+      "minMs": 18.039600000018254,
+      "maxMs": 29.369300000136718,
+      "peakRssBytes": 390180864,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-10000/prompt-cache-off",
+      "samples": 5,
+      "medianMs": 0.07949999999254942,
+      "minMs": 0.07209999999031425,
+      "maxMs": 0.14849999989382923,
+      "peakRssBytes": 390189056,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "context-10000/prompt-cache-on",
+      "samples": 5,
+      "medianMs": 15.773400000063702,
+      "minMs": 12.702200000174344,
+      "maxMs": 22.45629999996163,
+      "peakRssBytes": 391495680,
+      "counters": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ]
+    },
+    {
+      "key": "screenplay-20-scenes/repair-full",
+      "samples": 5,
+      "medianMs": 0.10299999988637865,
+      "minMs": 0.07620000001043081,
+      "maxMs": 0.3337000000756234,
+      "peakRssBytes": 387690496,
+      "counters": [
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        }
+      ]
+    },
+    {
+      "key": "screenplay-20-scenes/micro-repair",
+      "samples": 5,
+      "medianMs": 0.44089999981224537,
+      "minMs": 0.29399999999441206,
+      "maxMs": 2.7764000000897795,
+      "peakRssBytes": 387698688,
+      "counters": [
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        },
+        {
+          "llmMockRequest": 1
+        }
+      ]
+    }
+  ],
+  "records": [
+    {
+      "dataset": "vertical-45s",
+      "variant": "cold",
+      "elapsedMs": 7151.317000000001,
+      "peakRssBytes": 181338112,
+      "eventLoopLagP95Ms": 24.641535,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56162133,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 7775.558799999999,
+      "peakRssBytes": 183189504,
+      "eventLoopLagP95Ms": 25.772031,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56065539,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "warm",
+      "elapsedMs": 2335.903199999999,
+      "peakRssBytes": 115716096,
+      "eventLoopLagP95Ms": 25.903103,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "resume",
+      "elapsedMs": 2062.1372999999985,
+      "peakRssBytes": 116273152,
+      "eventLoopLagP95Ms": 23.396351,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "shot-edit",
+      "elapsedMs": 3013.504799999999,
+      "peakRssBytes": 116809728,
+      "eventLoopLagP95Ms": 24.936447,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 97720820,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2519.793300000001,
+      "peakRssBytes": 113655808,
+      "eventLoopLagP95Ms": 29.097983,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "render-options",
+      "elapsedMs": 3921.7477,
+      "peakRssBytes": 116490240,
+      "eventLoopLagP95Ms": 29.016063,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 99163869,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 924.8386000000028,
+      "peakRssBytes": 102629376,
+      "eventLoopLagP95Ms": 24.969215,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-fused",
+      "elapsedMs": 533.2825999999986,
+      "peakRssBytes": 103280640,
+      "eventLoopLagP95Ms": 23.068671,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "cold",
+      "elapsedMs": 7821.8586,
+      "peakRssBytes": 112201728,
+      "eventLoopLagP95Ms": 25.182207,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56162133,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 7222.877,
+      "peakRssBytes": 112803840,
+      "eventLoopLagP95Ms": 25.231359,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56065539,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "warm",
+      "elapsedMs": 2432.665700000005,
+      "peakRssBytes": 119943168,
+      "eventLoopLagP95Ms": 26.099711,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "resume",
+      "elapsedMs": 2250.864499999996,
+      "peakRssBytes": 120066048,
+      "eventLoopLagP95Ms": 27.049983,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "shot-edit",
+      "elapsedMs": 4357.146499999995,
+      "peakRssBytes": 120397824,
+      "eventLoopLagP95Ms": 33.325055,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 97720820,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2348.3997000000018,
+      "peakRssBytes": 121638912,
+      "eventLoopLagP95Ms": 25.886719,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "render-options",
+      "elapsedMs": 4927.994499999993,
+      "peakRssBytes": 121643008,
+      "eventLoopLagP95Ms": 29.982719,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 99163869,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 794.136400000003,
+      "peakRssBytes": 113975296,
+      "eventLoopLagP95Ms": 25.362431,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-fused",
+      "elapsedMs": 442.65559999999823,
+      "peakRssBytes": 113983488,
+      "eventLoopLagP95Ms": 23.461887,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "cold",
+      "elapsedMs": 6616.8845,
+      "peakRssBytes": 122630144,
+      "eventLoopLagP95Ms": 25.378815,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56162133,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 7616.569400000008,
+      "peakRssBytes": 122949632,
+      "eventLoopLagP95Ms": 24.969215,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56065539,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "warm",
+      "elapsedMs": 2288.321100000001,
+      "peakRssBytes": 122687488,
+      "eventLoopLagP95Ms": 26.050559,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "resume",
+      "elapsedMs": 2366.66859999999,
+      "peakRssBytes": 122331136,
+      "eventLoopLagP95Ms": 25.034751,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "shot-edit",
+      "elapsedMs": 2997.4804000000004,
+      "peakRssBytes": 122900480,
+      "eventLoopLagP95Ms": 25.575423,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 97720820,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2471.4627000000037,
+      "peakRssBytes": 132395008,
+      "eventLoopLagP95Ms": 27.787263,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "render-options",
+      "elapsedMs": 3526.3515000000043,
+      "peakRssBytes": 122433536,
+      "eventLoopLagP95Ms": 29.179903,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 99163869,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 906.6970000000001,
+      "peakRssBytes": 106676224,
+      "eventLoopLagP95Ms": 23.101439,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-fused",
+      "elapsedMs": 425.3701999999903,
+      "peakRssBytes": 107048960,
+      "eventLoopLagP95Ms": 18.808831,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "cold",
+      "elapsedMs": 7506.733399999997,
+      "peakRssBytes": 124149760,
+      "eventLoopLagP95Ms": 25.591807,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56162133,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 7737.065800000011,
+      "peakRssBytes": 115470336,
+      "eventLoopLagP95Ms": 27.459583,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56065539,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "warm",
+      "elapsedMs": 2548.705500000011,
+      "peakRssBytes": 123031552,
+      "eventLoopLagP95Ms": 28.409855,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "resume",
+      "elapsedMs": 2459.9820000000036,
+      "peakRssBytes": 123019264,
+      "eventLoopLagP95Ms": 26.918911,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "shot-edit",
+      "elapsedMs": 3065.407199999987,
+      "peakRssBytes": 123817984,
+      "eventLoopLagP95Ms": 28.786687,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 97720820,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2402.2473000000173,
+      "peakRssBytes": 124104704,
+      "eventLoopLagP95Ms": 28.737535,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "render-options",
+      "elapsedMs": 3924.1742000000086,
+      "peakRssBytes": 133160960,
+      "eventLoopLagP95Ms": 27.803647,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 99163869,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 761.8525000000081,
+      "peakRssBytes": 122863616,
+      "eventLoopLagP95Ms": 24.166399,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-fused",
+      "elapsedMs": 510.82300000000396,
+      "peakRssBytes": 122863616,
+      "eventLoopLagP95Ms": 24.346623,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "cold",
+      "elapsedMs": 6925.583799999993,
+      "peakRssBytes": 124026880,
+      "eventLoopLagP95Ms": 25.542655,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56162133,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 7596.310400000017,
+      "peakRssBytes": 123142144,
+      "eventLoopLagP95Ms": 27.967487,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 56065539,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "warm",
+      "elapsedMs": 2384.2609999999986,
+      "peakRssBytes": 124289024,
+      "eventLoopLagP95Ms": 27.574271,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "resume",
+      "elapsedMs": 2510.5675000000047,
+      "peakRssBytes": 123670528,
+      "eventLoopLagP95Ms": 28.671999,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "shot-edit",
+      "elapsedMs": 3791.1763999999966,
+      "peakRssBytes": 124764160,
+      "eventLoopLagP95Ms": 24.870911,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 97720820,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2479.1449999999895,
+      "peakRssBytes": 124125184,
+      "eventLoopLagP95Ms": 27.557887,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 100313817,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "render-options",
+      "elapsedMs": 3707.1209999999846,
+      "peakRssBytes": 133136384,
+      "eventLoopLagP95Ms": 25.362431,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 99163869,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 911.2811999999976,
+      "peakRssBytes": 124428288,
+      "eventLoopLagP95Ms": 24.395775,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "vertical-45s",
+      "variant": "filters-fused",
+      "elapsedMs": 494.2532000000065,
+      "peakRssBytes": 124436480,
+      "eventLoopLagP95Ms": 21.708799,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "cold",
+      "elapsedMs": 20303.39319999999,
+      "peakRssBytes": 127918080,
+      "eventLoopLagP95Ms": 23.461887,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194489454,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 23723.887099999993,
+      "peakRssBytes": 128143360,
+      "eventLoopLagP95Ms": 23.789567,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194087524,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "warm",
+      "elapsedMs": 3001.198800000013,
+      "peakRssBytes": 140541952,
+      "eventLoopLagP95Ms": 25.231359,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "resume",
+      "elapsedMs": 2955.665100000013,
+      "peakRssBytes": 140410880,
+      "eventLoopLagP95Ms": 23.707647,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "shot-edit",
+      "elapsedMs": 4753.148799999995,
+      "peakRssBytes": 137199616,
+      "eventLoopLagP95Ms": 26.607615,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 329756463,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 3152.3352000000014,
+      "peakRssBytes": 140505088,
+      "eventLoopLagP95Ms": 27.590655,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "render-options",
+      "elapsedMs": 5966.259700000024,
+      "peakRssBytes": 139210752,
+      "eventLoopLagP95Ms": 25.165823,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 337764094,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 1722.0622999999905,
+      "peakRssBytes": 109805568,
+      "eventLoopLagP95Ms": 21.512191,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-fused",
+      "elapsedMs": 984.1125000000175,
+      "peakRssBytes": 110186496,
+      "eventLoopLagP95Ms": 23.347199,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "cold",
+      "elapsedMs": 21625.362599999993,
+      "peakRssBytes": 130605056,
+      "eventLoopLagP95Ms": 24.002559,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194489454,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 22379.1446,
+      "peakRssBytes": 129638400,
+      "eventLoopLagP95Ms": 23.560191,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194087524,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "warm",
+      "elapsedMs": 2769.60619999998,
+      "peakRssBytes": 138530816,
+      "eventLoopLagP95Ms": 24.756223,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "resume",
+      "elapsedMs": 2953.9593999999925,
+      "peakRssBytes": 140578816,
+      "eventLoopLagP95Ms": 23.478271,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "shot-edit",
+      "elapsedMs": 9624.449699999997,
+      "peakRssBytes": 136863744,
+      "eventLoopLagP95Ms": 24.002559,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 329756463,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2645.4902999999467,
+      "peakRssBytes": 147812352,
+      "eventLoopLagP95Ms": 23.855103,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "render-options",
+      "elapsedMs": 5579.109899999981,
+      "peakRssBytes": 138399744,
+      "eventLoopLagP95Ms": 23.658495,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 337764094,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 1889.824499999988,
+      "peakRssBytes": 135032832,
+      "eventLoopLagP95Ms": 24.346623,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-fused",
+      "elapsedMs": 1073.4993999999715,
+      "peakRssBytes": 135032832,
+      "eventLoopLagP95Ms": 20.529151,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "cold",
+      "elapsedMs": 22145.394900000014,
+      "peakRssBytes": 135217152,
+      "eventLoopLagP95Ms": 23.904255,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194489454,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 23056.912399999972,
+      "peakRssBytes": 131227648,
+      "eventLoopLagP95Ms": 23.773183,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194087524,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "warm",
+      "elapsedMs": 3225.5455000000075,
+      "peakRssBytes": 140804096,
+      "eventLoopLagP95Ms": 28.327935,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "resume",
+      "elapsedMs": 3029.2185000000172,
+      "peakRssBytes": 140820480,
+      "eventLoopLagP95Ms": 24.870911,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "shot-edit",
+      "elapsedMs": 4770.383899999957,
+      "peakRssBytes": 141443072,
+      "eventLoopLagP95Ms": 26.230783,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 329756463,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 3142.7829000000493,
+      "peakRssBytes": 141484032,
+      "eventLoopLagP95Ms": 25.575423,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "render-options",
+      "elapsedMs": 6367.86050000001,
+      "peakRssBytes": 141864960,
+      "eventLoopLagP95Ms": 24.510463,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 337764094,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 1706.4275999999954,
+      "peakRssBytes": 138985472,
+      "eventLoopLagP95Ms": 18.317311,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-fused",
+      "elapsedMs": 995.7148999999627,
+      "peakRssBytes": 138989568,
+      "eventLoopLagP95Ms": 17.956863,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "cold",
+      "elapsedMs": 20697.704399999988,
+      "peakRssBytes": 139161600,
+      "eventLoopLagP95Ms": 24.068095,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194489454,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 22836.050899999973,
+      "peakRssBytes": 132358144,
+      "eventLoopLagP95Ms": 23.855103,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194087524,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "warm",
+      "elapsedMs": 3168.011300000013,
+      "peakRssBytes": 139735040,
+      "eventLoopLagP95Ms": 23.461887,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "resume",
+      "elapsedMs": 3030.063599999994,
+      "peakRssBytes": 141557760,
+      "eventLoopLagP95Ms": 24.936447,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "shot-edit",
+      "elapsedMs": 4609.985400000005,
+      "peakRssBytes": 142213120,
+      "eventLoopLagP95Ms": 28.131327,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 329756463,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2980.7589000000153,
+      "peakRssBytes": 139444224,
+      "eventLoopLagP95Ms": 25.919487,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "render-options",
+      "elapsedMs": 6197.4211999999825,
+      "peakRssBytes": 139460608,
+      "eventLoopLagP95Ms": 24.870911,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 337764094,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 1834.9894000000204,
+      "peakRssBytes": 111525888,
+      "eventLoopLagP95Ms": 21.495807,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-fused",
+      "elapsedMs": 1010.0577000000048,
+      "peakRssBytes": 111943680,
+      "eventLoopLagP95Ms": 24.920063,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "cold",
+      "elapsedMs": 20779.338600000017,
+      "peakRssBytes": 132997120,
+      "eventLoopLagP95Ms": 23.789567,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194489454,
+        "encode": 8,
+        "probe": 25,
+        "streamCopy": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 23621.12209999998,
+      "peakRssBytes": 131883008,
+      "eventLoopLagP95Ms": 23.953407,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 15,
+        "hashBytes": 194087524,
+        "encode": 9,
+        "probe": 25,
+        "streamCopy": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "warm",
+      "elapsedMs": 2982.304199999955,
+      "peakRssBytes": 142008320,
+      "eventLoopLagP95Ms": 26.869759,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "resume",
+      "elapsedMs": 3131.581499999971,
+      "peakRssBytes": 141828096,
+      "eventLoopLagP95Ms": 26.656767,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "shot-edit",
+      "elapsedMs": 4948.458300000057,
+      "peakRssBytes": 141783040,
+      "eventLoopLagP95Ms": 29.999103,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 329756463,
+        "encode": 1,
+        "probe": 23,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "dialogue-edit",
+      "elapsedMs": 2884.0550999999978,
+      "peakRssBytes": 142094336,
+      "eventLoopLagP95Ms": 28.344319,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 22,
+        "hashBytes": 343010549,
+        "probe": 20,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "render-options",
+      "elapsedMs": 6339.869100000011,
+      "peakRssBytes": 141828096,
+      "eventLoopLagP95Ms": 25.378815,
+      "counters": {
+        "mediaProcess": 2,
+        "hash": 20,
+        "hashBytes": 337764094,
+        "encode": 2,
+        "probe": 24,
+        "streamCopy": 2,
+        "cacheHit": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 1832.421399999992,
+      "peakRssBytes": 138629120,
+      "eventLoopLagP95Ms": 24.936447,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "horizontal-150s",
+      "variant": "filters-fused",
+      "elapsedMs": 1108.4663999999175,
+      "peakRssBytes": 138653696,
+      "eventLoopLagP95Ms": 25.051135,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "cold",
+      "elapsedMs": 22174.00060000003,
+      "peakRssBytes": 138657792,
+      "eventLoopLagP95Ms": 28.278783,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 175190673,
+        "encode": 24,
+        "probe": 75,
+        "streamCopy": 6
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 24087.99650000001,
+      "peakRssBytes": 126140416,
+      "eventLoopLagP95Ms": 25.886719,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 174851580,
+        "encode": 27,
+        "probe": 75,
+        "streamCopy": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "warm",
+      "elapsedMs": 7885.616999999969,
+      "peakRssBytes": 134905856,
+      "eventLoopLagP95Ms": 28.295167,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "resume",
+      "elapsedMs": 7542.866400000057,
+      "peakRssBytes": 135462912,
+      "eventLoopLagP95Ms": 29.573119,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "shot-edit",
+      "elapsedMs": 10006.136700000032,
+      "peakRssBytes": 134979584,
+      "eventLoopLagP95Ms": 29.032447,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 296888514,
+        "encode": 3,
+        "probe": 69,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "dialogue-edit",
+      "elapsedMs": 7496.646499999915,
+      "peakRssBytes": 157990912,
+      "eventLoopLagP95Ms": 28.721151,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "render-options",
+      "elapsedMs": 12008.039299999946,
+      "peakRssBytes": 137072640,
+      "eventLoopLagP95Ms": 30.162943,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 304164681,
+        "encode": 6,
+        "probe": 72,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 846.0113000000129,
+      "peakRssBytes": 127180800,
+      "eventLoopLagP95Ms": 18.907135,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-fused",
+      "elapsedMs": 496.27619999996386,
+      "peakRssBytes": 127205376,
+      "eventLoopLagP95Ms": 19.677183,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "cold",
+      "elapsedMs": 21593.246700000018,
+      "peakRssBytes": 136863744,
+      "eventLoopLagP95Ms": 26.017791,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 175190673,
+        "encode": 24,
+        "probe": 75,
+        "streamCopy": 6
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 24157.14989999996,
+      "peakRssBytes": 133660672,
+      "eventLoopLagP95Ms": 26.918911,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 174851580,
+        "encode": 27,
+        "probe": 75,
+        "streamCopy": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "warm",
+      "elapsedMs": 7427.158399999957,
+      "peakRssBytes": 132042752,
+      "eventLoopLagP95Ms": 29.212671,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "resume",
+      "elapsedMs": 7489.628999999957,
+      "peakRssBytes": 128749568,
+      "eventLoopLagP95Ms": 28.262399,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "shot-edit",
+      "elapsedMs": 10260.197199999937,
+      "peakRssBytes": 138219520,
+      "eventLoopLagP95Ms": 30.294015,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 296888514,
+        "encode": 3,
+        "probe": 69,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "dialogue-edit",
+      "elapsedMs": 6977.4065999999875,
+      "peakRssBytes": 157962240,
+      "eventLoopLagP95Ms": 27.869183,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "render-options",
+      "elapsedMs": 12006.236499999999,
+      "peakRssBytes": 132206592,
+      "eventLoopLagP95Ms": 28.344319,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 304164681,
+        "encode": 6,
+        "probe": 72,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 857.4882000000216,
+      "peakRssBytes": 131166208,
+      "eventLoopLagP95Ms": 20.594687,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-fused",
+      "elapsedMs": 486.27779999992345,
+      "peakRssBytes": 131166208,
+      "eventLoopLagP95Ms": 19.529727,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "cold",
+      "elapsedMs": 22860.456500000088,
+      "peakRssBytes": 133935104,
+      "eventLoopLagP95Ms": 26.656767,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 175190673,
+        "encode": 24,
+        "probe": 75,
+        "streamCopy": 6
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 24786.876700000023,
+      "peakRssBytes": 133951488,
+      "eventLoopLagP95Ms": 25.886719,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 174851580,
+        "encode": 27,
+        "probe": 75,
+        "streamCopy": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "warm",
+      "elapsedMs": 6979.673199999961,
+      "peakRssBytes": 134615040,
+      "eventLoopLagP95Ms": 25.329663,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "resume",
+      "elapsedMs": 9322.902000000002,
+      "peakRssBytes": 141893632,
+      "eventLoopLagP95Ms": 29.769727,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "shot-edit",
+      "elapsedMs": 9433.19709999999,
+      "peakRssBytes": 142757888,
+      "eventLoopLagP95Ms": 26.083327,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 296888514,
+        "encode": 3,
+        "probe": 69,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "dialogue-edit",
+      "elapsedMs": 7380.766999999993,
+      "peakRssBytes": 142602240,
+      "eventLoopLagP95Ms": 28.590079,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "render-options",
+      "elapsedMs": 11830.880200000014,
+      "peakRssBytes": 132308992,
+      "eventLoopLagP95Ms": 29.392895,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 304164681,
+        "encode": 6,
+        "probe": 72,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 848.0359999999637,
+      "peakRssBytes": 131715072,
+      "eventLoopLagP95Ms": 26.607615,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-fused",
+      "elapsedMs": 440.6482000000542,
+      "peakRssBytes": 131715072,
+      "eventLoopLagP95Ms": 24.625151,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "cold",
+      "elapsedMs": 21962.76159999997,
+      "peakRssBytes": 134590464,
+      "eventLoopLagP95Ms": 27.623423,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 175190673,
+        "encode": 24,
+        "probe": 75,
+        "streamCopy": 6
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 23626.576899999985,
+      "peakRssBytes": 134688768,
+      "eventLoopLagP95Ms": 26.247167,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 174851580,
+        "encode": 27,
+        "probe": 75,
+        "streamCopy": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "warm",
+      "elapsedMs": 7323.068299999926,
+      "peakRssBytes": 134115328,
+      "eventLoopLagP95Ms": 27.246591,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "resume",
+      "elapsedMs": 7390.015000000014,
+      "peakRssBytes": 133570560,
+      "eventLoopLagP95Ms": 29.753343,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "shot-edit",
+      "elapsedMs": 10119.274500000058,
+      "peakRssBytes": 142204928,
+      "eventLoopLagP95Ms": 26.886143,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 296888514,
+        "encode": 3,
+        "probe": 69,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "dialogue-edit",
+      "elapsedMs": 6899.038900000043,
+      "peakRssBytes": 166227968,
+      "eventLoopLagP95Ms": 28.426239,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "render-options",
+      "elapsedMs": 11322.255600000033,
+      "peakRssBytes": 141930496,
+      "eventLoopLagP95Ms": 29.065215,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 304164681,
+        "encode": 6,
+        "probe": 72,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 846.0084000000497,
+      "peakRssBytes": 141930496,
+      "eventLoopLagP95Ms": 20.840447,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-fused",
+      "elapsedMs": 423.0818000000436,
+      "peakRssBytes": 141942784,
+      "eventLoopLagP95Ms": 17.448959,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "cold",
+      "elapsedMs": 22157.98589999997,
+      "peakRssBytes": 142012416,
+      "eventLoopLagP95Ms": 28.164095,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 175190673,
+        "encode": 24,
+        "probe": 75,
+        "streamCopy": 6
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "concat-encode-baseline",
+      "elapsedMs": 23723.782099999953,
+      "peakRssBytes": 135311360,
+      "eventLoopLagP95Ms": 27.508735,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 45,
+        "hashBytes": 174851580,
+        "encode": 27,
+        "probe": 75,
+        "streamCopy": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "warm",
+      "elapsedMs": 7230.120200000005,
+      "peakRssBytes": 142184448,
+      "eventLoopLagP95Ms": 29.638655,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "resume",
+      "elapsedMs": 9031.845999999903,
+      "peakRssBytes": 137920512,
+      "eventLoopLagP95Ms": 27.525119,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "shot-edit",
+      "elapsedMs": 10755.966400000034,
+      "peakRssBytes": 143978496,
+      "eventLoopLagP95Ms": 27.049983,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 296888514,
+        "encode": 3,
+        "probe": 69,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "dialogue-edit",
+      "elapsedMs": 7390.0146999999415,
+      "peakRssBytes": 142225408,
+      "eventLoopLagP95Ms": 28.196863,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 66,
+        "hashBytes": 308902893,
+        "probe": 60,
+        "cacheHit": 9
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "render-options",
+      "elapsedMs": 11849.443800000008,
+      "peakRssBytes": 135745536,
+      "eventLoopLagP95Ms": 28.803071,
+      "counters": {
+        "mediaProcess": 6,
+        "hash": 60,
+        "hashBytes": 304164681,
+        "encode": 6,
+        "probe": 72,
+        "streamCopy": 6,
+        "cacheHit": 3
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-two-encodes",
+      "elapsedMs": 833.19020000007,
+      "peakRssBytes": 133898240,
+      "eventLoopLagP95Ms": 25.182207,
+      "counters": {
+        "encode": 2,
+        "probe": 2
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "season-three-episodes",
+      "variant": "filters-fused",
+      "elapsedMs": 409.20329999993555,
+      "peakRssBytes": 133898240,
+      "eventLoopLagP95Ms": 17.711103,
+      "counters": {
+        "encode": 1,
+        "probe": 1
+      },
+      "eventLoopLagStatus": "measured",
+      "synchronousBlockingMs": null
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "full-index",
+      "elapsedMs": 330.3771999999881,
+      "peakRssBytes": 135020544,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 330.3771999999881
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "cached-index",
+      "elapsedMs": 38.03309999988414,
+      "peakRssBytes": 138211328,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 38.03309999988414
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.29820000007748604,
+      "peakRssBytes": 128241664,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.29820000007748604
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "elapsedMs": 5.239799999864772,
+      "peakRssBytes": 128290816,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 5.239799999864772
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.20940000005066395,
+      "peakRssBytes": 128659456,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.20940000005066395
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 2.4058000000659376,
+      "peakRssBytes": 129069056,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2.4058000000659376
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "full-index",
+      "elapsedMs": 166.90730000007898,
+      "peakRssBytes": 149422080,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 166.90730000007898
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "cached-index",
+      "elapsedMs": 30.890300000086427,
+      "peakRssBytes": 157405184,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 30.890300000086427
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.16070000012405217,
+      "peakRssBytes": 159662080,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.16070000012405217
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "elapsedMs": 2.8807000000961125,
+      "peakRssBytes": 148516864,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2.8807000000961125
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.12419999996200204,
+      "peakRssBytes": 148516864,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.12419999996200204
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 1.5113999999593943,
+      "peakRssBytes": 148516864,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 1.5113999999593943
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "full-index",
+      "elapsedMs": 202.18530000001192,
+      "peakRssBytes": 157233152,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 202.18530000001192
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "cached-index",
+      "elapsedMs": 23.167400000151247,
+      "peakRssBytes": 160940032,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 23.167400000151247
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.09749999991618097,
+      "peakRssBytes": 162025472,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.09749999991618097
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "elapsedMs": 1.7112999998498708,
+      "peakRssBytes": 150876160,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 1.7112999998498708
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.08030000003054738,
+      "peakRssBytes": 150876160,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.08030000003054738
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 1.6462000000756234,
+      "peakRssBytes": 150876160,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 1.6462000000756234
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "full-index",
+      "elapsedMs": 238.90180000010878,
+      "peakRssBytes": 160657408,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 238.90180000010878
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "cached-index",
+      "elapsedMs": 22.77569999988191,
+      "peakRssBytes": 164397056,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 22.77569999988191
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.1425000000745058,
+      "peakRssBytes": 164462592,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.1425000000745058
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "elapsedMs": 4.076099999947473,
+      "peakRssBytes": 153767936,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 4.076099999947473
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.11309999995864928,
+      "peakRssBytes": 153767936,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.11309999995864928
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 1.5135000001173466,
+      "peakRssBytes": 153767936,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 1.5135000001173466
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "full-index",
+      "elapsedMs": 185.70369999995455,
+      "peakRssBytes": 166744064,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 185.70369999995455
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "cached-index",
+      "elapsedMs": 25.216999999945983,
+      "peakRssBytes": 174714880,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 25.216999999945983
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.11969999992288649,
+      "peakRssBytes": 177377280,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.11969999992288649
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "elapsedMs": 2.1657000000122935,
+      "peakRssBytes": 166211584,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2.1657000000122935
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.09840000001713634,
+      "peakRssBytes": 166211584,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.09840000001713634
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 1.6473999998997897,
+      "peakRssBytes": 166215680,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 1.6473999998997897
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "full-index",
+      "elapsedMs": 2367.090499999933,
+      "peakRssBytes": 343642112,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2367.090499999933
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "cached-index",
+      "elapsedMs": 280.4438999998383,
+      "peakRssBytes": 343650304,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 280.4438999998383
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.09789999993517995,
+      "peakRssBytes": 306577408,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.09789999993517995
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "elapsedMs": 18.039600000018254,
+      "peakRssBytes": 268763136,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 18.039600000018254
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.07949999999254942,
+      "peakRssBytes": 268763136,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.07949999999254942
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 16.216499999864027,
+      "peakRssBytes": 270782464,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 16.216499999864027
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "full-index",
+      "elapsedMs": 2327.6389999999665,
+      "peakRssBytes": 416890880,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2327.6389999999665
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "cached-index",
+      "elapsedMs": 298.5565000001807,
+      "peakRssBytes": 416931840,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 298.5565000001807
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.1044000000692904,
+      "peakRssBytes": 375984128,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.1044000000692904
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "elapsedMs": 19.30450000008568,
+      "peakRssBytes": 375984128,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 19.30450000008568
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.07209999999031425,
+      "peakRssBytes": 375996416,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.07209999999031425
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 14.833700000075623,
+      "peakRssBytes": 377294848,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 14.833700000075623
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "full-index",
+      "elapsedMs": 2335.8567999999505,
+      "peakRssBytes": 464834560,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2335.8567999999505
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "cached-index",
+      "elapsedMs": 337.2583999999333,
+      "peakRssBytes": 464842752,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 337.2583999999333
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.10469999979250133,
+      "peakRssBytes": 387125248,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.10469999979250133
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "elapsedMs": 20.810100000118837,
+      "peakRssBytes": 387125248,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 20.810100000118837
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.07299999985843897,
+      "peakRssBytes": 387133440,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.07299999985843897
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 12.702200000174344,
+      "peakRssBytes": 388435968,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 12.702200000174344
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "full-index",
+      "elapsedMs": 2276.185700000031,
+      "peakRssBytes": 466595840,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2276.185700000031
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "cached-index",
+      "elapsedMs": 360.1198000002187,
+      "peakRssBytes": 466604032,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 360.1198000002187
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.1431000002194196,
+      "peakRssBytes": 390070272,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.1431000002194196
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "elapsedMs": 27.753400000045076,
+      "peakRssBytes": 390074368,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 27.753400000045076
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.12660000007599592,
+      "peakRssBytes": 390082560,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.12660000007599592
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 22.45629999996163,
+      "peakRssBytes": 391389184,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 22.45629999996163
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "full-index",
+      "elapsedMs": 2384.6126999999397,
+      "peakRssBytes": 466669568,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2384.6126999999397
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "cached-index",
+      "elapsedMs": 324.0131999999285,
+      "peakRssBytes": 466690048,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 324.0131999999285
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "elapsedMs": 0.17949999985285103,
+      "peakRssBytes": 390176768,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.17949999985285103
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "elapsedMs": 29.369300000136718,
+      "peakRssBytes": 390180864,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 29.369300000136718
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "elapsedMs": 0.14849999989382923,
+      "peakRssBytes": 390189056,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.14849999989382923
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "elapsedMs": 15.773400000063702,
+      "peakRssBytes": 391495680,
+      "eventLoopLagP95Ms": null,
+      "counters": {},
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 15.773400000063702
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "elapsedMs": 0.3337000000756234,
+      "peakRssBytes": 387629056,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.3337000000756234
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "elapsedMs": 2.7764000000897795,
+      "peakRssBytes": 387641344,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 2.7764000000897795
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "elapsedMs": 0.11910000001080334,
+      "peakRssBytes": 387641344,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.11910000001080334
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "elapsedMs": 0.6242000001948327,
+      "peakRssBytes": 387649536,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.6242000001948327
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "elapsedMs": 0.07809999980963767,
+      "peakRssBytes": 387657728,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.07809999980963767
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "elapsedMs": 0.44089999981224537,
+      "peakRssBytes": 387670016,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.44089999981224537
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "elapsedMs": 0.07620000001043081,
+      "peakRssBytes": 387678208,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.07620000001043081
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "elapsedMs": 0.29399999999441206,
+      "peakRssBytes": 387690496,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.29399999999441206
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "elapsedMs": 0.10299999988637865,
+      "peakRssBytes": 387690496,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.10299999988637865
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "elapsedMs": 0.3342000001575798,
+      "peakRssBytes": 387698688,
+      "eventLoopLagP95Ms": null,
+      "counters": {
+        "llmMockRequest": 1
+      },
+      "eventLoopLagStatus": "unavailable_for_synchronous_sample",
+      "synchronousBlockingMs": 0.3342000001575798
+    }
+  ],
+  "validation": [
+    {
+      "dataset": "vertical-45s",
+      "repeat": 0,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.991742
+    },
+    {
+      "dataset": "vertical-45s",
+      "repeat": 1,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.991742
+    },
+    {
+      "dataset": "vertical-45s",
+      "repeat": 2,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.991742
+    },
+    {
+      "dataset": "vertical-45s",
+      "repeat": 3,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.991742
+    },
+    {
+      "dataset": "vertical-45s",
+      "repeat": 4,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.991742
+    },
+    {
+      "dataset": "horizontal-150s",
+      "repeat": 0,
+      "duration": 150,
+      "ssimBetweenOutputs": 0.987069
+    },
+    {
+      "dataset": "horizontal-150s",
+      "repeat": 1,
+      "duration": 150,
+      "ssimBetweenOutputs": 0.987069
+    },
+    {
+      "dataset": "horizontal-150s",
+      "repeat": 2,
+      "duration": 150,
+      "ssimBetweenOutputs": 0.987069
+    },
+    {
+      "dataset": "horizontal-150s",
+      "repeat": 3,
+      "duration": 150,
+      "ssimBetweenOutputs": 0.987069
+    },
+    {
+      "dataset": "horizontal-150s",
+      "repeat": 4,
+      "duration": 150,
+      "ssimBetweenOutputs": 0.987069
+    },
+    {
+      "dataset": "season-three-episodes",
+      "repeat": 0,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.987673
+    },
+    {
+      "dataset": "season-three-episodes",
+      "repeat": 1,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.987673
+    },
+    {
+      "dataset": "season-three-episodes",
+      "repeat": 2,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.987673
+    },
+    {
+      "dataset": "season-three-episodes",
+      "repeat": 3,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.987673
+    },
+    {
+      "dataset": "season-three-episodes",
+      "repeat": 4,
+      "duration": 45,
+      "ssimBetweenOutputs": 0.987673
+    }
+  ],
+  "payloads": [
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "characters": 999,
+      "payloadCharacters": 62716,
+      "estimatedTokens": 20906
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1046,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 62716,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 20906,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "characters": 999,
+      "payloadCharacters": 62716,
+      "estimatedTokens": 20906
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1046,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 62716,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 20906,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "characters": 999,
+      "payloadCharacters": 62716,
+      "estimatedTokens": 20906
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1046,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 62716,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 20906,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "characters": 999,
+      "payloadCharacters": 62716,
+      "estimatedTokens": 20906
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1046,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 62716,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 20906,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-off",
+      "characters": 999,
+      "payloadCharacters": 62716,
+      "estimatedTokens": 20906
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1046,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 62716,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-1000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 20906,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "characters": 9999,
+      "payloadCharacters": 647714,
+      "estimatedTokens": 215905
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1067,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 647714,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 215905,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "characters": 9999,
+      "payloadCharacters": 647714,
+      "estimatedTokens": 215905
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1067,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 647714,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 215905,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "characters": 9999,
+      "payloadCharacters": 647714,
+      "estimatedTokens": 215905
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1067,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 647714,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 215905,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "characters": 9999,
+      "payloadCharacters": 647714,
+      "estimatedTokens": 215905
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1067,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 647714,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 215905,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-off",
+      "characters": 9999,
+      "payloadCharacters": 647714,
+      "estimatedTokens": 215905
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "pruning-on",
+      "characters": 24,
+      "estimatedTokens": 1067,
+      "mandatoryCanonRetained": true,
+      "sourceCitationRetained": true,
+      "futureKnowledgeExcluded": true
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-off",
+      "payloadCharacters": 647714,
+      "cacheMarker": false,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "context-10000",
+      "variant": "prompt-cache-on",
+      "cacheMarker": false,
+      "estimatedStaticTokens": 232,
+      "estimatedDynamicTokens": 215905,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "inputCharacters": 12210,
+      "outputCharacters": 12210,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "inputCharacters": 2757,
+      "outputCharacters": 609,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "inputCharacters": 12210,
+      "outputCharacters": 12210,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "inputCharacters": 2757,
+      "outputCharacters": 609,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "inputCharacters": 12210,
+      "outputCharacters": 12210,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "inputCharacters": 2757,
+      "outputCharacters": 609,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "inputCharacters": 12210,
+      "outputCharacters": 12210,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "inputCharacters": 2757,
+      "outputCharacters": 609,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "repair-full",
+      "inputCharacters": 12210,
+      "outputCharacters": 12210,
+      "actualUsage": "unavailable"
+    },
+    {
+      "dataset": "screenplay-20-scenes",
+      "variant": "micro-repair",
+      "inputCharacters": 2757,
+      "outputCharacters": 609,
+      "actualUsage": "unavailable"
+    }
+  ],
+  "sourceWorkingTree": true,
+  "benchmarkScriptSha256": "ade4390b02b6dc7056d44a89c91c159dfd3a846d4cd276c3322a36cb87077ca6",
+  "originalLocalReportSha256": "91d1f2b6f3d03e9ee78ab56afd607e0f8ab173f96046edfc4b7662997f9768fa"
+}

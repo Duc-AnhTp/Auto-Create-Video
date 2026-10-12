@@ -1,0 +1,347 @@
+import { runMediaCommand } from "../../../../platform/processes/media-process-runner.js";
+import { mkdtemp, rm, copyFile } from "node:fs/promises";
+import { join, resolve, extname, dirname } from "node:path";
+import { tmpdir } from "node:os";
+
+function run(cmd:string,args:string[]):Promise<string>{return runMediaCommand(cmd,args);}
+
+export async function getDurationSec(path: string): Promise<number> {
+  const out = await run("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    path,
+  ]);
+  const d = parseFloat(out.trim());
+  if (!Number.isFinite(d) || d <= 0) throw new Error(`ffprobe returned non-numeric duration for ${path}: ${out}`);
+  return d;
+}
+
+/**
+ * Concatenate audio files with `gapSec` silence between each, producing a single
+ * output mp3.
+ *
+ * Uses ffmpeg's CONCAT FILTER (not concat demuxer) with explicit sample-rate /
+ * channel normalization to avoid clicks/pops at boundaries. Each input is also
+ * given a tiny 8 ms fade-in/fade-out which inaudibly smooths any DC offset
+ * discontinuity at the boundary — this eliminates the "pét" clicking sound.
+ */
+export async function concatWithSilence(
+  inputPaths: string[],
+  gapSec: number,
+  outPath: string,
+): Promise<void> {
+  if (inputPaths.length === 0) throw new Error("concatWithSilence: empty inputPaths");
+  if (inputPaths.length === 1) {
+    // No concat needed — just normalize the single file
+    await run("ffmpeg", [
+      "-y", "-i", inputPaths[0],
+      "-ar", "44100", "-ac", "1",
+      "-c:a", "libmp3lame", "-b:a", "192k",
+      outPath,
+    ]);
+    return;
+  }
+
+  const tmp = await mkdtemp(join(tmpdir(), "concat-"));
+  try {
+    // Generate WAV silence (lossless, no encoder priming pops)
+    const silencePath = join(tmp, "silence.wav");
+    await run("ffmpeg", [
+      "-y", "-f", "lavfi",
+      "-i", `anullsrc=r=44100:cl=mono`,
+      "-t", String(gapSec),
+      "-ac", "1", "-ar", "44100",
+      silencePath,
+    ]);
+
+    // Build ffmpeg input args + concat filter graph.
+    // We interleave: voice[0] silence voice[1] silence voice[2] ... voice[N-1]
+    // Each is fed through a chain that:
+    //   1) resamples to 44100 mono (aresample with high-quality)
+    //   2) applies a tiny 8ms fade-in + fade-out (inaudible but smooths boundary)
+    // Then all are concatenated by the `concat=n=K:v=0:a=1` filter.
+    const ffArgs: string[] = ["-y"];
+    const filterParts: string[] = [];
+    const labels: string[] = [];
+    let idx = 0;
+    const FADE_SEC = 0.008; // 8ms — inaudible
+
+    const addInput = (path: string) => {
+      ffArgs.push("-i", path);
+      const inLabel = `[${idx}:a]`;
+      const outLabel = `a${idx}`;
+      // Pre-pad: we cannot know exact duration here without probing every input,
+      // so use afade with `t=in/out:st=...` and rely on `acrossfade` style.
+      // Simpler robust trick: use afade `st` for in, and `afade=t=out` with
+      // start_time=eof-FADE_SEC by providing duration after `-t` is hard.
+      // Use `afade=t=in:st=0:d=FADE` then `afade=t=out:st=0:d=FADE` won't work
+      // for variable-length inputs. So we use `apad=pad_dur=0` (no-op) +
+      // `aresample` then rely on concat filter doing sample-accurate join.
+      // The micro-fade is applied via `areverse,afade,areverse` trick to fade out:
+      filterParts.push(
+        `${inLabel}aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,` +
+        `afade=t=in:st=0:d=${FADE_SEC},` +
+        // Trim fade-out: reverse → fade-in → reverse (this fades the END)
+        `areverse,afade=t=in:st=0:d=${FADE_SEC},areverse[${outLabel}]`
+      );
+      labels.push(`[${outLabel}]`);
+      idx++;
+    };
+
+    inputPaths.forEach((p, i) => {
+      addInput(p);
+      if (i < inputPaths.length - 1) addInput(silencePath);
+    });
+
+    const concatFilter = `${labels.join("")}concat=n=${labels.length}:v=0:a=1[out]`;
+    const filterGraph = `${filterParts.join(";")};${concatFilter}`;
+
+    ffArgs.push(
+      "-filter_complex", filterGraph,
+      "-map", "[out]",
+      "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100",
+      outPath,
+    );
+
+    await run("ffmpeg", ffArgs);
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
+export interface SfxMixSpec {
+  /** Absolute path to SFX mp3/wav file */
+  path: string;
+  /** Time in seconds (within voice.mp3) when SFX starts */
+  startSec: number;
+  /** Volume 0–1 */
+  volume: number;
+}
+
+/**
+ * Mix SFX layer onto an existing voice mp3.
+ *
+ * - Voice stays at full volume
+ * - Each SFX is delayed to its `startSec` and scaled by its `volume`
+ * - All SFX layers are summed, then mixed with voice (amix duration=first)
+ * - Output is mp3 at 192kbps
+ *
+ * If `sfxList` is empty, just copies voicePath → outPath.
+ */
+export async function mixSfxOntoVoice(
+  voicePath: string,
+  sfxList: SfxMixSpec[],
+  outPath: string,
+): Promise<void> {
+  if (sfxList.length === 0) {
+    // No SFX — just normalize/copy voice
+    await run("ffmpeg", [
+      "-y", "-i", voicePath,
+      "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100",
+      outPath,
+    ]);
+    return;
+  }
+
+  const ffArgs: string[] = ["-y", "-i", voicePath];
+  const filterParts: string[] = [];
+  const sfxLabels: string[] = [];
+
+  sfxList.forEach((s, i) => {
+    ffArgs.push("-i", s.path);
+    const inputIdx = i + 1; // voice is index 0
+    const outLabel = `s${i}`;
+    const delayMs = Math.max(0, Math.round(s.startSec * 1000));
+    // Per-SFX chain: resample to 44100 mono → adelay to start time → volume
+    filterParts.push(
+      `[${inputIdx}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,` +
+      `adelay=${delayMs}|${delayMs},volume=${s.volume}[${outLabel}]`
+    );
+    sfxLabels.push(`[${outLabel}]`);
+  });
+
+  // Mix all SFX layers together
+  let mixedSfxLabel: string;
+  if (sfxLabels.length === 1) {
+    mixedSfxLabel = sfxLabels[0];
+  } else {
+    filterParts.push(
+      `${sfxLabels.join("")}amix=inputs=${sfxLabels.length}:dropout_transition=0:normalize=0[sfxall]`
+    );
+    mixedSfxLabel = "[sfxall]";
+  }
+
+  // Voice path: resample, then mix with SFX layer (voice volume 1.0, SFX already scaled)
+  filterParts.push(
+    `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono[voice]`
+  );
+  filterParts.push(
+    `[voice]${mixedSfxLabel}amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]`
+  );
+
+  ffArgs.push(
+    "-filter_complex", filterParts.join(";"),
+    "-map", "[out]",
+    "-c:a", "libmp3lame", "-b:a", "192k", "-ar", "44100",
+    outPath,
+  );
+
+  await run("ffmpeg", ffArgs);
+}
+
+export interface BgmMixOptions {
+  /** Base volume of BGM when voice is silent (0.0 to 1.0). Default 0.20 */
+  bgmVolume?: number;
+  /** Ducking compression ratio (e.g. 8 to 12). Default 10 */
+  duckRatio?: number;
+  /** Ducking threshold (0.01 to 0.1). Default 0.04 */
+  duckThreshold?: number;
+  /** Fade out duration at the end in seconds. Default 1.5 */
+  fadeOutSec?: number;
+}
+
+/**
+ * Mixes background music (BGM) under voice + SFX with smart dynamic audio ducking.
+ *
+ * Uses FFmpeg sidechaincompress:
+ * - When voice speaks (amplitude > threshold), BGM volume is automatically ducked.
+ * - When voice pauses (scene gap, outro hold), BGM volume smoothly returns to base volume.
+ * - Loops BGM seamlessly if total video duration exceeds music length.
+ * - Fades out BGM smoothly at the end.
+ */
+export async function mixBgmWithDucking(
+  voicePath: string,
+  bgmPath: string,
+  outPath: string,
+  opts?: BgmMixOptions,
+): Promise<void> {
+  const totalDur = await getDurationSec(voicePath);
+  const bgmVolume = opts?.bgmVolume ?? 0.20;
+  const duckRatio = opts?.duckRatio ?? 10;
+  const duckThreshold = opts?.duckThreshold ?? 0.04;
+  const fadeOutSec = opts?.fadeOutSec ?? 1.5;
+  const fadeStart = Math.max(0, totalDur - fadeOutSec);
+
+  const filterGraph = [
+    `[1:a]atrim=0:${totalDur.toFixed(2)},aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,volume=${bgmVolume},afade=t=out:st=${fadeStart.toFixed(2)}:d=${fadeOutSec.toFixed(2)}[bgm_base]`,
+    `[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono[voice_raw]`,
+    `[voice_raw]asplit=2[voice_sc][voice_mix]`,
+    `[bgm_base][voice_sc]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=80:release=350[ducked_bgm]`,
+    `[voice_mix][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]`,
+  ].join(";");
+
+  await run("ffmpeg", [
+    "-y",
+    "-i", voicePath,
+    "-stream_loop", "-1",
+    "-i", bgmPath,
+    "-filter_complex", filterGraph,
+    "-map", "[out]",
+    "-c:a", "libmp3lame",
+    "-b:a", "192k",
+    "-ar", "44100",
+    outPath,
+  ]);
+}
+
+export interface EbuR128Options {
+  /** Target Integrated Loudness in LUFS (-23.0 for EBU R128 broadcast, -14.0 for YouTube/TikTok/Web streaming). Default: -14.0 */
+  targetLufs?: number;
+  /** Maximum True Peak in dBFS (typically -1.0 dBFS). Default: -1.0 */
+  truePeak?: number;
+  /** Loudness Range in LU (default: 7.0 for streaming, 11.0 for dynamic cinema) */
+  lra?: number;
+  /** Target sample rate in Hz (default: 48000 for film/video) */
+  sampleRate?: number;
+  /** Audio bitrate (default: "256k" or "320k") */
+  bitrate?: string;
+}
+
+/**
+ * Normalizes and masters audio track to EBU R128 / ITU-R BS.1770-4 loudness standards.
+ * Uses FFmpeg's loudnorm filter with high-precision single-pass or dual-pass normalization.
+ */
+export async function masterAudioEbuR128(
+  inputPath: string,
+  outPath: string,
+  options?: EbuR128Options
+): Promise<void> {
+  const targetLufs = options?.targetLufs ?? -14.0;
+  const truePeak = options?.truePeak ?? -1.0;
+  const lra = options?.lra ?? 7.0;
+  const sampleRate = options?.sampleRate ?? 48000;
+  const bitrate = options?.bitrate ?? "256k";
+
+  const isWav = outPath.toLowerCase().endsWith(".wav");
+  const codecArgs = isWav
+    ? ["-c:a", "pcm_s16le"]
+    : ["-c:a", "libmp3lame", "-b:a", bitrate];
+
+  const filter = `loudnorm=I=${targetLufs.toFixed(1)}:TP=${truePeak.toFixed(1)}:LRA=${lra.toFixed(1)}:print_format=none`;
+
+  const resolvedIn = resolve(inputPath);
+  const resolvedOut = resolve(outPath);
+  const isSameFile =
+    process.platform === "win32"
+      ? resolvedIn.toLowerCase() === resolvedOut.toLowerCase()
+      : resolvedIn === resolvedOut;
+  const tempOut = isSameFile
+    ? join(dirname(resolvedOut), `.tmp_ebu_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${extname(outPath) || ".mp3"}`)
+    : resolvedOut;
+
+  try {
+    await run("ffmpeg", [
+      "-y",
+      "-i", inputPath,
+      "-af", filter,
+      "-ar", String(sampleRate),
+      ...codecArgs,
+      tempOut,
+    ]);
+
+    if (isSameFile) {
+      await copyFile(tempOut, resolvedOut);
+      await rm(tempOut, { force: true });
+    }
+  } catch (err) {
+    if (isSameFile) {
+      await rm(tempOut, { force: true }).catch(() => {});
+    }
+    throw err;
+  }
+}
+
+/**
+ * Applies spatial stereo panning (-1.0 left to +1.0 right) to an audio file using FFmpeg pan filter.
+ */
+export async function applySpatialAudioPanning(
+  inputPath: string,
+  outPath: string,
+  pan = 0.0
+): Promise<string> {
+  const safePan = Math.max(-1.0, Math.min(1.0, pan));
+  if (Math.abs(safePan) < 0.01) {
+    if (resolve(inputPath) !== resolve(outPath)) {
+      await copyFile(inputPath, outPath);
+    }
+    return outPath;
+  }
+
+  // Calculate pan gains: Left (c0) and Right (c1)
+  const leftGain = Math.max(0, (1 - safePan)).toFixed(2);
+  const rightGain = Math.max(0, (1 + safePan)).toFixed(2);
+  const filter = `pan=stereo|c0=${leftGain}*c0|c1=${rightGain}*c0`;
+
+  await run("ffmpeg", [
+    "-y",
+    "-i", inputPath,
+    "-af", filter,
+    "-c:a", "libmp3lame",
+    "-b:a", "192k",
+    "-ar", "44100",
+    outPath,
+  ]);
+  return outPath;
+}
+

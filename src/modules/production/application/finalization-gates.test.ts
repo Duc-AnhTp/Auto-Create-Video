@@ -1,0 +1,19 @@
+import {describe,it,expect,vi,beforeEach,afterEach} from 'vitest';
+import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {SqliteStoryStore} from '../../../bootstrap/sqlite-story-store.js';
+import {finalizeProduction} from './finalize-service.js';
+import {AssemblyQaReportSchema} from '../../media/domain/manifest-schema.js';
+let bible:SqliteStoryStore,dir:string,clip:string;
+const seriesId='finalize_gates',episodeNumber=1,script={title:'Gate test',scenes:[{sceneId:'scene',shots:[{shotId:'shot',durationSec:1}]}]};
+beforeEach(async()=>{dir=await mkdtemp(resolve('output/test-runtime/finalize-gates-'));clip=join(dir,'clip.mp4');await writeFile(clip,'fixture');bible=new SqliteStoryStore(':memory:');bible.upsertSeriesMetadata({id:seriesId,title:'Gate test',genre:'Drama',visual_style:'Cinematic',aspect_ratio:'9:16',fps:30,created_at:new Date().toISOString()});bible.recordShotTake({id:'take',series_id:seriesId,episode_number:episodeNumber,shot_id:'shot',provider:'api_runway',prompt:'test',duration_sec:1,local_path:clip,is_approved:1,qa_status:'PASS',qa_report_json:JSON.stringify({status:'PASS'}),created_at:new Date().toISOString()});});
+afterEach(async()=>{bible.close();await rm(dir,{recursive:true,force:true});});
+function options(){return {seriesId,episodeNumber,script,bible,outputDir:dir,media:{createFilmAssembler:vi.fn(()=>{throw new Error('Assembler must not run in this gate test');})}};}
+describe('shared finalization gates',()=>{
+ it('rejects malformed QA evidence before calling a renderer',async()=>{bible.recordShotTake({...bible.getApprovedTakeForShot(seriesId,episodeNumber,'shot')!,qa_report_json:'{broken'});const onFinalize=vi.fn();const result=await finalizeProduction({...options(),onFinalize});expect(result.success).toBe(false);expect(result.mockTakesDetected?.[0]).toContain('malformed');expect(onFinalize).not.toHaveBeenCalled();});
+ it('rejects failed lifecycle before any custom callback',async()=>{bible.setEpisodeLifecycle({seriesId,episodeNumber,status:'failed',needsReview:true});const onFinalize=vi.fn();const result=await finalizeProduction({...options(),onFinalize});expect(result.error).toContain('LIFECYCLE GATE');expect(onFinalize).not.toHaveBeenCalled();});
+ it('does not accept a callback canon claim without QA evidence',async()=>{const result=await finalizeProduction({...options(),onFinalize:async()=>({masterVideoPath:clip,canonCommitted:true})});expect(result).toMatchObject({success:false,canonCommitted:false,error:'FINALIZATION_QA_REQUIRED'});expect(bible.getCanonHistory(seriesId)).toHaveLength(0);});
+ it('blocks unresolved cost before rendering',async()=>{const ledger=bible.getSeriesBudgetLedger(seriesId);vi.spyOn(bible,'getSeriesBudgetLedger').mockReturnValue({...ledger,uncertainAttemptCount:1});const onFinalize=vi.fn();const result=await finalizeProduction({...options(),onFinalize});expect(result.success).toBe(false);expect(onFinalize).not.toHaveBeenCalled();});
+ it('uses the common canon commit for custom rendering and idempotent retries',async()=>{const onFinalize=vi.fn(async()=>({masterVideoPath:clip,qaReport:AssemblyQaReportSchema.parse({isValid:true})}));const first=await finalizeProduction({...options(),onFinalize});const second=await finalizeProduction({...options(),onFinalize});expect(first).toMatchObject({success:true,canonCommitted:true});expect(second).toMatchObject({success:true,canonCommitted:false,commitId:first.commitId});expect(bible.getCanonHistory(seriesId)).toHaveLength(1);});
+ it('rejects a corrupt timeline without committing',async()=>{await writeFile(join(dir,'timeline.json'),'{broken');const result=await finalizeProduction(options());expect(result).toMatchObject({success:false,error:'TIMELINE_INVALID'});expect(bible.getCanonHistory(seriesId)).toHaveLength(0);});
+});

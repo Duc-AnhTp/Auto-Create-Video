@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import "./utils/media-runtime.js";
+import "./platform/processes/media-runtime.js";
 import nock from "nock";
 
 // Unit/integration tests must never inherit paid credentials or dotenv files.
@@ -13,3 +13,5 @@ vi.mock("dotenv", async (original) => ({
 }));
 nock.disableNetConnect();
 nock.enableNetConnect(/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/);
+
+process.env.OFFLINE_WORKER="1";

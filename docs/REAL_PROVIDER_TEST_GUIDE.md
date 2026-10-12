@@ -2,6 +2,8 @@
 
 Tài liệu này xác lập quy trình kiểm nghiệm nghiêm ngặt khi chuyển tiếp từ **môi trường kiểm thử cục bộ (mock/offline)** sang **môi trường thực thi thực tế (real paid/local GPU providers)** và lộ trình sản xuất phim từ bản thử nghiệm ngắn đến quy mô 10 phút.
 
+Cập nhật A–E (07/10/2026): paid dispatch/hedge được kiểm chứng bằng adapter giả và HTTP local. Capability, chất lượng, idempotency, chữ ký callback và hóa đơn của provider thật chưa được xác minh. Hedge mặc định tắt; dữ liệu mock không được dùng để công nhận nghiệm thu thật. Trần ngân sách đang thực thi chỉ bao phủ video attempt; LLM/TTS báo riêng. Xem [vận hành và đối soát](OPTIMIZATION_OPERATIONS.md).
+
 ---
 
 ## 📌 Nguyên Tắc Bất Khả Xâm Phạm Trước Khi Kích Hoạt
@@ -30,7 +32,7 @@ Tài liệu này xác lập quy trình kiểm nghiệm nghiêm ngặt khi chuy�
       KLING_API_KEY="your_actual_kling_api_key"
       KLING_BASE_URL="https://api.klingai.com/v1"
       ```
-    - Bảng giá tham chiếu: ~$0.50 – $0.70 cho mỗi video 5 giây (chế độ tiêu chuẩn).
+    - Giá phải được xác minh từ rate card có nguồn/ngày hiệu lực và hóa đơn của tài khoản dùng thực tế; vòng offline không xác nhận giá.
   - **Phương án B (Local GPU - Miễn phí API)**: ComfyUI / Wan 2.2 (`local_comfyui`).
     - Cấu hình:
       ```bash
@@ -53,7 +55,7 @@ MINH: Mọi thứ đã sẵn sàng cho đêm nay.
 ```
 
 ### 3. Lệnh Chạy Có Khóa Ngân Sách
-Chạy với trần ngân sách người dùng đặt là **$1.50** (đủ cho 1 shot + tối đa 1 lần retry tự động nếu cần):
+Ví dụ trần ngân sách video **$1.50**; chỉ submit khi reservation cho phép. Không bảo đảm số shot/re-roll theo giá chưa xác minh, và không retry POST có kết quả không rõ:
 
 ```bash
 npm run series -- series:episode \
@@ -169,3 +171,42 @@ Hiện tại, toàn bộ quy trình kiểm duyệt, xem QA, nghe thử thoại v
   2. Số lượng take trong một tập vượt quá 50 take, việc duyệt thủ công qua dòng lệnh làm giảm tốc độ sản xuất.
   3. Có sự tham gia của nhiều người trong ê-kíp (Đạo diễn hình ảnh, Biên kịch, Kỹ sư âm thanh) cùng xem và phê duyệt trên mạng nội bộ.
 - Nếu việc sản xuất vẫn do 1 kỹ sư kiêm đạo diễn vận hành trơn tru qua CLI, ưu tiên tập trung tài nguyên vào tối ưu hóa chất lượng video và tự động hóa kịch bản thay vì xây dựng UI thừa.
+
+---
+
+## 🛡️ Giai Đoạn 8: Kiến Trúc Phòng Vệ & Đối Soát Gateway Thực Tế (Gateway Hardening)
+
+Để bảo vệ ngân sách thật, tránh bị khóa API Key và tối ưu hóa thời gian chờ đợi khi gọi các nhà cung cấp video AI hàng đầu (Kling, Runway, Google Veo, Seedance, Serverless Swarm), hệ thống đã được trang bị 5 lớp phòng vệ tự động:
+
+### 1. Resilient 3-State Circuit Breaker (`CLOSED` ➔ `OPEN` ➔ `HALF_OPEN` ➔ `CLOSED`)
+- **Tự động ngắt khi lỗi dồn dập**: Sau 3 lần thất bại liên tiếp trên một provider (`maxConsecutiveFailures = 3`), Circuit Breaker chuyển sang trạng thái `OPEN` để bảo vệ tài khoản, lập tức chặn các request tiếp theo và chuyển đổi failover sang provider dự phòng.
+- **Tự động hồi phục qua Canary Probe**: Sau thời gian cooldown (mặc định 60 giây), Circuit Breaker tự động chuyển sang `HALF_OPEN` và cho phép **đúng 1 request thăm dò (canary probe)**:
+  - Nếu probe thành công ➔ Tự động phục hồi về `CLOSED`, reset bộ đếm lỗi về 0.
+  - Nếu probe thất bại ➔ Lập tức quay lại `OPEN` và gia hạn thời gian cooldown mới.
+
+### 2. Token-Bucket Rate Limiter & Concurrency Manager
+- **Khống chế số lượng task đồng thời (In-Flight Concurrency)**:
+  - `api_kling`: Tối đa 2 jobs đồng thời
+  - `api_runway`: Tối đa 2 jobs đồng thời
+  - `api_veo`: Tối đa 3 jobs đồng thời
+  - `api_seedance`: Tối đa 5 jobs đồng thời
+  - `local_comfyui`: Tối đa 1 job đồng thời (bảo vệ VRAM GPU)
+  - `serverless_comfyui`: Tối đa 10 jobs đồng thời
+- **Token Bucket RPM (Requests Per Minute)**: Tự động điều tiết tần suất gọi API theo cửa sổ trượt 60 giây, xếp hàng đợi FIFO và tự động giải phóng khi task hoàn thành.
+
+### 3. Transient HTTP Retry với Jitter & Header Retry-After
+- Tự động bắt và thử lại các lỗi mạng chập chờn (`ECONNRESET`, `ETIMEDOUT`, `ENOTFOUND`) và mã HTTP tạm thời (`429`, `500`, `502`, `503`, `504`).
+- Tự động trích xuất và tôn trọng thời gian chờ từ header `Retry-After` khi gặp HTTP 429.
+- Áp dụng thuật toán Exponential Backoff kết hợp độ trễ ngẫu nhiên (randomized jitter 0–300ms) để triệt tiêu hiện tượng nghẽn sóng (thundering herd problem).
+
+### 4. Dual-Mode: Webhook Callback & Polling Fallback
+- Hỗ trợ webhook callback tức thì qua endpoint:
+  ```http
+  POST /api/v1/gateway/webhook/:provider
+  ```
+- **Cơ chế đua (Race Dispatcher)**: Khi nhận được webhook callback từ Kling, Seedance hoặc Cloud Serverless, job promise được đánh thức và giải quyết ngay lập tức, tiết kiệm 100% thời gian chờ polling và giảm tải băng thông mạng.
+- **Dự phòng an toàn**: Nếu webhook bị thất lạc hoặc trễ quá ngưỡng, chu kỳ polling truyền thống vẫn tiếp tục kiểm tra và hoàn thành công việc.
+
+### 5. Tự Động Đối Soát Hóa Đơn Vào Sổ Cái (`BudgetLedger`)
+- Trích xuất chi phí thực tế (`invoicedCostUsd`, `isConfirmedInvoice: true`) từ payload trả về của API nhà cung cấp (ví dụ: `cost_details` của Kling, `credits_used` của Runway, `invoiced_cost` của Seedance).
+- Ghi nhận chi phí hóa đơn chính thức vào `BudgetLedger` thay cho ước tính lý thuyết của bảng giá, đảm bảo minh bạch tài chính 100% trong mọi chiến dịch sản xuất.

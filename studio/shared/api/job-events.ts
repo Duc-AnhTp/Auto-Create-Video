@@ -1,0 +1,9 @@
+import {z} from "zod";
+import {JobSummaryRequestSchema,JobStatusSchema,type StudioJob} from "../../../src/contracts/studio.js";
+const JobEventSchema=z.object({id:z.string(),request:JobSummaryRequestSchema,status:JobStatusSchema,control:z.enum(["run","pause","cancel"]),progress:z.object({step:z.number(),total:z.number(),message:z.string()}).nullable(),result:z.object({videoPath:z.string(),audioPath:z.string(),outputDir:z.string(),isMock:z.boolean()}).passthrough().nullable(),error:z.object({code:z.string(),message:z.string()}).nullable(),createdAt:z.string(),updatedAt:z.string()}).passthrough();
+export interface JobEventSource {addEventListener(type:string,listener:EventListener):void;close():void}
+export function subscribeJobs(options:{seriesId:string;episode:number;active:()=>boolean;onSnapshot:(jobs:StudioJob[])=>void;onJob:(job:StudioJob)=>void;onError:(message:string)=>void},create:(url:string)=>JobEventSource=url=>new EventSource(url)):()=>void {
+ const source=create("/api/v1/events");let disposed=false;
+ const receive=(snapshot:boolean)=>(event:Event)=>{if(disposed||!options.active())return;try{const raw:unknown=JSON.parse(String((event as MessageEvent).data));if(snapshot){const parsed=z.object({jobs:z.array(JobEventSchema)}).parse(raw);options.onSnapshot(parsed.jobs.filter(job=>job.request.seriesId===options.seriesId&&job.request.episodeNumber===options.episode) as StudioJob[]);}else{const parsed=JobEventSchema.parse(raw);if(parsed.request.seriesId===options.seriesId&&parsed.request.episodeNumber===options.episode)options.onJob(parsed as StudioJob);}}catch(error){options.onError(error instanceof Error?error.message:String(error));}};
+ source.addEventListener("snapshot",receive(true));source.addEventListener("job",receive(false));return ()=>{disposed=true;source.close();};
+}

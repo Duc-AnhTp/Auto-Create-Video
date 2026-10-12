@@ -11,6 +11,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
+        node: ['22', '24']
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -19,7 +20,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
           cache: 'npm'
 
       - name: Install dependencies
@@ -28,14 +29,39 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Import boundaries and runtime cycles
+        run: npm run check:architecture
+
       - name: Unit tests
         run: npm run test:unit
 
       - name: Integration tests with project-local FFmpeg and ffprobe
         run: npm run test:integration
 
+      - name: Media regressions
+        run: npm run test:media
+
+      - name: Frontend request ownership regressions
+        run: npm run test:frontend
+
       - name: Build
         run: npm run build
 
       - name: Compiled CLI smoke test
-        run: node dist/cli.js series:help
+        run: node dist/apps/cli/main.js series:help
+
+      - name: Clean compiled runtime and restart smoke
+        run: npm run smoke:runtime
+
+      - name: Offline browser smoke
+        run: npm run smoke:browser
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: docker build -t auto-create-video-smoke .
+      - run: node scripts/container-smoke.mjs auto-create-video-smoke

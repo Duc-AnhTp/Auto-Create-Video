@@ -244,7 +244,7 @@ Phiên bản 3.0 bổ sung các trường dữ liệu bắt buộc và nâng c�
 ### Chuyển đổi Kịch Bản JSON Cũ (v1.0 / v2.0):
 Nếu bạn có các file JSON kịch bản được tạo từ các phiên bản trước, sử dụng hàm `migrateScriptToLatest` trong mã nguồn hoặc chạy tự động qua `parseRawScreenplay`:
 ```typescript
-import { migrateScriptToLatest } from "./src/series/series-schema.js";
+import { migrateScriptToLatest } from "./src/contracts/episode.js";
 
 const legacyScript = JSON.parse(fs.readFileSync("old-script-v2.json", "utf8"));
 const modernScript = migrateScriptToLatest(legacyScript);

@@ -1,0 +1,9 @@
+import {it,expect,vi} from 'vitest';
+import {checkExecution, guardFailureStateWrite} from './execution-control.js';
+import {WorkflowError,failureDisposition} from '../../../platform/workflow-error.js';
+it('preserves lease loss ahead of cancellation and never runs a stale checkpoint',async()=>{const signal=AbortSignal.abort(),checkpoint=vi.fn();const error=new WorkflowError('WORKER_LEASE_LOST','lost','lease_lost');await expect(checkExecution({signal,checkpoint,assertOwnership(){throw error;}})).rejects.toBe(error);expect(checkpoint).not.toHaveBeenCalled();expect(failureDisposition(error)).toBe('lease_lost');});
+it('honors cooperative controls before checking cancellation',async()=>{const checkpoint=vi.fn();await expect(checkExecution({signal:AbortSignal.abort(),checkpoint})).rejects.toMatchObject({code:'JOB_CANCELLED'});expect(checkpoint).toHaveBeenCalledOnce();});
+it('blocks failure checkpoint publication when the lease changes during execution',()=>{const lost=new WorkflowError('WORKER_LEASE_LOST','lost','lease_lost'),write=vi.fn();expect(()=>{guardFailureStateWrite({assertOwnership(){throw lost;}},new Error('render failed'));write();}).toThrow(lost);expect(write).not.toHaveBeenCalled();});
+it('preserves a remote ownership failure even without an ownership callback',()=>{const lost=new WorkflowError('JOB_LEASE_LOST','lost');expect(()=>guardFailureStateWrite({},lost)).toThrow(lost);});
+it('preserves cancellation ahead of ordinary failure state writes',()=>{expect(()=>guardFailureStateWrite({signal:AbortSignal.abort()},new Error('render aborted'))).toThrow(expect.objectContaining({code:'JOB_CANCELLED',disposition:'cancelled'}));});
+it('allows the current owner to record an ordinary failure',()=>{const assertOwnership=vi.fn();expect(()=>guardFailureStateWrite({assertOwnership},new Error('render failed'))).not.toThrow();expect(assertOwnership).toHaveBeenCalledOnce();});

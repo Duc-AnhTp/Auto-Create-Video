@@ -56,7 +56,7 @@ export interface HierarchicalAssemblerOptions {
   fps?: number;
   width?: number;
   height?: number;
-  aspectRatio?: "9:16" | "16:9" | "1:1";
+  aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5";
   scenes: SceneAssemblyInput[];
   dialogueCues?: TimelineDialogueCue[];
   sfxCues?: TimelineSfxCue[];
@@ -319,8 +319,8 @@ export class HierarchicalFilmAssembler {
       title = "Episodic Master",
       fps = 30,
       aspectRatio = "9:16",
-      width = (this.options.aspectRatio === "16:9" ? 1280 : (this.options.aspectRatio === "1:1" ? 720 : 720)),
-      height = (this.options.aspectRatio === "16:9" ? 720 : (this.options.aspectRatio === "1:1" ? 720 : 1280)),
+      width = (aspectRatio === "16:9" ? 1280 : (aspectRatio === "1:1" || aspectRatio === "4:5" ? 720 : 720)),
+      height = (aspectRatio === "16:9" ? 720 : (aspectRatio === "1:1" ? 720 : (aspectRatio === "4:5" ? 900 : 1280))),
       scenes,
       dialogueCues = [],
       sfxCues = [],

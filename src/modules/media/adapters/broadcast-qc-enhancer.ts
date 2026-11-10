@@ -234,7 +234,7 @@ export class BroadcastQcEnhancer {
     try {
       await runCommand("ffmpeg", args);
     } catch (err: any) {
-      if (!isMock) throw err;
+      if (!options.mockFallback) throw err;
       log.warn(`[BROADCAST QC] Lỗi FFmpeg khi conform: ${err.message}. Fallback mock.`);
       await createValidMockMp4File(outputPath, 4.0);
       isMockMode = true;

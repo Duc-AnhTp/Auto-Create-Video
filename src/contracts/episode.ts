@@ -171,7 +171,7 @@ export const EpisodicScriptSchema = z
     episodeNumber: z.number().int().positive(),
     title: z.string().min(1),
     logline: z.string().min(1),
-    aspectRatio: z.enum(["9:16", "16:9"]).default("9:16"),
+    aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]).default("9:16"),
     fps: z.number().int().positive().default(30),
     bgm: z.string().optional(),
     unresolvedCharacters: z.array(z.string()).default([]),

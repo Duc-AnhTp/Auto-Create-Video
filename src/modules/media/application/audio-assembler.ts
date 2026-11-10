@@ -807,9 +807,10 @@ export class EpisodeAudioAssembler {
     const assPath = join(outputDir, "subtitles.ass");
     const srtContent = exportToSrt(unifiedTimeline.subtitleTrack);
     const vttContent = exportToVtt(unifiedTimeline.subtitleTrack);
-    const isPortrait = script.aspectRatio !== "16:9";
+    const resolvedAspect = script.aspectRatio || "9:16";
+    const isPortrait = resolvedAspect !== "16:9" && resolvedAspect !== "1:1";
     const assContent = exportToAss(unifiedTimeline.subtitleTrack, {
-      aspectRatio: script.aspectRatio === "16:9" ? "16:9" : "9:16",
+      aspectRatio: resolvedAspect,
       style: isPortrait ? "short_drama_punch" : "karaoke",
       safeTitleAvoidance: isPortrait,
       enablePeakImpactLinking: true,

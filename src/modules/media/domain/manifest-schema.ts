@@ -84,7 +84,7 @@ export const AssemblyManifestSchema = z.object({
   resolution: z.object({
     width: z.number().int().positive().default(720),
     height: z.number().int().positive().default(1280),
-    aspectRatio: z.enum(["9:16", "16:9", "1:1"]).default("9:16"),
+    aspectRatio: z.enum(["9:16", "16:9", "1:1", "4:5"]).default("9:16"),
   }),
   totalDurationSec: z.number().min(0),
   scenes: z.array(AssemblySceneRecordSchema),

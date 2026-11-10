@@ -206,4 +206,105 @@ CÚ MÁY 2 (ots_b_a, 4s): Góc qua vai Mai nhìn sang Nam đang trầm ngâm.
     expect(expanded).toContain("CÚ MÁY 1 (two_shot, 5s): Nam và Mai đứng cạnh nhau bên bàn cờ.");
     expect(expanded).toContain("CÚ MÁY 2 (ots_b_a, 4s): Góc qua vai Mai nhìn sang Nam đang trầm ngâm.");
   });
+
+  it("expands compact cinema notation with missing scene headers and decimal durations", () => {
+    const rawCompact = `
+C1.1 [EST|3.5s]: Toàn cảnh thung lũng mờ sương.
+C1.2 [MED|2.5s]: Nam thận trọng tiến bước.
+C2.1 [CU|4s]: Ánh mắt sắc bén của Mai.
+    `.trim();
+
+    const expanded = PromptOptimizer.expandCompactCinemaNotation(rawCompact);
+    expect(expanded).toContain("CẢNH 1: PHÂN CẢNH 1");
+    expect(expanded).toContain("CÚ MÁY 1 (establishing, 3.5s): Toàn cảnh thung lũng mờ sương.");
+    expect(expanded).toContain("CÚ MÁY 2 (medium, 2.5s): Nam thận trọng tiến bước.");
+    expect(expanded).toContain("CẢNH 2: PHÂN CẢNH 2");
+    expect(expanded).toContain("CÚ MÁY 1 (close_up, 4s): Ánh mắt sắc bén của Mai.");
+  });
+
+  it("splits sentences cleanly on exclamation marks, question marks, and newlines in rolling context decay", () => {
+    const summaries: EpisodeSummaryRecord[] = [
+      {
+        episode_number: 1,
+        title: "Kêu Gọi",
+        logline: "Cứu nguy thế giới ngay lập tức! Kẻ thù đã tràn qua phòng tuyến.",
+        major_events: [],
+        created_at: new Date().toISOString(),
+      },
+      {
+        episode_number: 2,
+        title: "Nghi Vấn",
+        logline: "Ai là kẻ phản bội trong bóng tối? Cuộc điều tra bắt đầu.",
+        major_events: [],
+        created_at: new Date().toISOString(),
+      },
+      {
+        episode_number: 3,
+        title: "Hiểm Họa",
+        logline: "Pháo đài sụp đổ sau đòn tấn công bất ngờ.\nChiến binh tản mát khắp nơi.",
+        major_events: [],
+        created_at: new Date().toISOString(),
+      },
+      {
+        episode_number: 4,
+        title: "Tập Mới",
+        logline: "Chuẩn bị phản công toàn diện.",
+        major_events: [],
+        created_at: new Date().toISOString(),
+      },
+    ];
+
+    const decayed = PromptOptimizer.applyRollingContextDecay(summaries, 5);
+
+    // Episode 2 and 3 are concise (N-3 and N-2 for target ep 5)
+    const ep2 = decayed.find((d) => d.episodeNumber === 2);
+    expect(ep2?.tier).toBe("concise");
+    expect(ep2?.text).toBe("Tập 2: Ai là kẻ phản bội trong bóng tối.");
+
+    const ep3 = decayed.find((d) => d.episodeNumber === 3);
+    expect(ep3?.tier).toBe("concise");
+    expect(ep3?.text).toBe("Tập 3: Pháo đài sụp đổ sau đòn tấn công bất ngờ.");
+
+    // Episode 1 is macro
+    const macro = decayed.find((d) => d.tier === "macro");
+    expect(macro?.text).toContain("Cứu nguy thế giới ngay lập tức");
+    expect(macro?.text).not.toContain("Kẻ thù đã tràn qua phòng tuyến");
+  });
+
+  it("extractFirstSentence handles leading whitespace, newlines, multiple punctuation, and empty fallbacks", () => {
+    expect(PromptOptimizer.extractFirstSentence("  \n\n  Thế giới đảo lộn! Trận chiến tiếp tục.", "Default")).toBe(
+      "Thế giới đảo lộn"
+    );
+    expect(PromptOptimizer.extractFirstSentence("Chỉ một câu duy nhất", "Default")).toBe("Chỉ một câu duy nhất");
+    expect(PromptOptimizer.extractFirstSentence("Câu hỏi là gì? Chưa có câu trả lời.", "Default")).toBe(
+      "Câu hỏi là gì"
+    );
+    expect(PromptOptimizer.extractFirstSentence("   \n\n  ", "Fallback")).toBe("Fallback");
+    expect(PromptOptimizer.extractFirstSentence(null, "Fallback")).toBe("Fallback");
+  });
+
+  it("parses compact cinema notation with spaces around brackets and pipe separators", () => {
+    const scriptWithWhitespace = `
+C1.1 [ EST | 3.5s | 35mm | fog ] : Toàn cảnh rừng mờ sương.
+C1.2 [ CU | 2.5s ] : Ánh mắt căng thẳng của Nam.
+    `.trim();
+
+    const expanded = PromptOptimizer.expandCompactCinemaNotation(scriptWithWhitespace);
+    expect(expanded).toContain("CẢNH 1: PHÂN CẢNH 1");
+    expect(expanded).toContain("CÚ MÁY 1 (establishing, 3.5s): Toàn cảnh rừng mờ sương. (35mm, fog)");
+    expect(expanded).toContain("CÚ MÁY 2 (close_up, 2.5s): Ánh mắt căng thẳng của Nam.");
+  });
+
+  it("supports English SCENE and SHOT keywords in toCompactCinemaNotation", () => {
+    const englishScript = `
+SCENE 1: OLD FOREST - NIGHT
+SHOT 1 (establishing, 4s): Wide shot of ancient misty trees.
+SHOT 2 (close_up, 3.5s): Close on detective looking around.
+    `.trim();
+
+    const compact = PromptOptimizer.toCompactCinemaNotation(englishScript);
+    expect(compact).toContain("CẢNH 1: OLD FOREST - NIGHT");
+    expect(compact).toContain("C1.1 [EST|4s]: Wide shot of ancient misty trees.");
+    expect(compact).toContain("C1.2 [CU|3.5s]: Close on detective looking around.");
+  });
 });

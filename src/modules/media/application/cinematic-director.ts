@@ -418,7 +418,8 @@ export class CinematicDirectorEngine {
    */
   public static sanitizeVisualPrompt(prompt: string, aspectRatio?: string): string {
     if (!prompt) return prompt;
-    if (aspectRatio === "9:16") {
+    const targetAspect = aspectRatio || "9:16";
+    if (targetAspect === "9:16") {
       let cleaned = prompt
         .replace(/\b(widescreen|16:9|anamorphic|2\.39:1|panoramic(?:\s+horizontal)?|ultra-wide|cinemascope)\b/gi, "")
         .replace(/\s{2,}/g, " ")

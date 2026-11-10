@@ -857,9 +857,12 @@ Nhiệm vụ của bạn là phân tích văn bản tác phẩm và trích xuấ
         Boolean(options.enablePromptCaching) &&
         PromptOptimizer.estimateTokens(systemPrompt) >= requiredCacheTokens;
 
+      const hasActiveCacheControl = cacheableSystemBlocks.some((b: any) => Boolean(b.cache_control));
       if (cacheableSystemBlocks.length > 0) {
         systemParam = [...cacheableSystemBlocks, { type: "text", text: systemPrompt }];
-        headers["anthropic-beta"] = "prompt-caching-2024-07-31";
+        if (hasActiveCacheControl) {
+          headers["anthropic-beta"] = "prompt-caching-2024-07-31";
+        }
       } else if (canCacheStandaloneSystemPrompt) {
         systemParam = [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
         headers["anthropic-beta"] = "prompt-caching-2024-07-31";

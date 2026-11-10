@@ -282,8 +282,15 @@ export function parseRawScreenplay(rawText: string, defaultEpisode = 1): Interme
     if (s.includes("close") || s.includes("cận")) return "close_up";
     if (s.includes("wide") || s.includes("toàn")) return "wide";
     if (s.includes("action") || s.includes("hành động")) return "action";
-    if (s.includes("over_the_shoulder") || s.includes("qua vai") || s.includes("sau vai")) return "over_the_shoulder";
+    if (
+      s.includes("over_the_shoulder") ||
+      s.includes("qua vai") ||
+      s.includes("sau vai") ||
+      s.includes("ots")
+    )
+      return "over_the_shoulder";
     if (s.includes("pov") || s.includes("góc nhìn")) return "pov";
+    if (s.includes("two_shot") || s.includes("two") || s.includes("hai người")) return "medium";
     return "medium";
   };
 
@@ -702,6 +709,15 @@ export function getDpCinematographyDirective(shotType?: string): string {
     case "action":
     case "hành động":
       return "28mm wide dynamic angle, fast shutter speed, high dynamic range motion capture";
+    case "over_the_shoulder":
+    case "ots":
+    case "ots_a_b":
+    case "ots_b_a":
+    case "qua vai":
+      return "50mm anamorphic lens, shallow depth of field, over-the-shoulder framing with foreground bokeh";
+    case "two_shot":
+    case "hai người":
+      return "35mm or 50mm lens, balanced two-subject framing, medium depth of field";
     case "medium":
     case "trung cảnh":
     default:

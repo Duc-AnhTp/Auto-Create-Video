@@ -12,6 +12,7 @@ export type {FilmAssembler,HierarchicalAssemblerOptions,SceneAssemblyInput} from
 
 export type {Script} from "./adapters/render/script-schema.js";
 export type {SfxMixSpec} from "./adapters/assets/audio-tools.js";
+export type {StandardAspectRatio} from "./adapters/dimension-resolver.js";
 
 export type {VideoProbeInfo} from "./adapters/media-validator.js";
 export type {FoleyGenerator} from "./ports/foley.js";

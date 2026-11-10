@@ -109,6 +109,20 @@ export class PromptOptimizer {
    * - Episode 1..N-4: Macro arc summary (condensed single sentence per era).
    * Reduces repeated historical context; actual token savings depend on the provider tokenization and usage.
    */
+  /**
+   * Robustly extracts the first sentence of a text block.
+   * Handles leading/trailing whitespace, newlines, multiple punctuation marks,
+   * and falls back cleanly if empty.
+   */
+  public static extractFirstSentence(text?: string | null, fallback: string = ""): string {
+    if (!text) return fallback;
+    const trimmed = text.trim();
+    if (!trimmed) return fallback;
+    const segments = trimmed.split(/(?:[.!?](?:\s+|$)|\n+)/);
+    const candidate = (segments.map((s) => s.replace(/[.!?]+$/, "").trim()).find((s) => s.length > 0) || "").trim();
+    return candidate || fallback;
+  }
+
   public static applyRollingContextDecay(
     summaries: EpisodeSummaryRecord[],
     currentEpisode: number
@@ -141,7 +155,7 @@ export class PromptOptimizer {
         });
       } else if (distance <= 3) {
         // Intermediate distance: Concise (1 sentence)
-        const firstSentence = s.logline ? s.logline.split(/\.\s+/)[0].replace(/\.+$/, "") : s.title;
+        const firstSentence = PromptOptimizer.extractFirstSentence(s.logline, s.title);
         result.push({
           episodeNumber: s.episode_number,
           tier: "concise",
@@ -157,7 +171,7 @@ export class PromptOptimizer {
       const minEp = macroOldEpisodes[0].episode_number;
       const maxEp = macroOldEpisodes[macroOldEpisodes.length - 1].episode_number;
       const keyEvents = macroOldEpisodes
-        .map((e) => e.logline ? e.logline.split(/\.\s+/)[0].replace(/\.+$/, "") : e.title)
+        .map((e) => PromptOptimizer.extractFirstSentence(e.logline, e.title))
         .slice(0, 3)
         .join(" -> ");
 
@@ -306,8 +320,8 @@ export class PromptOptimizer {
         continue;
       }
 
-      // Match Scene Header
-      const sceneMatch = trimmed.match(/^CẢNH\s*(\d+)[:\s]*(.*)$/i);
+      // Match Scene Header (Vietnamese or English)
+      const sceneMatch = trimmed.match(/^(?:CẢNH|SCENE)\s*(\d+)[:\s]*(.*)$/i);
       if (sceneMatch) {
         currentScene = parseInt(sceneMatch[1], 10);
         currentShot = 1;
@@ -315,9 +329,9 @@ export class PromptOptimizer {
         continue;
       }
 
-      // Match Shot Header: CÚ MÁY 1 (establishing, 4s): <prompt>
+      // Match Shot Header: CÚ MÁY 1 (establishing, 4s): <prompt> or SHOT 1 (establishing, 4s): <prompt>
       const shotMatch = trimmed.match(
-        /^CÚ MÁY\s*(\d+)\s*\(([^,\)]+)(?:,\s*(\d+)s)?\)\s*:\s*(.*)$/i
+        /^(?:CÚ MÁY|SHOT)\s*(\d+)\s*\(([^,\)]+)(?:,\s*([\d.]+)s)?\)\s*:\s*(.*)$/i
       );
       if (shotMatch) {
         const sNum = parseInt(shotMatch[1], 10) || currentShot;
@@ -352,11 +366,14 @@ export class PromptOptimizer {
    * for seamless compatibility with script-normalizer.ts.
    *
    * Example:
-   * C1.1 [EST|4s]: Toàn cảnh rừng mờ sương. -> CÚ MÁY 1 (establishing, 4s): Toàn cảnh rừng mờ sương.
+   * C1.1 [EST|4s]: Toàn cảnh rừng mờ sương. ->
+   * CẢNH 1: PHÂN CẢNH 1
+   * CÚ MÁY 1 (establishing, 4s): Toàn cảnh rừng mờ sương.
    */
   public static expandCompactCinemaNotation(compactScript: string): string {
     const lines = compactScript.split("\n");
     const expandedLines: string[] = [];
+    let currentSceneNum: number | null = null;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -365,15 +382,39 @@ export class PromptOptimizer {
         continue;
       }
 
+      // Track existing scene header if present
+      const sceneMatch = trimmed.match(/^(?:CẢNH|SCENE)\s*(\d+)[:\s]*(.*)$/i);
+      if (sceneMatch) {
+        currentSceneNum = parseInt(sceneMatch[1], 10);
+        expandedLines.push(trimmed);
+        continue;
+      }
+
       // Match compact shot: C1.2 [CU|5s]: Gương mặt Mai căng thẳng...
-      // or C1.2 [EST|4s|35mm|fog]: ...
-      const compactMatch = trimmed.match(/^C\d+\.(\d+)\s*\[([A-Z0-9_]+)\|(\d+)s(?:\|([^\]]+))?\]\s*:\s*(.*)$/i);
+      // or C1.2 [EST|3.5s|35mm|fog]: ...
+      // Tolerates optional whitespace around brackets, pipe separators, and colon
+      const compactMatch = trimmed.match(
+        /^C(\d+)\.(\d+)\s*\[\s*([A-Z0-9_]+)\s*\|\s*([\d.]+)s(?:\s*\|\s*([^\]]+))?\s*\]\s*:\s*(.*)$/i
+      );
       if (compactMatch) {
-        const shotNum = compactMatch[1];
-        const code = compactMatch[2].toUpperCase();
-        const duration = compactMatch[3];
-        const extraTags = compactMatch[4] ? compactMatch[4].split("|").join(", ") : "";
-        const prompt = compactMatch[5].trim();
+        const sceneNum = parseInt(compactMatch[1], 10);
+        const shotNum = compactMatch[2];
+        const code = compactMatch[3].toUpperCase();
+        const duration = compactMatch[4];
+        const extraTags = compactMatch[5]
+          ? compactMatch[5]
+              .split("|")
+              .map((t) => t.trim())
+              .filter(Boolean)
+              .join(", ")
+          : "";
+        const prompt = compactMatch[6].trim();
+
+        // If transitioning to a new scene or no scene declared yet, emit scene header
+        if (currentSceneNum !== sceneNum) {
+          expandedLines.push(`CẢNH ${sceneNum}: PHÂN CẢNH ${sceneNum}`);
+          currentSceneNum = sceneNum;
+        }
 
         let shotType = "medium";
         if (code === "EST") shotType = "establishing";

@@ -197,13 +197,13 @@ let seriesId = input.seriesId;
             if (isMultiCharShot && charBId) {
               const charARec = ctx.bible.getCharacter(charAId, seriesId);
               const charBRec = ctx.bible.getCharacter(charBId, seriesId);
-              const isVertical = script.aspectRatio === "9:16";
+              const isPortrait = (script.aspectRatio || "9:16") === "9:16" || script.aspectRatio === "4:5";
               regionalCond = {
                 enabled: true,
                 characterAPrompt: `${charARec?.name || "Nhân vật 1"}: ${charARec?.visual_summary || "Ánh mắt sắc bén"}`,
                 characterBPrompt: `${charBRec?.name || "Nhân vật 2"}: ${charBRec?.visual_summary || "Biểu cảm tập trung"}`,
-                characterASide: isVertical ? "bottom" : "left",
-                characterBSide: isVertical ? "top" : "right",
+                characterASide: isPortrait ? "bottom" : "left",
+                characterBSide: isPortrait ? "top" : "right",
               };
             }
           }

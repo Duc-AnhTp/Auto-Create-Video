@@ -6,7 +6,7 @@ export const JobStatusSchema = z.enum(["queued", "running", "paused", "needs_rev
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 export const HedgeSchema = z.object({ enabled:z.boolean().default(false),fallbackProvider:z.enum(["local_comfyui","api_kling","api_runway","api_veo","api_seedance"]).optional(),delayMs:z.number().int().min(0).max(300_000).default(45_000) }).strict();
 export const PostprocessOptionsSchema = z.object({
-  aspectRatio:z.enum(["16:9","9:16","1:1"]).optional(),enableSuperResolution:z.boolean().optional(),resolutionStandard:z.enum(["4k","1080p"]).optional(),
+  aspectRatio:z.enum(["16:9","9:16","1:1","4:5"]).optional(),enableSuperResolution:z.boolean().optional(),resolutionStandard:z.enum(["4k","1080p"]).optional(),
   filmGrainIntensity:z.number().finite().min(0).max(1).optional(),unsharpStrength:z.number().finite().min(0).max(1.5).optional(),enableCdlGrading:z.boolean().optional(),
   cdlPreset:z.enum(["kodak_2383","fuji_eterna","teal_orange","cyberpunk_neon","bleach_bypass","monochrome_noir","natural_balance"]).optional(),
   customCdl:z.object({slope:z.tuple([z.number().finite(),z.number().finite(),z.number().finite()]).optional(),offset:z.tuple([z.number().finite(),z.number().finite(),z.number().finite()]).optional(),power:z.tuple([z.number().finite().positive(),z.number().finite().positive(),z.number().finite().positive()]).optional(),saturation:z.number().finite().nonnegative().optional()}).strict().optional(),

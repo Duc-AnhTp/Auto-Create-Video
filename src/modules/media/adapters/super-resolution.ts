@@ -12,7 +12,7 @@ export type TargetColorSpace = "bt709" | "bt2020" | "preserve";
 
 export interface SuperResolutionOptions {
   targetStandard?: ResolutionStandard;
-  aspectRatio?: "16:9" | "9:16" | "1:1";
+  aspectRatio?: "16:9" | "9:16" | "1:1" | "4:5";
   customDimensions?: { width: number; height: number };
   algorithm?: UpscaleAlgorithm;
   colorSpace?: TargetColorSpace;
@@ -51,7 +51,7 @@ export class SuperResolutionEngine {
    * Resolves target width and height based on standard and aspect ratio.
    */
   public static computeTargetDimensions(
-    aspectRatio: "16:9" | "9:16" | "1:1" = "16:9",
+    aspectRatio: "16:9" | "9:16" | "1:1" | "4:5" = "16:9",
     targetStandard: ResolutionStandard = "4k",
     custom?: { width: number; height: number }
   ): { width: number; height: number } {
@@ -69,6 +69,9 @@ export class SuperResolutionEngine {
       if (aspectRatio === "1:1") {
         return { width: 2160, height: 2160 };
       }
+      if (aspectRatio === "4:5") {
+        return { width: 2160, height: 2700 };
+      }
       return { width: 3840, height: 2160 }; // 4K UHD Widescreen
     }
 
@@ -79,6 +82,9 @@ export class SuperResolutionEngine {
       if (aspectRatio === "1:1") {
         return { width: 1080, height: 1080 };
       }
+      if (aspectRatio === "4:5") {
+        return { width: 1080, height: 1350 };
+      }
       return { width: 1920, height: 1080 };
     }
 
@@ -88,6 +94,9 @@ export class SuperResolutionEngine {
     }
     if (aspectRatio === "1:1") {
       return { width: 720, height: 720 };
+    }
+    if (aspectRatio === "4:5") {
+      return { width: 720, height: 900 };
     }
     return { width: 1280, height: 720 };
   }

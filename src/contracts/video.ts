@@ -13,7 +13,7 @@ export interface ProviderCapabilities {
   allowedDurationsSec: number[] | "continuous";
   minDurationSec: number;
   maxDurationSec: number;
-  allowedAspectRatios: ("9:16" | "16:9" | "1:1")[];
+  allowedAspectRatios: ("9:16" | "16:9" | "1:1" | "4:5")[];
   supportsSeed: boolean;
   supportsLastFrameExtension: boolean;
   supportsImageInput?: boolean;
@@ -56,7 +56,7 @@ export interface ShotExecutionSpec {
   durationSec: number;
   prompt: string;
   negativePrompt?: string;
-  aspectRatio?: "9:16" | "16:9";
+  aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5";
   loras?: Array<{ path: string; weight: number }>;
   referenceImage?: string;
   firstFrameCondition?: string; // used for autoregressive I2V extension

@@ -43,7 +43,7 @@ export interface StitchOptions {
   fps?: number;
   width?: number;
   height?: number;
-  aspectRatio?: "9:16" | "16:9" | "1:1";
+  aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5";
 }
 
 /**
@@ -319,6 +319,9 @@ export function buildCrossfadeStitchFilter(
     } else if (ratio === "1:1") {
       width = 1080;
       height = 1080;
+    } else if (ratio === "4:5") {
+      width = 720;
+      height = 900;
     }
   }
 

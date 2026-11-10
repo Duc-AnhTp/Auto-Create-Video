@@ -163,12 +163,12 @@ export class StoryToScreenplayGenerator {
       rawScreenplay = this.generateRuleBasedScreenplay(options, canonSummary, episodeNumber);
     }
 
+    // Clean up code blocks if LLM output markdown fences
+    rawScreenplay = this.stripMarkdownFences(rawScreenplay);
+
     if (options.enableCompactCinemaNotation) {
       rawScreenplay = PromptOptimizer.expandCompactCinemaNotation(rawScreenplay);
     }
-
-    // Clean up code blocks if LLM output markdown fences
-    rawScreenplay = this.stripMarkdownFences(rawScreenplay);
 
     // Normalize and validate through script normalizer, with optional surgical micro-repair
     let script: EpisodicScript;
@@ -408,11 +408,11 @@ export class StoryToScreenplayGenerator {
       rawScreenplay = this.generateRuleBasedScreenplayFromPlan(plannedEp, epContext, options.tone);
     }
 
+    rawScreenplay = this.stripMarkdownFences(rawScreenplay);
+
     if (options.enableCompactCinemaNotation) {
       rawScreenplay = PromptOptimizer.expandCompactCinemaNotation(rawScreenplay);
     }
-
-    rawScreenplay = this.stripMarkdownFences(rawScreenplay);
 
     let script: EpisodicScript;
     try {

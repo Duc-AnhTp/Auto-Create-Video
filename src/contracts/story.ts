@@ -53,8 +53,8 @@ export interface SeriesMetadataRecord {
   visualStyle?: string;
   negative_prompt?: string;
   negativePrompt?: string;
-  aspect_ratio?: "9:16" | "16:9";
-  aspectRatio?: "9:16" | "16:9";
+  aspect_ratio?: "9:16" | "16:9" | "1:1" | "4:5";
+  aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5";
   fps?: number;
   created_at?: string;
   createdAt?: string;

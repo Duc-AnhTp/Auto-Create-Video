@@ -150,21 +150,25 @@ export function exportToAss(
   const aspect = options.aspectRatio || "9:16";
   const isLandscape = aspect === "16:9";
   const isSquare = aspect === "1:1";
+  const is4by5 = aspect === "4:5";
   const isPortrait = !isLandscape && !isSquare;
 
   const playResX = isLandscape ? 1920 : 1080;
-  const playResY = isLandscape ? 1080 : isSquare ? 1080 : 1920;
+  const playResY = isLandscape ? 1080 : isSquare ? 1080 : is4by5 ? 1350 : 1920;
   const fontFamily = options.fontFamily || "Arial";
-  const fontSize = options.fontSize || (isPortrait ? 56 : isSquare ? 48 : 44);
+  const fontSize = options.fontSize || (isPortrait ? (is4by5 ? 50 : 56) : isSquare ? 48 : 44);
   const primaryColor = options.primaryColor || "&H00FFFFFF"; // White (AABBGGRR)
   const highlightColor = options.highlightColor || "&H0000FFFF"; // Bright Yellow
   const outlineColor = options.outlineColor || "&H00000000"; // Black
 
   // Safe Title Area Avoidance: clears TikTok/Shorts bottom seekbars and right action buttons
   const isSafeTitle = options.safeTitleAvoidance ?? isPortrait;
-  const marginV = options.marginV || (isSafeTitle && isPortrait ? MOBILE_SAFE_ZONE_1080_1920.bottomMargin : isPortrait ? 280 : isSquare ? 140 : 90);
-  const marginR = options.marginR || (isSafeTitle && isPortrait ? MOBILE_SAFE_ZONE_1080_1920.rightMargin : 40);
-  const marginL = options.marginL || (isSafeTitle && isPortrait ? MOBILE_SAFE_ZONE_1080_1920.leftMargin : 40);
+  const defaultMarginV = isSafeTitle
+    ? (is4by5 ? 240 : isPortrait ? MOBILE_SAFE_ZONE_1080_1920.bottomMargin : isSquare ? 140 : 90)
+    : (is4by5 ? 200 : isPortrait ? 280 : isSquare ? 140 : 90);
+  const marginV = options.marginV || defaultMarginV;
+  const marginR = options.marginR || (isSafeTitle && isPortrait ? (is4by5 ? 120 : MOBILE_SAFE_ZONE_1080_1920.rightMargin) : 40);
+  const marginL = options.marginL || (isSafeTitle && isPortrait ? (is4by5 ? 60 : MOBILE_SAFE_ZONE_1080_1920.leftMargin) : 40);
 
   const styleType = options.style || "karaoke";
 

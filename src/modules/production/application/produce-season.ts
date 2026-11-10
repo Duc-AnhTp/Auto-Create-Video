@@ -102,6 +102,10 @@ export class ProduceSeason {
       options.mockTts ? "mockTts" : "realTts",
       options.ttsProvider || "default",
       options.allowMockMedia ? "allowMockMedia" : "strictMedia",
+      options.modelTier || "default",
+      options.enablePromptOptimization ? "opt" : "noOpt",
+      options.enableCompactCinemaNotation ? "compact" : "verbose",
+      options.enableMicroRepairOnAuditViolation ? "microRepair" : "noRepair",
     ].join("|");
 
     let scriptHash = "";

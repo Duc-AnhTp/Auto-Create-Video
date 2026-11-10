@@ -20,8 +20,8 @@ export interface BroadcastQcOptions {
   subtitleAssPath?: string;
   targetStandard?: "broadcast_ebu_r128" | "streaming_youtube_tiktok";
   mockFallback?: boolean;
-  /** Aspect ratio of video, e.g. "9:16" or "16:9" */
-  aspectRatio?: "9:16" | "16:9" | string;
+  /** Aspect ratio of video, e.g. "9:16", "16:9", "1:1", "4:5" */
+  aspectRatio?: "9:16" | "16:9" | "1:1" | "4:5" | string;
   /** Duration of first shot in seconds, for 3-second hook retention verification */
   firstShotDurationSec?: number;
 }
@@ -204,32 +204,48 @@ export class BroadcastQcAuditor {
       const content = readFileSync(options.subtitleAssPath, "utf8");
       const playResY = Number(content.match(/PlayResY:\s*(\d+)/)?.[1]);
       const styles = [...content.matchAll(/^Style:\s*(.+)$/gm)].map(match => match[1].split(","));
-      const isVertical = options.aspectRatio === "9:16" || playResY === 1920;
+      const is9by16 = options.aspectRatio === "9:16" || playResY === 1920;
+      const is4by5 = options.aspectRatio === "4:5" || playResY === 1350;
       // In 9:16 mobile format: MarginV (index 21) >= 320 and MarginR (index 20) >= 160
-      const safe = isVertical
+      // In 4:5 portrait format: MarginV (index 21) >= 200 and MarginR (index 20) >= 100
+      const safe = is9by16
         ? playResY > 0 && styles.length > 0 && styles.every(fields => Number(fields[21]) >= 320 && Number(fields[20]) >= 160)
+        : is4by5
+        ? playResY > 0 && styles.length > 0 && styles.every(fields => Number(fields[21]) >= 200 && Number(fields[20]) >= 100)
         : playResY > 0 && styles.length > 0 && styles.every(fields => Number(fields[21]) >= playResY * 0.05);
 
       checks.push({
         id: "sub_safe_title",
-        name: isVertical ? "Mobile 9:16 Safe Title Subtitle Margins" : "Mobile Safe Title Area Subtitle Margins",
+        name: is9by16
+          ? "Mobile 9:16 Safe Title Subtitle Margins"
+          : is4by5
+          ? "Mobile 4:5 Safe Title Subtitle Margins"
+          : "Mobile Safe Title Area Subtitle Margins",
         category: "subtitles",
         passed: safe,
         value: safe ? "Verified safe ASS margins" : "UNAVAILABLE or unsafe margins",
-        benchmark: isVertical ? "MarginV >= 320, MarginR >= 160 (TikTok/Shorts UI safe)" : "Bottom margin >= 5% frame height",
+        benchmark: is9by16
+          ? "MarginV >= 320, MarginR >= 160 (TikTok/Shorts UI safe)"
+          : is4by5
+          ? "MarginV >= 200, MarginR >= 100 (4:5 Feed safe)"
+          : "Bottom margin >= 5% frame height",
         severity: "warning",
         detail: safe
           ? "Phụ đề né tránh vùng tương tác di động (TikTok/Shorts UI)."
           : "Phụ đề có thể bị che bởi nút like/share hoặc caption thanh cuộn đáy.",
       });
 
-      if (!safe && isVertical) {
-        recommendations.push("Điều chỉnh MarginV >= 340 và MarginR >= 180 trong file phụ đề ASS để tránh bị giao diện TikTok che mất.");
+      if (!safe && (is9by16 || is4by5)) {
+        recommendations.push(
+          is9by16
+            ? "Điều chỉnh MarginV >= 340 và MarginR >= 180 trong file phụ đề ASS để tránh bị giao diện TikTok che mất."
+            : "Điều chỉnh MarginV >= 240 và MarginR >= 120 trong file phụ đề ASS cho định dạng 4:5."
+        );
       }
     }
 
-    // 7. Short-Form 3-Second Visual Hook Check
-    if (options.firstShotDurationSec !== undefined) {
+    // 7. Short-Form 3-Second Visual Hook Check (applicable to vertical/mobile formats, not widescreen 16:9)
+    if (options.firstShotDurationSec !== undefined && options.aspectRatio !== "16:9") {
       const isHookCompliant = options.firstShotDurationSec <= 3.2;
       checks.push({
         id: "short_3s_hook",

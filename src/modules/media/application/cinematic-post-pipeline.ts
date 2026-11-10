@@ -19,7 +19,9 @@ export interface MasterPostProcessingOptions {
   episodeNumber: number;
   inputMasterVideoPath: string;
   outputDir?: string;
-  aspectRatio?: "16:9" | "9:16" | "1:1";
+  aspectRatio?: "16:9" | "9:16" | "1:1" | "4:5";
+  firstShotDurationSec?: number;
+  subtitleAssPath?: string;
 
   // Phase 1: 4K Super-Resolution
   enableSuperResolution?: boolean;
@@ -198,6 +200,9 @@ export class CinematicPostPipeline {
           clampVideoLegalRange: options.clampLegalRange ?? true,
           videoFilters,
           mockFallback: options.mockFallback,
+          aspectRatio: options.aspectRatio,
+          firstShotDurationSec: options.firstShotDurationSec,
+          subtitleAssPath: options.subtitleAssPath,
         }
       );
 

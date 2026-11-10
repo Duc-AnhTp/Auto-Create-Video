@@ -438,5 +438,35 @@ describe("Milestone: 2 Consecutive Episodes Real Production Pipeline", () => {
       ep1Dir
     );
     expect(hashStrictMedia).not.toBe(hash1a);
+
+    // 4. Switching modelTier invalidates hash
+    const hashFastTier = orchestrator.computeEpisodeSpecHash(
+      seriesId,
+      planId,
+      plannedEp1,
+      { seriesId, provider: "mock", mockTts: true, allowMockMedia: true, modelTier: "fast" },
+      ep1Dir
+    );
+    expect(hashFastTier).not.toBe(hash1a);
+
+    // 5. Switching enablePromptOptimization invalidates hash
+    const hashOptimized = orchestrator.computeEpisodeSpecHash(
+      seriesId,
+      planId,
+      plannedEp1,
+      { seriesId, provider: "mock", mockTts: true, allowMockMedia: true, enablePromptOptimization: true },
+      ep1Dir
+    );
+    expect(hashOptimized).not.toBe(hash1a);
+
+    // 6. Switching enableCompactCinemaNotation invalidates hash
+    const hashCompact = orchestrator.computeEpisodeSpecHash(
+      seriesId,
+      planId,
+      plannedEp1,
+      { seriesId, provider: "mock", mockTts: true, allowMockMedia: true, enableCompactCinemaNotation: true },
+      ep1Dir
+    );
+    expect(hashCompact).not.toBe(hash1a);
   });
 });
